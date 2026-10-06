@@ -40,10 +40,26 @@ composeApp/src/commonMain/kotlin/com/denebapps/patrimonio/
 
 `design-reference/` contiene el prototipo JSX original (especificación visual; no se distribuye).
 
+## Copias de seguridad
+
+Ajustes → Datos → *Exportar copia* / *Importar copia* (selector nativo vía
+[FileKit](https://github.com/vinceglb/FileKit)). El archivo es JSON legible
+(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 1}`:
+
+- Incluye activos, pasivos, grupos y miembros, histórico mensual y metas con sus aportaciones y
+  vínculos. No incluye tipos de cambio (caché) ni preferencias.
+- Importar **reemplaza** todos los datos en una sola transacción. El archivo se valida entero antes
+  (divisas, tipos, ids únicos, referencias, reglas del ledger de metas), así que uno inválido no
+  toca nada.
+- El formato está desacoplado de las entidades Room: un cambio de schema no cambia el archivo; un
+  cambio de formato sube `version` y `BackupCodec` decide qué versiones sabe leer.
+
+Además, Android incluye la DB en Auto Backup (`allowBackup`) e iOS en el backup de iCloud del
+dispositivo.
+
 ## Roadmap
 
-1. **Backup**: export/import JSON (Archivos / Drive / iCloud Drive). Android ya entra en Auto
-   Backup (`allowBackup`), iOS en el backup de iCloud del dispositivo.
+1. ~~**Backup**~~: export/import JSON desde Ajustes (ver *Copias de seguridad*).
 2. **Suscripciones**: alta con importe, divisa y periodicidad, coste mensual/anual normalizado a
    EUR con el FX existente, vínculo opcional al activo que paga y notificaciones locales de
    renovación (`expect/actual`: WorkManager / `UNUserNotificationCenter`).

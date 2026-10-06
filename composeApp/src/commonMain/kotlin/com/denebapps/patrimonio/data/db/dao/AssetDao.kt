@@ -58,7 +58,7 @@ interface AssetDao {
     )
     suspend fun deleteIfUnlinked(id: String): Int
 
-    /** Wipes the whole table — only called by `DataMaintenanceRepositoryImpl` inside its FK-ordered
+    /** Wipes the whole table — only called by `clearFinancialTables` inside its FK-ordered
      *  clear-all transaction, AFTER savings goals and group members are already gone. */
     @Query("DELETE FROM assets")
     suspend fun deleteAll()

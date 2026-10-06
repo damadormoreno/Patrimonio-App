@@ -7,6 +7,7 @@ import com.denebapps.patrimonio.ui.screens.patrimonio.GruposViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.PatrimonioViewModel
 import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
+import com.denebapps.patrimonio.ui.screens.settings.BackupViewModel
 import com.denebapps.patrimonio.ui.screens.settings.SettingsViewModel
 import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
@@ -26,6 +27,7 @@ import org.koin.dsl.module
 val presentationModule = module {
     viewModel { AppViewModel(get()) }
     viewModel { SettingsViewModel(get(), get()) }
+    viewModel { BackupViewModel(get(), get(), get()) }
     viewModel { ProfileViewModel(get()) }
     viewModel {
         val clock = get<Clock>()

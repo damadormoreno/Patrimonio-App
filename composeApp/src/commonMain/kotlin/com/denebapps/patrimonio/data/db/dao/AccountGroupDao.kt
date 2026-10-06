@@ -23,6 +23,12 @@ interface AccountGroupDao {
     @Query("SELECT * FROM account_groups ORDER BY sortOrder")
     fun observeAll(): Flow<List<AccountGroupWithMembers>>
 
+    @Query("SELECT * FROM account_groups ORDER BY sortOrder, id")
+    suspend fun listGroups(): List<AccountGroupEntity>
+
+    @Query("SELECT * FROM account_group_members ORDER BY groupId, assetId")
+    suspend fun listMembers(): List<AccountGroupMemberEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertGroup(group: AccountGroupEntity)
 
@@ -38,12 +44,12 @@ interface AccountGroupDao {
     @Query("DELETE FROM account_groups WHERE id = :id")
     suspend fun deleteGroup(id: String)
 
-    /** Wipes every membership row — only called by `DataMaintenanceRepositoryImpl` inside its
+    /** Wipes every membership row — only called by `clearFinancialTables` inside its
      *  FK-ordered clear-all transaction, BEFORE the groups themselves. */
     @Query("DELETE FROM account_group_members")
     suspend fun deleteAllMembers()
 
-    /** Wipes every group — only called by `DataMaintenanceRepositoryImpl` inside its FK-ordered
+    /** Wipes every group — only called by `clearFinancialTables` inside its FK-ordered
      *  clear-all transaction, AFTER [deleteAllMembers]. */
     @Query("DELETE FROM account_groups")
     suspend fun deleteAllGroups()
