@@ -26,7 +26,15 @@ presupuestos, categorías ni analítica.
 ```
 
 La primera build genera el schema de Room en `composeApp/schemas/` — **commitéalo**: es la base
-para escribir y testear migraciones.
+para escribir y testear migraciones. CI falla si el schema generado no coincide con el commiteado.
+
+## CI
+
+`.github/workflows/ci.yml`, en cada PR y en cada push a `main`:
+
+- **android** (Ubuntu): `ktlintCheck`, `testDebugUnitTest`, `assembleDebug` y comprobación del
+  schema de Room. Si fallan los tests, sube los informes como artifact.
+- **ios** (macOS): `compileKotlinIosArm64`. Los minutos de macOS cuentan x10 en repos privados.
 
 ## Estructura
 
