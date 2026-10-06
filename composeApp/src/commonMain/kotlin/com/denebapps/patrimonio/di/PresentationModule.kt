@@ -27,7 +27,7 @@ import org.koin.dsl.module
  * it with empty params, while `GoalAllocateSheet` passes `parametersOf(goalId, withdraw)`.
  */
 val presentationModule = module {
-    viewModel { AppViewModel(get()) }
+    viewModel { AppViewModel(get(), get()) }
     viewModel { SettingsViewModel(get(), get()) }
     viewModel { BackupViewModel(get(), get(), get()) }
     viewModel { ProfileViewModel(get()) }

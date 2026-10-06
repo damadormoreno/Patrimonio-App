@@ -22,8 +22,10 @@ androidxTestRunner = "1.7.0"
 navigationCompose = "2.9.2"
 lifecycleViewmodel = "2.9.1"
 filekit = "0.12.0"
+androidxWork = "2.10.0"
 
 [libraries]
+androidx-work-runtime = { module = "androidx.work:work-runtime", version.ref = "androidxWork" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidxActivityCompose" }
 lifecycle-viewmodel = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel", version.ref = "lifecycleViewmodel" }
 lifecycle-viewmodel-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycleViewmodel" }

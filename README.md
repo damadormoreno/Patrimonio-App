@@ -71,8 +71,14 @@ dispositivo.
 1. ~~**Backup**~~: export/import JSON desde Ajustes (ver *Copias de seguridad*).
 2. ~~**Suscripciones**~~: pestaña con gasto mensual/anual en EUR, próximos cargos, pausadas y
    activo que paga (informativo, no mueve saldos).
-3. **Avisos de renovación**: notificaciones locales antes de cada cargo (`expect/actual`:
-   WorkManager / `UNUserNotificationCenter`).
+3. ~~**Avisos de renovación**~~: notificación local a las 9:00 el mismo día, 1, 3 o 7 días antes
+   de cada cargo, desactivada por defecto (Ajustes → Avisos). WorkManager en Android y
+   `UNUserNotificationCenter` en iOS. Límites conocidos:
+   - Se programan los próximos 60 días (máx. 50 avisos, por el límite de 64 de iOS); abrir la app
+     amplía esa ventana. Si no abres la app en dos meses, dejan de llegar.
+   - Un aviso cuya hora ya ha pasado al planificar no se envía. Si activas los avisos el mismo día de
+     un cargo después de las 9:00, ese cargo se queda sin aviso.
+   - En iOS no se muestran con la app en primer plano (falta un `UNUserNotificationCenterDelegate`).
 4. **Login + sync** (opcional): Google / Apple / email junto con sincronización. Los ids de
    activos, pasivos y grupos ya son `String` (UUID); las metas de ahorro usan `Long`
    autogenerado y habría que migrarlas antes de sincronizar.

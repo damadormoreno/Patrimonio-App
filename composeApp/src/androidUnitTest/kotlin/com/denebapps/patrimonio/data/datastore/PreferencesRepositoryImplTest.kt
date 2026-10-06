@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.data.datastore
 
+import com.denebapps.patrimonio.domain.repository.RenewalReminderSettings
 import com.denebapps.patrimonio.domain.repository.ThemeMode
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.produceIn
@@ -66,5 +67,15 @@ class PreferencesRepositoryImplTest {
 
         assertEquals("Gil", lastNames.receive())
         assertEquals("Ana", repo.observeFirstName().first())
+    }
+
+    @Test
+    fun `renewal reminders default to off one day ahead and persist changes`() = runTest {
+        val repo = PreferencesRepositoryImpl(tempFilePath())
+        assertEquals(RenewalReminderSettings(enabled = false, leadDays = 1), repo.observeRenewalReminders().first())
+
+        repo.setRenewalReminders(RenewalReminderSettings(enabled = true, leadDays = 3))
+
+        assertEquals(RenewalReminderSettings(enabled = true, leadDays = 3), repo.observeRenewalReminders().first())
     }
 }
