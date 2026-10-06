@@ -19,10 +19,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -187,6 +189,40 @@ fun GruposSheet(
             )
         }
     }
+
+    state.pendingDeletion?.let { pending ->
+        DeleteGroupDialog(
+            confirmation = pending,
+            onConfirm = viewModel::onConfirmDeleteGroup,
+            onDismiss = viewModel::onDismissDeleteGroup,
+        )
+    }
+}
+
+/** Confirmation shown before deleting a group that still has linked savings goals. Mirrors the
+ *  destructive-confirm styling of the "Borrar todos los datos" dialog in `SettingsScreen`. */
+@Composable
+private fun DeleteGroupDialog(
+    confirmation: GroupDeletionConfirmationUi,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = LocalAppColors.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(deleteGroupDialogTitle(confirmation)) },
+        text = { Text(deleteGroupDialogMessage(confirmation)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Eliminar", color = colors.expense)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        },
+    )
 }
 
 @Composable
