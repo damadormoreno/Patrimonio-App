@@ -8,7 +8,7 @@ package com.denebapps.patrimonio.domain.repository
 interface DataMaintenanceRepository {
     /**
      * Atomically wipes every Room financial table (assets, liabilities, account groups and members,
-     * savings goals and their ledgers/links, net-worth snapshots). `fx_rates` and all DataStore
+     * savings goals and their ledgers/links, subscriptions, net-worth snapshots). `fx_rates` and all DataStore
      * preferences are preserved. Room invalidation re-emits every active collector with the
      * cleared state.
      */

@@ -26,6 +26,7 @@ import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
+import com.denebapps.patrimonio.domain.repository.SubscriptionRepository
 import com.denebapps.patrimonio.ui.screens.patrimonio.AddPatrimonioSheetViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.GruposViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.PatrimonioViewModel
@@ -166,6 +167,7 @@ class KoinModuleTest {
         assertNotNull(koin.get<PreferencesRepository>())
         assertNotNull(koin.get<DataMaintenanceRepository>())
         assertNotNull(koin.get<BackupRepository>())
+        assertNotNull(koin.get<SubscriptionRepository>())
     }
 
     @Test

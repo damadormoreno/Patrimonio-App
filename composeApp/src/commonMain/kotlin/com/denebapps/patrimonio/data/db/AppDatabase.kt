@@ -11,6 +11,7 @@ import com.denebapps.patrimonio.data.db.dao.FxRateDao
 import com.denebapps.patrimonio.data.db.dao.LiabilityDao
 import com.denebapps.patrimonio.data.db.dao.NetWorthDao
 import com.denebapps.patrimonio.data.db.dao.SavingsGoalDao
+import com.denebapps.patrimonio.data.db.dao.SubscriptionDao
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
 import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
@@ -20,6 +21,7 @@ import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
+import com.denebapps.patrimonio.data.db.entity.SubscriptionEntity
 
 @Database(
     entities = [
@@ -32,10 +34,11 @@ import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
         SavingsGoalEntity::class,
         SavingsGoalAllocationEventEntity::class,
         SavingsGoalLinkEventEntity::class,
+        SubscriptionEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -50,6 +53,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun fxRateDao(): FxRateDao
 
     abstract fun savingsGoalDao(): SavingsGoalDao
+
+    abstract fun subscriptionDao(): SubscriptionDao
 }
 
 // The Room KSP compiler generates the `actual` implementation of this object for every target
