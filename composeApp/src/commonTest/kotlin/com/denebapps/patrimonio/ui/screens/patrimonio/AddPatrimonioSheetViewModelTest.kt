@@ -229,6 +229,53 @@ class AddPatrimonioSheetViewModelTest {
         job.cancel()
     }
 
+    @Test
+    fun `saving an asset trims surrounding whitespace from the name`() = runTest(dispatcher) {
+        val assetRepo = FakeAssetRepository()
+        val vm = viewModel(isLiability = false, assetRepository = assetRepo)
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        vm.onGroupSelect(Asset.AssetGroup.BANK.name)
+        // Keyboard autocomplete commonly leaves a trailing space after the last word.
+        vm.onNameChange("  Cuenta corriente ")
+        vm.onAmountChange("100,00")
+        advanceUntilIdle()
+        vm.onSave()
+        advanceUntilIdle()
+
+        var latest: List<Asset> = emptyList()
+        val collectJob = launch { assetRepo.observeAll().collect { latest = it } }
+        advanceUntilIdle()
+        collectJob.cancel()
+
+        assertEquals("Cuenta corriente", latest.single().name)
+        job.cancel()
+    }
+
+    @Test
+    fun `saving a liability trims surrounding whitespace from the name`() = runTest(dispatcher) {
+        val liabilityRepo = FakeLiabilityRepository()
+        val vm = viewModel(isLiability = true, liabilityRepository = liabilityRepo)
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        vm.onGroupSelect(Liability.LiabilityGroup.LOAN.name)
+        vm.onNameChange("Préstamo coche ")
+        vm.onAmountChange("8.200,00")
+        advanceUntilIdle()
+        vm.onSave()
+        advanceUntilIdle()
+
+        var latest: List<Liability> = emptyList()
+        val collectJob = launch { liabilityRepo.observeAll().collect { latest = it } }
+        advanceUntilIdle()
+        collectJob.cancel()
+
+        assertEquals("Préstamo coche", latest.single().name)
+        job.cancel()
+    }
+
     /** Extracts the EUR minor units embedded in [eurHint]'s formatted string for assertion. */
     private fun parseEurHintMoney(eurHint: String?): Money {
         requireNotNull(eurHint)
