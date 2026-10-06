@@ -36,6 +36,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.denebapps.patrimonio.domain.repository.ThemeMode
+import com.denebapps.patrimonio.resources.Res
+import com.denebapps.patrimonio.resources.delete_data_failure_message
 import com.denebapps.patrimonio.ui.components.Avatar
 import com.denebapps.patrimonio.ui.components.ScreenHeader
 import com.denebapps.patrimonio.ui.components.SettingsCard
@@ -44,8 +46,6 @@ import com.denebapps.patrimonio.ui.components.SettingsSection
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 import com.denebapps.patrimonio.ui.theme.LocalAppShapes
-import com.denebapps.patrimonio.resources.Res
-import com.denebapps.patrimonio.resources.delete_data_failure_message
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
