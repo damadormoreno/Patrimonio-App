@@ -51,6 +51,8 @@ kotlin {
             implementation(libs.lifecycle.viewmodel.compose)
             implementation(libs.koin.compose.viewmodel)
             implementation(libs.koin.compose.viewmodel.navigation)
+            implementation(libs.kotlinx.serialization.json)
+            implementation(libs.filekit.dialogs.compose)
         }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)

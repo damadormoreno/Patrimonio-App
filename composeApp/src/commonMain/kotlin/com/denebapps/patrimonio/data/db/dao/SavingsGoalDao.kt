@@ -108,18 +108,28 @@ abstract class SavingsGoalDao : SavingsGoalDataSource {
     @Query("UPDATE savings_goals SET lifecycle = :lifecycle WHERE id = :goalId")
     abstract override suspend fun updateLifecycle(goalId: Long, lifecycle: String): Int
 
-    /** Wipes every allocation event — only called by `DataMaintenanceRepositoryImpl` inside its
+    /** Whole-table reads for backup export. NOT part of [SavingsGoalDataSource]. */
+    @Query("SELECT * FROM savings_goals ORDER BY id")
+    abstract suspend fun listAllGoals(): List<SavingsGoalEntity>
+
+    @Query("SELECT * FROM savings_goal_allocation_events ORDER BY goalId, timestampEpochMs, id")
+    abstract suspend fun listAllAllocationEvents(): List<SavingsGoalAllocationEventEntity>
+
+    @Query("SELECT * FROM savings_goal_link_events ORDER BY goalId, timestampEpochMs, id")
+    abstract suspend fun listAllLinkEvents(): List<SavingsGoalLinkEventEntity>
+
+    /** Wipes every allocation event — only called by `clearFinancialTables` inside its
      *  FK-ordered clear-all transaction, BEFORE the goals themselves. NOT part of
      *  [SavingsGoalDataSource]: the destructive command reaches the concrete DAO directly. */
     @Query("DELETE FROM savings_goal_allocation_events")
     abstract suspend fun deleteAllAllocationEvents()
 
-    /** Wipes every link event — only called by `DataMaintenanceRepositoryImpl` inside its
+    /** Wipes every link event — only called by `clearFinancialTables` inside its
      *  FK-ordered clear-all transaction, BEFORE the goals themselves. */
     @Query("DELETE FROM savings_goal_link_events")
     abstract suspend fun deleteAllLinkEvents()
 
-    /** Wipes every goal — only called by `DataMaintenanceRepositoryImpl` inside its FK-ordered
+    /** Wipes every goal — only called by `clearFinancialTables` inside its FK-ordered
      *  clear-all transaction, AFTER both event tables and BEFORE the linked assets. */
     @Query("DELETE FROM savings_goals")
     abstract suspend fun deleteAllGoals()

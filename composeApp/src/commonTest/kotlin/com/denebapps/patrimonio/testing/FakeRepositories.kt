@@ -20,6 +20,7 @@ import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
 import com.denebapps.patrimonio.domain.model.YearMonth
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
+import com.denebapps.patrimonio.domain.repository.BackupRepository
 import com.denebapps.patrimonio.domain.repository.CreateSavingsGoal
 import com.denebapps.patrimonio.domain.repository.DataMaintenanceRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
@@ -69,6 +70,26 @@ class FakePreferencesRepository(
 
     override suspend fun setLastName(value: String) {
         lastNameBacking.value = value
+    }
+}
+
+/** In-memory [BackupRepository] fake: [exportJson] returns [exported], [importJson] records the
+ *  payload; [failure] makes both throw. [gate] holds an in-flight call open. */
+class FakeBackupRepository(var exported: String = "{}") : BackupRepository {
+    val imported = mutableListOf<String>()
+    var failure: Throwable? = null
+    var gate: CompletableDeferred<Unit>? = null
+
+    override suspend fun exportJson(): String {
+        gate?.await()
+        failure?.let { throw it }
+        return exported
+    }
+
+    override suspend fun importJson(json: String) {
+        gate?.await()
+        failure?.let { throw it }
+        imported += json
     }
 }
 

@@ -12,6 +12,9 @@ interface NetWorthDao {
     @Query("SELECT * FROM net_worth_snapshots ORDER BY yearMonth")
     fun observeAll(): Flow<List<NetWorthSnapshotEntity>>
 
+    @Query("SELECT * FROM net_worth_snapshots ORDER BY yearMonth")
+    suspend fun list(): List<NetWorthSnapshotEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(snapshot: NetWorthSnapshotEntity)
 
@@ -23,7 +26,7 @@ interface NetWorthDao {
     @Query("SELECT * FROM net_worth_snapshots WHERE yearMonth < :yearMonth ORDER BY yearMonth DESC LIMIT 1")
     suspend fun findMostRecentBefore(yearMonth: String): NetWorthSnapshotEntity?
 
-    /** Wipes the whole table — only called by `DataMaintenanceRepositoryImpl` inside its FK-ordered
+    /** Wipes the whole table — only called by `clearFinancialTables` inside its FK-ordered
      *  clear-all transaction. */
     @Query("DELETE FROM net_worth_snapshots")
     suspend fun deleteAll()

@@ -46,6 +46,10 @@ import com.denebapps.patrimonio.ui.components.SettingsSection
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 import com.denebapps.patrimonio.ui.theme.LocalAppShapes
+import io.github.vinceglb.filekit.dialogs.compose.rememberFilePickerLauncher
+import io.github.vinceglb.filekit.dialogs.compose.rememberFileSaverLauncher
+import io.github.vinceglb.filekit.readString
+import io.github.vinceglb.filekit.writeString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -54,12 +58,30 @@ fun SettingsScreen(
     onOpenProfile: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = koinViewModel(),
+    backupViewModel: BackupViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
+    val backupStatus by backupViewModel.status.collectAsState()
+
+    // FileKit hands back a platform file handle (SAF Uri / NSURL); the ViewModel only ever sees
+    // the read/write lambdas. A null result means the user cancelled the dialog.
+    val exportLauncher = rememberFileSaverLauncher { file ->
+        file?.let { destination -> backupViewModel.onExportDestinationChosen { json -> destination.writeString(json) } }
+    }
+    // No extension filter: some Android document providers report .json as octet-stream and
+    // would grey the file out. The content is validated on import anyway.
+    val importLauncher = rememberFilePickerLauncher { file ->
+        file?.let { source -> backupViewModel.onImportFileChosen { source.readString() } }
+    }
+
     SettingsContent(
         state = state,
+        backupStatus = backupStatus,
         onOpenProfile = onOpenProfile,
         onThemeModeSelect = viewModel::onThemeModeSelect,
+        onExport = { exportLauncher.launch(suggestedName = backupViewModel.suggestedFileName(), extension = "json") },
+        onConfirmImport = { importLauncher.launch() },
+        onBackupResultConsumed = backupViewModel::onResultConsumed,
         onConfirmDeleteAll = viewModel::onConfirmDeleteAll,
         onClearDataResultConsumed = viewModel::onClearDataResultConsumed,
         modifier = modifier,
@@ -69,14 +91,20 @@ fun SettingsScreen(
 @Composable
 private fun SettingsContent(
     state: SettingsUiState,
+    backupStatus: BackupStatus,
     onOpenProfile: () -> Unit,
     onThemeModeSelect: (ThemeMode) -> Unit,
+    onExport: () -> Unit,
+    onConfirmImport: () -> Unit,
+    onBackupResultConsumed: () -> Unit,
     onConfirmDeleteAll: () -> Unit,
     onClearDataResultConsumed: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAppColors.current
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
+    var showImportDialog by rememberSaveable { mutableStateOf(false) }
+    val backupBusy = backupStatus == BackupStatus.InProgress
 
     LaunchedEffect(state.clearDataStatus) {
         if (state.clearDataStatus == ClearDataStatus.SUCCEEDED) {
@@ -103,6 +131,18 @@ private fun SettingsContent(
             SettingsSection(title = "Datos", modifier = Modifier.padding(top = 12.dp))
             SettingsCard {
                 SettingsRow(
+                    title = "Exportar copia",
+                    subtitle = "Guarda todos tus datos en un archivo JSON",
+                    leading = { SettingsIcon(AppIcons.download) },
+                    onClick = { if (!backupBusy) onExport() },
+                )
+                SettingsRow(
+                    title = "Importar copia",
+                    subtitle = "Reemplaza tus datos por los de un archivo",
+                    leading = { SettingsIcon(AppIcons.upload) },
+                    onClick = { if (!backupBusy) showImportDialog = true },
+                )
+                SettingsRow(
                     title = "Borrar todos los datos",
                     leading = { SettingsIcon(AppIcons.trash, danger = true) },
                     onClick = { showDeleteDialog = true },
@@ -122,7 +162,7 @@ private fun SettingsContent(
                 )
             }
             Text(
-                text = "Tus datos viven solo en este dispositivo.",
+                text = "Tus datos viven solo en este dispositivo. Exporta una copia de vez en cuando.",
                 color = colors.muted2,
                 fontSize = 11.sp,
                 letterSpacing = 0.04.sp,
@@ -132,6 +172,36 @@ private fun SettingsContent(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+
+    if (showImportDialog) {
+        AlertDialog(
+            onDismissRequest = { showImportDialog = false },
+            title = { Text("Importar copia") },
+            text = {
+                Text(
+                    "Todos tus datos actuales se reemplazarán por los del archivo. " +
+                        "Si no tienes una copia de lo que hay ahora, expórtala antes.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showImportDialog = false
+                        onConfirmImport()
+                    },
+                ) {
+                    Text("Elegir archivo", color = colors.expense)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImportDialog = false }) {
+                    Text("Cancelar")
+                }
+            },
+        )
+    }
+
+    BackupResultDialog(status = backupStatus, onDismiss = onBackupResultConsumed)
 
     if (showDeleteDialog) {
         val clearingInProgress = state.clearDataStatus == ClearDataStatus.IN_PROGRESS
@@ -177,6 +247,24 @@ private fun SettingsContent(
             },
         )
     }
+}
+
+@Composable
+private fun BackupResultDialog(status: BackupStatus, onDismiss: () -> Unit) {
+    val (title, message) = when (status) {
+        BackupStatus.Idle, BackupStatus.InProgress -> return
+        BackupStatus.Exported -> "Copia exportada" to "Guarda el archivo en un sitio seguro (Drive, iCloud Drive…)."
+        BackupStatus.Imported -> "Copia importada" to "Tus datos se han restaurado desde el archivo."
+        is BackupStatus.Failed -> "Algo ha fallado" to status.message
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(message) },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Aceptar") }
+        },
+    )
 }
 
 @Composable

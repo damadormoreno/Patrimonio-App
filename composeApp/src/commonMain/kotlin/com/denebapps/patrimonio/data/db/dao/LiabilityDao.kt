@@ -25,7 +25,7 @@ interface LiabilityDao {
     @Query("DELETE FROM liabilities WHERE id = :id")
     suspend fun deleteById(id: String)
 
-    /** Wipes the whole table — only called by `DataMaintenanceRepositoryImpl` inside its FK-ordered
+    /** Wipes the whole table — only called by `clearFinancialTables` inside its FK-ordered
      *  clear-all transaction. */
     @Query("DELETE FROM liabilities")
     suspend fun deleteAll()
