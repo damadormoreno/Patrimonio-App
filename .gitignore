@@ -1,0 +1,27 @@
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Kotlin / KMP
+.kotlin/
+
+# Local config (SDK path, secrets)
+local.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Xcode / iOS
+iosApp/iosApp.xcodeproj/xcuserdata/
+iosApp/iosApp.xcodeproj/project.xcworkspace/xcuserdata/
+Pods/
+*.xcworkspace/xcuserdata/
+
+# macOS
+.DS_Store
+
+# Claude Code local
+.claude/settings.local.json

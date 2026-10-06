@@ -1,0 +1,372 @@
+package com.denebapps.patrimonio.testing
+
+import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalAdd
+import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalNegate
+import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalProgress
+import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalSubtract
+import com.denebapps.patrimonio.domain.calc.savingsGoalCancellationDelta
+import com.denebapps.patrimonio.domain.model.AccountGroup
+import com.denebapps.patrimonio.domain.model.Asset
+import com.denebapps.patrimonio.domain.model.Currency
+import com.denebapps.patrimonio.domain.model.FxRates
+import com.denebapps.patrimonio.domain.model.Liability
+import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.NetWorthSnapshot
+import com.denebapps.patrimonio.domain.model.SavingsGoal
+import com.denebapps.patrimonio.domain.model.SavingsGoalAllocationEvent
+import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
+import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEvent
+import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
+import com.denebapps.patrimonio.domain.model.YearMonth
+import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
+import com.denebapps.patrimonio.domain.repository.AssetRepository
+import com.denebapps.patrimonio.domain.repository.CreateSavingsGoal
+import com.denebapps.patrimonio.domain.repository.DataMaintenanceRepository
+import com.denebapps.patrimonio.domain.repository.FxRepository
+import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalDeltaException
+import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalNameException
+import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalTargetException
+import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalTransitionException
+import com.denebapps.patrimonio.domain.repository.LiabilityRepository
+import com.denebapps.patrimonio.domain.repository.NegativeSavingsGoalProgressException
+import com.denebapps.patrimonio.domain.repository.NetWorthRepository
+import com.denebapps.patrimonio.domain.repository.PreferencesRepository
+import com.denebapps.patrimonio.domain.repository.SavingsGoalAssetNotFoundException
+import com.denebapps.patrimonio.domain.repository.SavingsGoalCurrencyMismatchException
+import com.denebapps.patrimonio.domain.repository.SavingsGoalNotFoundException
+import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
+import com.denebapps.patrimonio.domain.repository.TerminalSavingsGoalException
+import com.denebapps.patrimonio.domain.repository.ThemeMode
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+
+/** `MutableStateFlow`-backed preferences fake for root and settings ViewModel tests. */
+class FakePreferencesRepository(
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    firstName: String = "",
+    lastName: String = "",
+) : PreferencesRepository {
+    private val themeModeBacking = MutableStateFlow(themeMode)
+    private val firstNameBacking = MutableStateFlow(firstName)
+    private val lastNameBacking = MutableStateFlow(lastName)
+
+    override fun observeThemeMode(): StateFlow<ThemeMode> = themeModeBacking
+
+    override suspend fun setThemeMode(mode: ThemeMode) {
+        themeModeBacking.value = mode
+    }
+
+    override fun observeFirstName(): StateFlow<String> = firstNameBacking
+
+    override suspend fun setFirstName(value: String) {
+        firstNameBacking.value = value
+    }
+
+    override fun observeLastName(): StateFlow<String> = lastNameBacking
+
+    override suspend fun setLastName(value: String) {
+        lastNameBacking.value = value
+    }
+}
+
+/**
+ * Invocation-recording [DataMaintenanceRepository] fake. [gate] holds an in-flight clear open so
+ * tests can observe the ViewModel's progress flag and re-entrancy guard mid-command.
+ */
+class FakeDataMaintenanceRepository : DataMaintenanceRepository {
+    var clearCalls = 0
+        private set
+    var gate: CompletableDeferred<Unit>? = null
+    var clearFailure: Throwable? = null
+
+    override suspend fun clearAllFinancialData() {
+        clearCalls++
+        gate?.await()
+        clearFailure?.let { throw it }
+    }
+}
+
+/** `MutableStateFlow`-backed [FxRepository] fake; [refreshIfStale] is a no-op. */
+class FakeFxRepository(initial: FxRates = FxRates(emptyMap())) : FxRepository {
+    private val backing = MutableStateFlow(initial)
+
+    override fun observeRates(): Flow<FxRates> = backing
+
+    override suspend fun refreshIfStale() {
+        // No-op: tests control rates directly via emit()/the constructor.
+    }
+
+    fun emit(rates: FxRates) {
+        backing.value = rates
+    }
+}
+
+/** `MutableStateFlow`-backed [AssetRepository] fake for ViewModel unit tests. */
+class FakeAssetRepository(initial: List<Asset> = emptyList()) : AssetRepository {
+    private val backing = MutableStateFlow(initial)
+
+    override fun observeAll(): Flow<List<Asset>> = backing
+
+    override suspend fun list(): List<Asset> = backing.value
+
+    override suspend fun insert(asset: Asset) {
+        backing.value = backing.value + asset
+    }
+
+    override suspend fun update(asset: Asset) {
+        backing.value = backing.value.map { if (it.id == asset.id) asset else it }
+    }
+
+    override suspend fun deleteById(id: String) {
+        backing.value = backing.value.filterNot { it.id == id }
+    }
+
+    fun emit(assets: List<Asset>) {
+        backing.value = assets
+    }
+}
+
+/** `MutableStateFlow`-backed [LiabilityRepository] fake for ViewModel unit tests. */
+class FakeLiabilityRepository(initial: List<Liability> = emptyList()) : LiabilityRepository {
+    private val backing = MutableStateFlow(initial)
+
+    override fun observeAll(): Flow<List<Liability>> = backing
+
+    override suspend fun list(): List<Liability> = backing.value
+
+    override suspend fun insert(liability: Liability) {
+        backing.value = backing.value + liability
+    }
+
+    override suspend fun update(liability: Liability) {
+        backing.value = backing.value.map { if (it.id == liability.id) liability else it }
+    }
+
+    override suspend fun deleteById(id: String) {
+        backing.value = backing.value.filterNot { it.id == id }
+    }
+
+    fun emit(liabilities: List<Liability>) {
+        backing.value = liabilities
+    }
+}
+
+/** `MutableStateFlow`-backed [NetWorthRepository] fake for ViewModel unit tests. */
+class FakeNetWorthRepository(initial: List<NetWorthSnapshot> = emptyList()) : NetWorthRepository {
+    private val backing = MutableStateFlow(initial)
+
+    override fun observeSnapshots(): Flow<List<NetWorthSnapshot>> = backing
+
+    override suspend fun findMostRecentBefore(yearMonth: YearMonth): NetWorthSnapshot? =
+        backing.value.filter { it.yearMonth < yearMonth }.maxByOrNull { it.yearMonth }
+
+    fun emit(snapshots: List<NetWorthSnapshot>) {
+        backing.value = snapshots
+    }
+}
+
+/** `MutableStateFlow`-backed [AccountGroupRepository] fake for ViewModel unit tests. */
+class FakeAccountGroupRepository(initial: List<AccountGroup> = emptyList()) : AccountGroupRepository {
+    private val backing = MutableStateFlow(initial)
+
+    override fun observeAll(): Flow<List<AccountGroup>> = backing
+
+    override suspend fun insertGroup(group: AccountGroup) {
+        backing.value = backing.value + group
+    }
+
+    override suspend fun setMembers(groupId: String, assetIds: Set<String>) {
+        backing.value = backing.value.map { if (it.id == groupId) it.copy(memberAssetIds = assetIds) else it }
+    }
+
+    override suspend fun deleteGroup(id: String) {
+        backing.value = backing.value.filterNot { it.id == id }
+    }
+
+    fun emit(groups: List<AccountGroup>) {
+        backing.value = groups
+    }
+}
+
+/**
+ * `MutableStateFlow`-backed [SavingsGoalRepository] fake for ViewModel unit tests. Mirrors
+ * [com.denebapps.patrimonio.data.repository.SavingsGoalRepositoryImpl]'s validation/atomicity by
+ * reusing the SAME `domain/calc` checked-ledger functions ([checkedSavingsGoalAdd],
+ * [checkedSavingsGoalSubtract], [checkedSavingsGoalProgress], [savingsGoalCancellationDelta]) rather
+ * than reimplementing them — a rejected command never mutates [backing] (single atomic
+ * `MutableStateFlow.value` assignment happens only after every check passes). [assetCurrencyById]
+ * stands in for the real repo's `AssetDao` lookup used by the currency-compatibility check on
+ * link/create.
+ */
+class FakeSavingsGoalRepository(
+    initial: List<SavingsGoal> = emptyList(),
+    private val assetCurrencyById: Map<String, Currency> = emptyMap(),
+) : SavingsGoalRepository {
+    private val backing = MutableStateFlow(initial)
+
+    // Seeds one synthetic allocation event per non-zero-progress initial goal so the checked-ledger
+    // functions (which derive progress SOLELY from events) stay consistent with the goal's declared
+    // [SavingsGoal.progress] — without this, the first allocate/withdraw/cancel on a fixture goal
+    // would silently ignore its pre-existing progress.
+    private val eventsBacking = MutableStateFlow(
+        initial.filter { it.progress != Money.ZERO }.associate { goal ->
+            goal.id to listOf(
+                SavingsGoalAllocationEvent(
+                    id = -goal.id,
+                    goalId = goal.id,
+                    delta = goal.progress,
+                    timestampEpochMs = 0L,
+                ),
+            )
+        },
+    )
+    private val linkEventsBacking = MutableStateFlow<Map<Long, List<SavingsGoalLinkEvent>>>(emptyMap())
+    private var nextGoalId = (initial.maxOfOrNull { it.id } ?: 0L) + 1
+    private var nextEventId = 1L
+
+    override fun observeAll(): Flow<List<SavingsGoal>> = backing
+
+    override fun observeAllocationHistory(goalId: Long): Flow<List<SavingsGoalAllocationEvent>> =
+        eventsBacking.map { it[goalId].orEmpty() }
+
+    override fun observeLinkHistory(goalId: Long): Flow<List<SavingsGoalLinkEvent>> =
+        linkEventsBacking.map { it[goalId].orEmpty() }
+
+    override suspend fun create(command: CreateSavingsGoal): Long {
+        if (command.name.isEmpty() || command.name != command.name.trim()) {
+            throw InvalidSavingsGoalNameException(command.name)
+        }
+        if (command.target.amount <= Money.ZERO) {
+            throw InvalidSavingsGoalTargetException(command.target.amount.minorUnits)
+        }
+        command.linkedAssetId?.let { requireCompatibleAsset(command.target.currency, it) }
+
+        val goalId = nextGoalId++
+        backing.value = backing.value + SavingsGoal(
+            id = goalId,
+            name = command.name,
+            target = command.target,
+            targetDate = command.targetDate,
+            linkedAssetId = command.linkedAssetId,
+            lifecycle = SavingsGoalLifecycle.OPEN,
+            progress = Money.ZERO,
+        )
+        command.linkedAssetId?.let { assetId ->
+            appendLinkEvent(goalId, fromAssetId = null, toAssetId = assetId, kind = SavingsGoalLinkEventKind.LINK)
+        }
+        return goalId
+    }
+
+    override suspend fun allocate(goalId: Long, amount: Money) {
+        requirePositiveDelta(amount)
+        requireOpenGoal(goalId)
+        checkedSavingsGoalAdd(progressOf(goalId), amount)
+        appendAllocationEvent(goalId, amount)
+    }
+
+    override suspend fun withdraw(goalId: Long, amount: Money) {
+        requirePositiveDelta(amount)
+        requireOpenGoal(goalId)
+        val updated = checkedSavingsGoalSubtract(progressOf(goalId), amount)
+        if (updated < Money.ZERO) throw NegativeSavingsGoalProgressException(updated.minorUnits)
+        appendAllocationEvent(goalId, checkedSavingsGoalNegate(amount))
+    }
+
+    override suspend fun link(goalId: Long, assetId: String) {
+        val goal = requireOpenGoal(goalId)
+        if (goal.linkedAssetId != null) throw InvalidSavingsGoalTransitionException(goalId, "link")
+        requireCompatibleAsset(goal.target.currency, assetId)
+        setLinkedAsset(goalId, assetId)
+        appendLinkEvent(goalId, null, assetId, SavingsGoalLinkEventKind.LINK)
+    }
+
+    override suspend fun relink(goalId: Long, assetId: String) {
+        val goal = requireOpenGoal(goalId)
+        val previous = goal.linkedAssetId ?: throw InvalidSavingsGoalTransitionException(goalId, "relink")
+        if (previous == assetId) throw InvalidSavingsGoalTransitionException(goalId, "relink")
+        requireCompatibleAsset(goal.target.currency, assetId)
+        setLinkedAsset(goalId, assetId)
+        appendLinkEvent(goalId, previous, assetId, SavingsGoalLinkEventKind.RELINK)
+    }
+
+    override suspend fun unlink(goalId: Long) {
+        val goal = requireOpenGoal(goalId)
+        val previous = goal.linkedAssetId ?: throw InvalidSavingsGoalTransitionException(goalId, "unlink")
+        setLinkedAsset(goalId, null)
+        appendLinkEvent(goalId, previous, null, SavingsGoalLinkEventKind.UNLINK)
+    }
+
+    override suspend fun close(goalId: Long) {
+        requireOpenGoal(goalId)
+        setLifecycle(goalId, SavingsGoalLifecycle.CLOSED)
+    }
+
+    override suspend fun cancel(goalId: Long) {
+        requireOpenGoal(goalId)
+        savingsGoalCancellationDelta(progressOf(goalId))?.let { delta -> appendAllocationEvent(goalId, delta) }
+        setLifecycle(goalId, SavingsGoalLifecycle.CANCELLED)
+    }
+
+    /** Test-only helper: simulates a live repository update (another writer) without validation. */
+    fun emit(goals: List<SavingsGoal>) {
+        backing.value = goals
+    }
+
+    private fun progressOf(goalId: Long): Money = checkedSavingsGoalProgress(eventsBacking.value[goalId].orEmpty())
+
+    private fun requireOpenGoal(goalId: Long): SavingsGoal {
+        val goal = backing.value.firstOrNull { it.id == goalId } ?: throw SavingsGoalNotFoundException(goalId)
+        if (goal.lifecycle != SavingsGoalLifecycle.OPEN) throw TerminalSavingsGoalException(goalId, goal.lifecycle)
+        return goal
+    }
+
+    private fun requireCompatibleAsset(goalCurrency: Currency, assetId: String) {
+        val assetCurrency = assetCurrencyById[assetId] ?: throw SavingsGoalAssetNotFoundException(assetId)
+        if (assetCurrency != goalCurrency) throw SavingsGoalCurrencyMismatchException(goalCurrency, assetCurrency)
+    }
+
+    private fun requirePositiveDelta(amount: Money) {
+        if (amount <= Money.ZERO) throw InvalidSavingsGoalDeltaException(amount.minorUnits)
+    }
+
+    private fun appendAllocationEvent(goalId: Long, delta: Money) {
+        val event = SavingsGoalAllocationEvent(
+            id = nextEventId++,
+            goalId = goalId,
+            delta = delta,
+            timestampEpochMs = 0L,
+        )
+        eventsBacking.value = eventsBacking.value + (goalId to (eventsBacking.value[goalId].orEmpty() + event))
+        val progress = checkedSavingsGoalProgress(eventsBacking.value[goalId].orEmpty())
+        backing.value = backing.value.map { if (it.id == goalId) it.copy(progress = progress) else it }
+    }
+
+    private fun appendLinkEvent(
+        goalId: Long,
+        fromAssetId: String?,
+        toAssetId: String?,
+        kind: SavingsGoalLinkEventKind,
+    ) {
+        val event = SavingsGoalLinkEvent(
+            id = nextEventId++,
+            goalId = goalId,
+            fromAssetId = fromAssetId,
+            toAssetId = toAssetId,
+            kind = kind,
+            timestampEpochMs = 0L,
+        )
+        val goalEvents = linkEventsBacking.value[goalId].orEmpty() + event
+        linkEventsBacking.value = linkEventsBacking.value + (goalId to goalEvents)
+    }
+
+    private fun setLinkedAsset(goalId: Long, assetId: String?) {
+        backing.value = backing.value.map { if (it.id == goalId) it.copy(linkedAssetId = assetId) else it }
+    }
+
+    private fun setLifecycle(goalId: Long, lifecycle: SavingsGoalLifecycle) {
+        backing.value = backing.value.map { if (it.id == goalId) it.copy(lifecycle = lifecycle) else it }
+    }
+}

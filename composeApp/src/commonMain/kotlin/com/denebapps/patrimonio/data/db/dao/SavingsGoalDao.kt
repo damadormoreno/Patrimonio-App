@@ -1,0 +1,133 @@
+package com.denebapps.patrimonio.data.db.dao
+
+import androidx.room.Dao
+import androidx.room.Embedded
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Relation
+import androidx.room.Transaction
+import com.denebapps.patrimonio.data.db.entity.AssetEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+
+data class SavingsGoalRelationRow(
+    @Embedded val goal: SavingsGoalEntity,
+    @Relation(parentColumn = "id", entityColumn = "goalId")
+    val allocationEvents: List<SavingsGoalAllocationEventEntity>,
+    @Relation(parentColumn = "id", entityColumn = "goalId")
+    val linkEvents: List<SavingsGoalLinkEventEntity>,
+    @Relation(parentColumn = "linkedAssetId", entityColumn = "id")
+    val currentAsset: AssetEntity?,
+)
+
+data class SavingsGoalRelations(
+    val goal: SavingsGoalEntity,
+    val allocationEvents: List<SavingsGoalAllocationEventEntity>,
+    val linkEvents: List<SavingsGoalLinkEventEntity>,
+    val currentAsset: AssetEntity?,
+)
+
+interface SavingsGoalDataSource {
+    fun observeAll(): Flow<List<SavingsGoalRelations>>
+
+    fun observeAllocationHistory(goalId: Long): Flow<List<SavingsGoalAllocationEventEntity>>
+
+    fun observeLinkHistory(goalId: Long): Flow<List<SavingsGoalLinkEventEntity>>
+
+    suspend fun listAllocationHistory(goalId: Long): List<SavingsGoalAllocationEventEntity>
+
+    suspend fun findGoal(goalId: Long): SavingsGoalEntity?
+
+    suspend fun listGoalsLinkedToAsset(assetId: String): List<SavingsGoalEntity>
+
+    suspend fun insertGoal(goal: SavingsGoalEntity): Long
+
+    suspend fun insertAllocationEvent(event: SavingsGoalAllocationEventEntity): Long
+
+    suspend fun insertLinkEvent(event: SavingsGoalLinkEventEntity): Long
+
+    suspend fun updateLinkedAsset(goalId: Long, linkedAssetId: String?): Int
+
+    suspend fun clearLinkedAsset(assetId: String): Int
+
+    suspend fun updateLifecycle(goalId: Long, lifecycle: String): Int
+}
+
+@Dao
+abstract class SavingsGoalDao : SavingsGoalDataSource {
+    @Transaction
+    @Query("SELECT * FROM savings_goals ORDER BY id")
+    protected abstract fun observeRelationRows(): Flow<List<SavingsGoalRelationRow>>
+
+    override fun observeAll(): Flow<List<SavingsGoalRelations>> =
+        observeRelationRows().map { rows -> rows.map(SavingsGoalRelationRow::toOrderedRelations) }
+
+    @Query(
+        "SELECT * FROM savings_goal_allocation_events " +
+            "WHERE goalId = :goalId ORDER BY timestampEpochMs, id",
+    )
+    abstract override fun observeAllocationHistory(goalId: Long): Flow<List<SavingsGoalAllocationEventEntity>>
+
+    @Query(
+        "SELECT * FROM savings_goal_allocation_events " +
+            "WHERE goalId = :goalId ORDER BY timestampEpochMs, id",
+    )
+    abstract override suspend fun listAllocationHistory(goalId: Long): List<SavingsGoalAllocationEventEntity>
+
+    @Query(
+        "SELECT * FROM savings_goal_link_events " +
+            "WHERE goalId = :goalId ORDER BY timestampEpochMs, id",
+    )
+    abstract override fun observeLinkHistory(goalId: Long): Flow<List<SavingsGoalLinkEventEntity>>
+
+    @Query("SELECT * FROM savings_goals WHERE id = :goalId")
+    abstract override suspend fun findGoal(goalId: Long): SavingsGoalEntity?
+
+    @Query("SELECT * FROM savings_goals WHERE linkedAssetId = :assetId ORDER BY id")
+    abstract override suspend fun listGoalsLinkedToAsset(assetId: String): List<SavingsGoalEntity>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract override suspend fun insertGoal(goal: SavingsGoalEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract override suspend fun insertAllocationEvent(event: SavingsGoalAllocationEventEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract override suspend fun insertLinkEvent(event: SavingsGoalLinkEventEntity): Long
+
+    @Query("UPDATE savings_goals SET linkedAssetId = :linkedAssetId WHERE id = :goalId")
+    abstract override suspend fun updateLinkedAsset(goalId: Long, linkedAssetId: String?): Int
+
+    @Query("UPDATE savings_goals SET linkedAssetId = NULL WHERE linkedAssetId = :assetId")
+    abstract override suspend fun clearLinkedAsset(assetId: String): Int
+
+    @Query("UPDATE savings_goals SET lifecycle = :lifecycle WHERE id = :goalId")
+    abstract override suspend fun updateLifecycle(goalId: Long, lifecycle: String): Int
+
+    /** Wipes every allocation event — only called by `DataMaintenanceRepositoryImpl` inside its
+     *  FK-ordered clear-all transaction, BEFORE the goals themselves. NOT part of
+     *  [SavingsGoalDataSource]: the destructive command reaches the concrete DAO directly. */
+    @Query("DELETE FROM savings_goal_allocation_events")
+    abstract suspend fun deleteAllAllocationEvents()
+
+    /** Wipes every link event — only called by `DataMaintenanceRepositoryImpl` inside its
+     *  FK-ordered clear-all transaction, BEFORE the goals themselves. */
+    @Query("DELETE FROM savings_goal_link_events")
+    abstract suspend fun deleteAllLinkEvents()
+
+    /** Wipes every goal — only called by `DataMaintenanceRepositoryImpl` inside its FK-ordered
+     *  clear-all transaction, AFTER both event tables and BEFORE the linked assets. */
+    @Query("DELETE FROM savings_goals")
+    abstract suspend fun deleteAllGoals()
+}
+
+private fun SavingsGoalRelationRow.toOrderedRelations() = SavingsGoalRelations(
+    goal = goal,
+    allocationEvents = allocationEvents.sortedWith(compareBy({ it.timestampEpochMs }, { it.id })),
+    linkEvents = linkEvents.sortedWith(compareBy({ it.timestampEpochMs }, { it.id })),
+    currentAsset = currentAsset,
+)

@@ -1,0 +1,3 @@
+<resources>
+    <string name="delete_data_failure_message">No se pudieron borrar los datos. Inténtalo de nuevo.</string>
+</resources>

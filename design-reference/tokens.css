@@ -1,0 +1,92 @@
+/* ============================================================
+   App Finanzas · Tokens (extraído del sistema de diseño v1)
+   ============================================================ */
+
+:root {
+  /* Color — modo claro */
+  --bg:            #F2ECE0;
+  --bg-2:          #EDE5D5;
+  --surface:       #FBF7EE;
+  --surface-2:     #FFFFFF;
+  --ink:           #1C1814;
+  --ink-2:         #3A332B;
+  --muted:         #6E6557;
+  --muted-2:       #8E8675;
+  --line:          rgba(28,24,20,0.10);
+  --line-2:        rgba(28,24,20,0.06);
+
+  --brand:         #6B5836;
+  --brand-ink:     #FBF7EE;
+  --brand-soft:    #E8DEC8;
+
+  --income:        #4F6F5C;
+  --income-soft:   #DCE7DF;
+  --expense:       #9E5A48;
+  --expense-soft:  #ECDAD2;
+  --alert:         #B0832B;
+  --alert-soft:    #EFE2BF;
+  --info:          #3E5A6E;
+  --info-soft:     #D8E1E8;
+
+  /* Categorías (mismos tonos del sistema) */
+  --cat-food:      #B07E55;
+  --cat-rest:      #9E5A48;
+  --cat-home:      #7C8A6E;
+  --cat-trans:     #6F8AAB;
+  --cat-fun:       #B59A55;
+  --cat-subs:      #8A6E9A;
+  --cat-salary:    #4F6F5C;
+  --cat-other:     #8E8675;
+
+  /* Tipografía */
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Instrument Serif", "Manrope", serif;
+
+  /* Radios */
+  --r-xs: 6px; --r-sm: 10px; --r-md: 14px;
+  --r-lg: 20px; --r-xl: 28px; --r-full: 999px;
+
+  /* Sombras */
+  --sh-1: 0 1px 2px rgba(28,24,20,0.04);
+  --sh-2: 0 6px 18px -8px rgba(28,24,20,0.16), 0 2px 4px rgba(28,24,20,0.04);
+  --sh-3: 0 18px 40px -16px rgba(28,24,20,0.22), 0 4px 10px rgba(28,24,20,0.06);
+}
+
+[data-theme="dark"] {
+  --bg:            #14110D;
+  --bg-2:          #1A1612;
+  --surface:       #1F1B16;
+  --surface-2:     #28231D;
+  --ink:           #F2ECE0;
+  --ink-2:         #D6CDB9;
+  --muted:         #9B927E;
+  --muted-2:       #756C5B;
+  --line:          rgba(242,236,224,0.10);
+  --line-2:        rgba(242,236,224,0.06);
+
+  --brand:         #C9A876;
+  --brand-ink:     #14110D;
+  --brand-soft:    #3A3022;
+
+  --income:        #87B395;
+  --income-soft:   #2A3C32;
+  --expense:       #D0907E;
+  --expense-soft:  #3D2A24;
+  --alert:         #E0B570;
+  --alert-soft:    #3A2F1A;
+  --info:          #8FAFC4;
+  --info-soft:     #25323D;
+
+  --cat-food:      #C99A76;
+  --cat-rest:      #D0907E;
+  --cat-home:      #9DAE8C;
+  --cat-trans:     #95B0C9;
+  --cat-fun:       #D6B978;
+  --cat-subs:      #B08FBE;
+  --cat-salary:    #87B395;
+  --cat-other:     #A89F8E;
+
+  --sh-1: 0 1px 2px rgba(0,0,0,0.4);
+  --sh-2: 0 6px 18px -8px rgba(0,0,0,0.6), 0 2px 4px rgba(0,0,0,0.3);
+  --sh-3: 0 18px 40px -16px rgba(0,0,0,0.7), 0 4px 10px rgba(0,0,0,0.35);
+}
