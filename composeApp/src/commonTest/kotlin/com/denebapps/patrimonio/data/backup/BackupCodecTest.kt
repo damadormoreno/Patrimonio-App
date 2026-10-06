@@ -196,8 +196,7 @@ class BackupCodecTest {
 
     @Test
     fun `invalid subscriptions are rejected`() {
-        fun reasonForSubscription(changed: SubscriptionBackup) =
-            reasonFor(full.copy(subscriptions = listOf(changed)))
+        fun reasonForSubscription(changed: SubscriptionBackup) = reasonFor(full.copy(subscriptions = listOf(changed)))
 
         assertTrue("periodicidad" in reasonForSubscription(subscription.copy(cycle = "DAILY")))
         assertTrue("divisa" in reasonForSubscription(subscription.copy(currency = "CHF")))

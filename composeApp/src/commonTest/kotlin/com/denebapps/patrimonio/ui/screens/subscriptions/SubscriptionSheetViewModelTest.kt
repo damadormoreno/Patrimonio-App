@@ -62,8 +62,7 @@ class SubscriptionSheetViewModelTest {
         idProvider = { "new-id" },
     )
 
-    private fun TestScope.collect(viewModel: SubscriptionSheetViewModel) =
-        launch { viewModel.state.collect {} }
+    private fun TestScope.collect(viewModel: SubscriptionSheetViewModel) = launch { viewModel.state.collect {} }
 
     @Test
     fun `a new subscription starts monthly in EUR charged today`() = runTest(dispatcher) {

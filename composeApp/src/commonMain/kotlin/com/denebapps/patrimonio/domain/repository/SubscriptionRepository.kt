@@ -11,7 +11,10 @@ interface SubscriptionRepository {
     /** @throws InvalidSubscriptionException when the name is blank/untrimmed or the amount is not positive. */
     suspend fun insert(subscription: Subscription)
 
-    /** @throws InvalidSubscriptionException as [insert]; @throws SubscriptionNotFoundException if [Subscription.id] is gone. */
+    /**
+     * @throws InvalidSubscriptionException as [insert].
+     * @throws SubscriptionNotFoundException if [Subscription.id] no longer exists.
+     */
     suspend fun update(subscription: Subscription)
 
     suspend fun deleteById(id: String)
