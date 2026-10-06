@@ -23,10 +23,20 @@ interface SavingsGoalRepository {
 
     suspend fun withdraw(goalId: Long, amount: Money)
 
+    /** Links an unlinked goal to an asset of the goal's currency. */
     suspend fun link(goalId: Long, assetId: String)
 
+    /** Links an unlinked goal to a persisted account group (any currency mix). The builtin
+     *  "all accounts" group is not linkable. */
+    suspend fun linkToGroup(goalId: Long, groupId: String)
+
+    /** Moves an already-linked goal (to an asset or a group) to another asset of its currency. */
     suspend fun relink(goalId: Long, assetId: String)
 
+    /** Moves an already-linked goal (to an asset or a group) to another persisted account group. */
+    suspend fun relinkToGroup(goalId: Long, groupId: String)
+
+    /** Removes the current link, whether it targets an asset or a group. */
     suspend fun unlink(goalId: Long)
 
     suspend fun close(goalId: Long)
@@ -39,7 +49,14 @@ data class CreateSavingsGoal(
     val target: CurrencyAmount,
     val targetDate: LocalDate? = null,
     val linkedAssetId: String? = null,
-)
+    val linkedGroupId: String? = null,
+) {
+    init {
+        require(linkedAssetId == null || linkedGroupId == null) {
+            "A savings goal cannot be linked to an asset and a group at the same time"
+        }
+    }
+}
 
 class InvalidSavingsGoalNameException(name: String) :
     IllegalArgumentException("Savings goal name must be trimmed and non-empty, was '$name'")
@@ -64,6 +81,12 @@ class SavingsGoalNotFoundException(goalId: Long) :
 
 class SavingsGoalAssetNotFoundException(assetId: String) :
     NoSuchElementException("Savings goal asset '$assetId' was not found")
+
+class SavingsGoalGroupNotFoundException(groupId: String) :
+    NoSuchElementException("Savings goal group '$groupId' was not found")
+
+class SavingsGoalBuiltinGroupException :
+    IllegalArgumentException("The builtin all-accounts group cannot be linked to a savings goal")
 
 class TerminalSavingsGoalException(goalId: Long, lifecycle: SavingsGoalLifecycle) :
     IllegalStateException("Savings goal $goalId is terminal: $lifecycle")

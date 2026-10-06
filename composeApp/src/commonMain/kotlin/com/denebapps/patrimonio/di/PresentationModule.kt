@@ -57,6 +57,8 @@ val presentationModule = module {
         SavingsGoalsViewModel(
             savingsGoalRepository = get(),
             assetRepository = get(),
+            accountGroupRepository = get(),
+            fxRepository = get(),
             initialGoalId = params.getOrNull(),
             initialWithdraw = params.getOrNull() ?: false,
         )

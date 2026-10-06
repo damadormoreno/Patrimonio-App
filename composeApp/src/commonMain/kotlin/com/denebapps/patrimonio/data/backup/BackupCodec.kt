@@ -19,13 +19,16 @@ import kotlinx.serialization.json.jsonObject
 /**
  * Pure JSON <-> [BackupDocument] codec. [decode] checks the envelope (format + version) before
  * decoding the body, then validates the same invariants the database and the domain enforce
- * (enum names, currency codes, unique ids, foreign keys, savings-goal ledger rules), so a
+ * (enum names, currency codes, unique ids, foreign keys, savings-goal ledger and link rules), so a
  * hand-edited or corrupted file is rejected with a readable reason instead of failing half-way
  * through an import or crashing a later read.
+ *
+ * Writes [VERSION] (2). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
+ * group-link fields, which default to null.
  */
 object BackupCodec {
     const val FORMAT = "patrimonio-backup"
-    const val VERSION = 1
+    const val VERSION = 2
 
     private val json = Json {
         prettyPrint = true
@@ -123,6 +126,12 @@ private fun BackupDocument.validate() {
         }
         if (goal.linkedAssetId != null && goal.linkedAssetId !in assetIds) {
             invalid("La meta '${goal.name}' está vinculada a un activo que no existe.")
+        }
+        if (goal.linkedGroupId != null && goal.linkedGroupId !in groupIds) {
+            invalid("La meta '${goal.name}' está vinculada a un grupo que no existe.")
+        }
+        if (goal.linkedAssetId != null && goal.linkedGroupId != null) {
+            invalid("La meta '${goal.name}' está vinculada a un activo y a un grupo a la vez.")
         }
     }
 

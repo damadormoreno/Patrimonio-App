@@ -60,4 +60,44 @@ class FxConversionTest {
     fun `roundHalfEven handles negative numerators`() {
         assertEquals(-6172L, roundHalfEven(-6_172_500_000L, 1_000_000L))
     }
+
+    @Test
+    fun `convertTo is identity for the same currency without consulting rates`() {
+        val amount = CurrencyAmount(Money(12_345), Currency.USD)
+        assertEquals(Money(12_345), amount.convertTo(Currency.USD, FxRates(emptyMap())))
+    }
+
+    @Test
+    fun `convertTo EUR matches toEur`() {
+        val rates = FxRates(mapOf(Currency.USD to 920_000L))
+        val amount = CurrencyAmount(Money(10_000), Currency.USD)
+        assertEquals(amount.toEur(rates), amount.convertTo(Currency.EUR, rates))
+    }
+
+    @Test
+    fun `convertTo a foreign currency divides by the target rate`() {
+        val rates = FxRates(mapOf(Currency.USD to 920_000L)) // 1 USD = 0.92 EUR
+        val amount = CurrencyAmount(Money(9_200), Currency.EUR) // 92.00 EUR
+        assertEquals(Money(10_000), amount.convertTo(Currency.USD, rates)) // 100.00 USD
+    }
+
+    @Test
+    fun `convertTo crosses currencies through EUR`() {
+        val rates = FxRates(mapOf(Currency.USD to 920_000L, Currency.GBP to 1_150_000L))
+        val amount = CurrencyAmount(Money(10_000), Currency.USD) // 100.00 USD = 92.00 EUR
+        assertEquals(Money(8_000), amount.convertTo(Currency.GBP, rates)) // 80.00 GBP
+    }
+
+    @Test
+    fun `convertTo a zero-decimal currency applies the minor-unit scale factor`() {
+        val rates = FxRates(mapOf(Currency.JPY to 6_100L)) // 1 JPY = 0.0061 EUR
+        assertEquals(Money(1_000), CurrencyAmount(Money(610), Currency.EUR).convertTo(Currency.JPY, rates))
+    }
+
+    @Test
+    fun `convertTo rounds half to even`() {
+        val rates = FxRates(mapOf(Currency.USD to 400_000L)) // 1 USD = 0.4 EUR
+        assertEquals(Money(8), CurrencyAmount(Money(3), Currency.EUR).convertTo(Currency.USD, rates)) // 7.5 -> 8
+        assertEquals(Money(12), CurrencyAmount(Money(5), Currency.EUR).convertTo(Currency.USD, rates)) // 12.5 -> 12
+    }
 }

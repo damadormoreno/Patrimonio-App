@@ -1,12 +1,16 @@
 package com.denebapps.patrimonio.ui.screens.savings
 
+import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
+import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
+import com.denebapps.patrimonio.testing.FakeAccountGroupRepository
 import com.denebapps.patrimonio.testing.FakeAssetRepository
+import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeSavingsGoalRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -49,6 +53,7 @@ class SavingsGoalsViewModelTest {
         progressMinor: Long,
         currency: Currency = Currency.EUR,
         linkedAssetId: String? = null,
+        linkedGroupId: String? = null,
         lifecycle: SavingsGoalLifecycle = SavingsGoalLifecycle.OPEN,
     ) = SavingsGoal(
         id = id,
@@ -58,16 +63,29 @@ class SavingsGoalsViewModelTest {
         linkedAssetId = linkedAssetId,
         lifecycle = lifecycle,
         progress = Money(progressMinor),
+        linkedGroupId = linkedGroupId,
+    )
+
+    private fun group(id: String, vararg memberIds: String) = AccountGroup(
+        id = id,
+        name = "Group $id",
+        showBalance = true,
+        sortOrder = 0,
+        memberAssetIds = memberIds.toSet(),
     )
 
     private fun viewModel(
         goals: FakeSavingsGoalRepository = FakeSavingsGoalRepository(),
         assets: FakeAssetRepository = FakeAssetRepository(),
+        groups: FakeAccountGroupRepository = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts())),
+        fx: FakeFxRepository = FakeFxRepository(),
         initialGoalId: Long? = null,
         initialWithdraw: Boolean = false,
     ) = SavingsGoalsViewModel(
         savingsGoalRepository = goals,
         assetRepository = assets,
+        accountGroupRepository = groups,
+        fxRepository = fx,
         initialGoalId = initialGoalId,
         initialWithdraw = initialWithdraw,
     )
@@ -255,6 +273,152 @@ class SavingsGoalsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(PatrimonioCoverageUi.None, vm.state.value.coverageWarning)
+        job.cancel()
+    }
+
+    @Test
+    fun `create offers the persisted groups regardless of currency and never the builtin one`() = runTest(dispatcher) {
+        val vm = viewModel(
+            assets = FakeAssetRepository(listOf(asset("eur-1"), asset("usd-1", Currency.USD))),
+            groups = FakeAccountGroupRepository(
+                listOf(AccountGroup.allAccounts(), group("g1", "eur-1", "usd-1")),
+            ),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(listOf("g1"), vm.state.value.linkableGroups.map { it.id })
+        assertEquals("Group g1", vm.state.value.linkableGroups.single().name)
+
+        vm.onNewGoalCurrencyChange(Currency.GBP)
+        advanceUntilIdle()
+        assertEquals(listOf("g1"), vm.state.value.linkableGroups.map { it.id })
+        job.cancel()
+    }
+
+    @Test
+    fun `picking a group replaces the asset link and vice versa`() = runTest(dispatcher) {
+        val vm = viewModel(
+            assets = FakeAssetRepository(listOf(asset("eur-1"))),
+            groups = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts(), group("g1", "eur-1"))),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        vm.onNewGoalLinkChange("eur-1")
+        vm.onNewGoalGroupLinkChange("g1")
+        advanceUntilIdle()
+        assertNull(vm.state.value.newGoalLinkedAssetId)
+        assertEquals("g1", vm.state.value.newGoalLinkedGroupId)
+
+        vm.onNewGoalLinkChange("eur-1")
+        advanceUntilIdle()
+        assertEquals("eur-1", vm.state.value.newGoalLinkedAssetId)
+        assertNull(vm.state.value.newGoalLinkedGroupId)
+
+        vm.onNewGoalLinkChange(null)
+        advanceUntilIdle()
+        assertNull(vm.state.value.newGoalLinkedAssetId)
+        assertNull(vm.state.value.newGoalLinkedGroupId)
+        job.cancel()
+    }
+
+    @Test
+    fun `switching currency keeps a group link because groups have no currency restriction`() = runTest(dispatcher) {
+        val vm = viewModel(groups = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts(), group("g1"))))
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        vm.onNewGoalGroupLinkChange("g1")
+        vm.onNewGoalCurrencyChange(Currency.USD)
+        advanceUntilIdle()
+
+        assertEquals("g1", vm.state.value.newGoalLinkedGroupId)
+        job.cancel()
+    }
+
+    @Test
+    fun `saving a goal linked to a group persists the group link`() = runTest(dispatcher) {
+        val goals = FakeSavingsGoalRepository(persistedGroupIds = setOf("g1"))
+        val vm = viewModel(
+            goals = goals,
+            groups = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts(), group("g1"))),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        vm.onNewGoalNameChange("Colchón")
+        vm.onNewGoalTargetChange("500,00")
+        vm.onNewGoalGroupLinkChange("g1")
+        advanceUntilIdle()
+        vm.onSaveNewGoal()
+        advanceUntilIdle()
+
+        val saved = vm.state.value.goals.single()
+        assertEquals("g1", saved.linkedGroupId)
+        assertNull(saved.linkedAssetId)
+        job.cancel()
+    }
+
+    @Test
+    fun `group coverage shows one shared group warning when the reservations exceed the group balance`() = runTest(
+        dispatcher,
+    ) {
+        val vm = viewModel(
+            goals = FakeSavingsGoalRepository(
+                listOf(
+                    goal(id = 1, targetMinor = 100_00, progressMinor = 70_00, linkedGroupId = "g1"),
+                    goal(id = 2, targetMinor = 100_00, progressMinor = 50_00, linkedGroupId = "g1"),
+                ),
+            ),
+            assets = FakeAssetRepository(listOf(asset("a1", minor = 60_00), asset("a2", minor = 40_00))),
+            groups = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts(), group("g1", "a1", "a2"))),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(
+            PatrimonioCoverageUi.GroupWarning(convertedAtCurrentRate = false),
+            vm.state.value.groupCoverageWarning,
+        )
+        assertEquals(PatrimonioCoverageUi.None, vm.state.value.coverageWarning)
+        job.cancel()
+    }
+
+    @Test
+    fun `group coverage flags the conversion when members use other currencies`() = runTest(dispatcher) {
+        val vm = viewModel(
+            goals = FakeSavingsGoalRepository(
+                listOf(goal(id = 1, targetMinor = 100_00, progressMinor = 90_00, linkedGroupId = "g1")),
+            ),
+            assets = FakeAssetRepository(listOf(asset("a1", minor = 50_00), asset("a2", Currency.USD, minor = 50_00))),
+            groups = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts(), group("g1", "a1", "a2"))),
+            // 1 USD = 0.5 EUR, so the group balance is 50.00 + 25.00 EUR
+            fx = FakeFxRepository(FxRates(mapOf(Currency.USD to 500_000L))),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(
+            PatrimonioCoverageUi.GroupWarning(convertedAtCurrentRate = true),
+            vm.state.value.groupCoverageWarning,
+        )
+        job.cancel()
+    }
+
+    @Test
+    fun `group coverage within the group balance shows no warning`() = runTest(dispatcher) {
+        val vm = viewModel(
+            goals = FakeSavingsGoalRepository(
+                listOf(goal(id = 1, targetMinor = 100_00, progressMinor = 40_00, linkedGroupId = "g1")),
+            ),
+            assets = FakeAssetRepository(listOf(asset("a1", minor = 100_00))),
+            groups = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts(), group("g1", "a1"))),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(PatrimonioCoverageUi.None, vm.state.value.groupCoverageWarning)
         job.cancel()
     }
 }

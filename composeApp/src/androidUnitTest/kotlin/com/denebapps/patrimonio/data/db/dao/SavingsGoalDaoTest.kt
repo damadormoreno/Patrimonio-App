@@ -1,6 +1,7 @@
 package com.denebapps.patrimonio.data.db.dao
 
 import com.denebapps.patrimonio.data.db.buildInMemoryTestDatabase
+import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
@@ -13,6 +14,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
 import kotlin.test.assertNull
 
 @RunWith(RobolectricTestRunner::class)
@@ -106,6 +108,51 @@ class SavingsGoalDaoTest {
     }
 
     @Test
+    fun `group link primitives keep the link exclusive with the asset link`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val dao = db.savingsGoalDao()
+        db.assetDao().insert(asset("asset-1"))
+        db.accountGroupDao().insertGroup(AccountGroupEntity("g1", "Group", true, 0))
+        val goalId = dao.insertGoal(goal(linkedAssetId = "asset-1"))
+
+        assertEquals(1, dao.updateLinkedGroup(goalId, "g1"))
+        assertNull(dao.findGoal(goalId)?.linkedAssetId)
+        assertEquals("g1", dao.findGoal(goalId)?.linkedGroupId)
+        assertEquals(listOf(goalId), dao.listGoalsLinkedToGroup("g1").map { it.id })
+
+        assertEquals(1, dao.updateLinkedAsset(goalId, "asset-1"))
+        assertEquals("asset-1", dao.findGoal(goalId)?.linkedAssetId)
+        assertNull(dao.findGoal(goalId)?.linkedGroupId)
+        assertEquals(emptyList(), dao.listGoalsLinkedToGroup("g1"))
+
+        dao.updateLinkedGroup(goalId, "g1")
+        assertEquals(1, dao.clearLinkedGroup("g1"))
+        assertNull(dao.findGoal(goalId)?.linkedGroupId)
+        db.close()
+    }
+
+    @Test
+    fun `deleting a group nulls the group link of its goals through the foreign key`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val dao = db.savingsGoalDao()
+        db.accountGroupDao().insertGroup(AccountGroupEntity("g1", "Group", true, 0))
+        val goalId = dao.insertGoal(goal(linkedGroupId = "g1"))
+
+        db.accountGroupDao().deleteGroup("g1")
+
+        assertNull(dao.findGoal(goalId)?.linkedGroupId)
+        db.close()
+    }
+
+    @Test
+    fun `a goal cannot reference a group that does not exist`() = runTest {
+        val db = buildInMemoryTestDatabase()
+
+        assertFails { db.savingsGoalDao().insertGoal(goal(linkedGroupId = "missing")) }
+        db.close()
+    }
+
+    @Test
     fun `relation snapshots isolate each goals allocation and link events`() = runTest {
         val db = buildInMemoryTestDatabase()
         val dao = db.savingsGoalDao()
@@ -123,13 +170,14 @@ class SavingsGoalDaoTest {
         db.close()
     }
 
-    private fun goal(linkedAssetId: String? = null) = SavingsGoalEntity(
+    private fun goal(linkedAssetId: String? = null, linkedGroupId: String? = null) = SavingsGoalEntity(
         name = "Emergency",
         targetMinor = 10_000,
         currency = "EUR",
         targetDateEpochDay = null,
         linkedAssetId = linkedAssetId,
         lifecycle = "OPEN",
+        linkedGroupId = linkedGroupId,
     )
 
     private fun asset(id: String) = AssetEntity(id, "BANK", "Bank", null, 50_000, "EUR")

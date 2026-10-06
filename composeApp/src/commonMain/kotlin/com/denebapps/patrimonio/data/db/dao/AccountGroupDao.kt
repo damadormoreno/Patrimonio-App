@@ -26,6 +26,9 @@ interface AccountGroupDao {
     @Query("SELECT * FROM account_groups ORDER BY sortOrder, id")
     suspend fun listGroups(): List<AccountGroupEntity>
 
+    @Query("SELECT * FROM account_groups WHERE id = :id")
+    suspend fun findGroup(id: String): AccountGroupEntity?
+
     @Query("SELECT * FROM account_group_members ORDER BY groupId, assetId")
     suspend fun listMembers(): List<AccountGroupMemberEntity>
 

@@ -2,6 +2,7 @@ package com.denebapps.patrimonio.data.repository
 
 import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.SeedingGate
+import com.denebapps.patrimonio.data.db.dao.AccountGroupDao
 import com.denebapps.patrimonio.data.db.dao.AssetDao
 import com.denebapps.patrimonio.data.db.dao.SavingsGoalDataSource
 import com.denebapps.patrimonio.data.db.dao.SavingsGoalRelations
@@ -14,6 +15,7 @@ import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalNegate
 import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalProgress
 import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalSubtract
 import com.denebapps.patrimonio.domain.calc.savingsGoalCancellationDelta
+import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.Money
@@ -29,7 +31,9 @@ import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalTargetExcept
 import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalTransitionException
 import com.denebapps.patrimonio.domain.repository.NegativeSavingsGoalProgressException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalAssetNotFoundException
+import com.denebapps.patrimonio.domain.repository.SavingsGoalBuiltinGroupException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalCurrencyMismatchException
+import com.denebapps.patrimonio.domain.repository.SavingsGoalGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.domain.repository.TerminalSavingsGoalException
@@ -46,6 +50,7 @@ class SavingsGoalRepositoryImpl(
     private val assetDao: AssetDao,
     private val seedingGate: SeedingGate,
     private val clock: Clock,
+    private val accountGroupDao: AccountGroupDao = database.accountGroupDao(),
 ) : SavingsGoalRepository {
     override fun observeAll(): Flow<List<SavingsGoal>> = flow {
         seedingGate.await()
@@ -71,6 +76,7 @@ class SavingsGoalRepositoryImpl(
         validateCreate(command)
         return database.writeTransaction {
             command.linkedAssetId?.let { assetId -> requireCompatibleAsset(command.target.currency, assetId) }
+            command.linkedGroupId?.let { groupId -> requireLinkableGroup(groupId) }
             val goalId =
                 dataSource.insertGoal(
                     SavingsGoalEntity(
@@ -80,13 +86,13 @@ class SavingsGoalRepositoryImpl(
                         targetDateEpochDay = command.targetDate?.toEpochDays()?.toLong(),
                         linkedAssetId = command.linkedAssetId,
                         lifecycle = SavingsGoalLifecycle.OPEN.name,
+                        linkedGroupId = command.linkedGroupId,
                     ),
                 )
-            command.linkedAssetId?.let { assetId ->
-                dataSource.insertLinkEvent(
-                    linkEvent(goalId, fromAssetId = null, toAssetId = assetId, SavingsGoalLinkEventKind.LINK),
-                )
-            }
+            val target =
+                command.linkedAssetId?.let { LinkTarget.Asset(it) }
+                    ?: command.linkedGroupId?.let { LinkTarget.Group(it) }
+            target?.let { dataSource.insertLinkEvent(linkEvent(goalId, null, it, SavingsGoalLinkEventKind.LINK)) }
             goalId
         }
     }
@@ -117,10 +123,23 @@ class SavingsGoalRepositoryImpl(
         seedingGate.await()
         database.writeTransaction {
             val goal = requireOpenGoal(goalId)
-            if (goal.linkedAssetId != null) throw InvalidSavingsGoalTransitionException(goalId, "link")
+            if (goal.currentLink() != null) throw InvalidSavingsGoalTransitionException(goalId, "link")
             requireCompatibleAsset(Currency.valueOf(goal.currency), assetId)
             dataSource.updateLinkedAsset(goalId, assetId)
-            dataSource.insertLinkEvent(linkEvent(goalId, null, assetId, SavingsGoalLinkEventKind.LINK))
+            val target = LinkTarget.Asset(assetId)
+            dataSource.insertLinkEvent(linkEvent(goalId, null, target, SavingsGoalLinkEventKind.LINK))
+        }
+    }
+
+    override suspend fun linkToGroup(goalId: Long, groupId: String) {
+        seedingGate.await()
+        database.writeTransaction {
+            val goal = requireOpenGoal(goalId)
+            if (goal.currentLink() != null) throw InvalidSavingsGoalTransitionException(goalId, "link")
+            requireLinkableGroup(groupId)
+            dataSource.updateLinkedGroup(goalId, groupId)
+            val target = LinkTarget.Group(groupId)
+            dataSource.insertLinkEvent(linkEvent(goalId, null, target, SavingsGoalLinkEventKind.LINK))
         }
     }
 
@@ -128,11 +147,25 @@ class SavingsGoalRepositoryImpl(
         seedingGate.await()
         database.writeTransaction {
             val goal = requireOpenGoal(goalId)
-            val previous = goal.linkedAssetId ?: throw InvalidSavingsGoalTransitionException(goalId, "relink")
-            if (previous == assetId) throw InvalidSavingsGoalTransitionException(goalId, "relink")
+            val previous = goal.currentLink() ?: throw InvalidSavingsGoalTransitionException(goalId, "relink")
+            val target = LinkTarget.Asset(assetId)
+            if (previous == target) throw InvalidSavingsGoalTransitionException(goalId, "relink")
             requireCompatibleAsset(Currency.valueOf(goal.currency), assetId)
             dataSource.updateLinkedAsset(goalId, assetId)
-            dataSource.insertLinkEvent(linkEvent(goalId, previous, assetId, SavingsGoalLinkEventKind.RELINK))
+            dataSource.insertLinkEvent(linkEvent(goalId, previous, target, SavingsGoalLinkEventKind.RELINK))
+        }
+    }
+
+    override suspend fun relinkToGroup(goalId: Long, groupId: String) {
+        seedingGate.await()
+        database.writeTransaction {
+            val goal = requireOpenGoal(goalId)
+            val previous = goal.currentLink() ?: throw InvalidSavingsGoalTransitionException(goalId, "relink")
+            val target = LinkTarget.Group(groupId)
+            if (previous == target) throw InvalidSavingsGoalTransitionException(goalId, "relink")
+            requireLinkableGroup(groupId)
+            dataSource.updateLinkedGroup(goalId, groupId)
+            dataSource.insertLinkEvent(linkEvent(goalId, previous, target, SavingsGoalLinkEventKind.RELINK))
         }
     }
 
@@ -140,7 +173,7 @@ class SavingsGoalRepositoryImpl(
         seedingGate.await()
         database.writeTransaction {
             val goal = requireOpenGoal(goalId)
-            val previous = goal.linkedAssetId ?: throw InvalidSavingsGoalTransitionException(goalId, "unlink")
+            val previous = goal.currentLink() ?: throw InvalidSavingsGoalTransitionException(goalId, "unlink")
             dataSource.updateLinkedAsset(goalId, null)
             dataSource.insertLinkEvent(linkEvent(goalId, previous, null, SavingsGoalLinkEventKind.UNLINK))
         }
@@ -181,21 +214,39 @@ class SavingsGoalRepositoryImpl(
         if (assetCurrency != goalCurrency) throw SavingsGoalCurrencyMismatchException(goalCurrency, assetCurrency)
     }
 
+    /** Only persisted groups are linkable: the builtin "all accounts" group is synthesized, never a row. */
+    private suspend fun requireLinkableGroup(groupId: String) {
+        if (groupId == AccountGroup.ALL_ACCOUNTS_ID) throw SavingsGoalBuiltinGroupException()
+        accountGroupDao.findGroup(groupId) ?: throw SavingsGoalGroupNotFoundException(groupId)
+    }
+
     private fun allocationEvent(goalId: Long, delta: Money) = SavingsGoalAllocationEventEntity(
         goalId = goalId,
         deltaMinor = delta.minorUnits,
         timestampEpochMs = clock.now().toEpochMilliseconds(),
     )
 
-    private fun linkEvent(goalId: Long, fromAssetId: String?, toAssetId: String?, kind: SavingsGoalLinkEventKind) =
+    private fun linkEvent(goalId: Long, from: LinkTarget?, to: LinkTarget?, kind: SavingsGoalLinkEventKind) =
         SavingsGoalLinkEventEntity(
             goalId = goalId,
-            fromAssetId = fromAssetId,
-            toAssetId = toAssetId,
+            fromAssetId = (from as? LinkTarget.Asset)?.id,
+            toAssetId = (to as? LinkTarget.Asset)?.id,
             kind = kind.name,
             timestampEpochMs = clock.now().toEpochMilliseconds(),
+            fromGroupId = (from as? LinkTarget.Group)?.id,
+            toGroupId = (to as? LinkTarget.Group)?.id,
         )
 }
+
+/** What a goal is linked to: an asset XOR a group. */
+private sealed interface LinkTarget {
+    data class Asset(val id: String) : LinkTarget
+
+    data class Group(val id: String) : LinkTarget
+}
+
+private fun SavingsGoalEntity.currentLink(): LinkTarget? =
+    linkedAssetId?.let { LinkTarget.Asset(it) } ?: linkedGroupId?.let { LinkTarget.Group(it) }
 
 private fun validateCreate(command: CreateSavingsGoal) {
     if (command.name.isEmpty() || command.name != command.name.trim()) {
@@ -220,6 +271,7 @@ private fun toDomain(row: SavingsGoalRelations): SavingsGoal {
         linkedAssetId = row.goal.linkedAssetId,
         lifecycle = SavingsGoalLifecycle.valueOf(row.goal.lifecycle),
         progress = checkedSavingsGoalProgress(events),
+        linkedGroupId = row.goal.linkedGroupId,
     )
 }
 
@@ -233,4 +285,6 @@ private fun toDomain(entity: SavingsGoalLinkEventEntity) = SavingsGoalLinkEvent(
     toAssetId = entity.toAssetId,
     kind = SavingsGoalLinkEventKind.valueOf(entity.kind),
     timestampEpochMs = entity.timestampEpochMs,
+    fromGroupId = entity.fromGroupId,
+    toGroupId = entity.toGroupId,
 )
