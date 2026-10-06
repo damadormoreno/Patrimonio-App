@@ -17,6 +17,7 @@ import com.denebapps.patrimonio.domain.model.SavingsGoalAllocationEvent
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEvent
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
+import com.denebapps.patrimonio.domain.model.Subscription
 import com.denebapps.patrimonio.domain.model.YearMonth
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
@@ -38,6 +39,8 @@ import com.denebapps.patrimonio.domain.repository.SavingsGoalCurrencyMismatchExc
 import com.denebapps.patrimonio.domain.repository.SavingsGoalGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
+import com.denebapps.patrimonio.domain.repository.SubscriptionNotFoundException
+import com.denebapps.patrimonio.domain.repository.SubscriptionRepository
 import com.denebapps.patrimonio.domain.repository.TerminalSavingsGoalException
 import com.denebapps.patrimonio.domain.repository.ThemeMode
 import kotlinx.coroutines.CompletableDeferred
@@ -149,6 +152,34 @@ class FakeAssetRepository(initial: List<Asset> = emptyList()) : AssetRepository 
 
     fun emit(assets: List<Asset>) {
         backing.value = assets
+    }
+}
+
+/** `MutableStateFlow`-backed [SubscriptionRepository] fake; [failure] makes every write throw. */
+class FakeSubscriptionRepository(initial: List<Subscription> = emptyList()) : SubscriptionRepository {
+    private val backing = MutableStateFlow(initial)
+    var failure: Throwable? = null
+
+    val current: List<Subscription> get() = backing.value
+
+    override fun observeAll(): Flow<List<Subscription>> = backing
+
+    override suspend fun find(id: String): Subscription? = backing.value.find { it.id == id }
+
+    override suspend fun insert(subscription: Subscription) {
+        failure?.let { throw it }
+        backing.value = backing.value + subscription
+    }
+
+    override suspend fun update(subscription: Subscription) {
+        failure?.let { throw it }
+        if (backing.value.none { it.id == subscription.id }) throw SubscriptionNotFoundException(subscription.id)
+        backing.value = backing.value.map { if (it.id == subscription.id) subscription else it }
+    }
+
+    override suspend fun deleteById(id: String) {
+        failure?.let { throw it }
+        backing.value = backing.value.filterNot { it.id == id }
     }
 }
 

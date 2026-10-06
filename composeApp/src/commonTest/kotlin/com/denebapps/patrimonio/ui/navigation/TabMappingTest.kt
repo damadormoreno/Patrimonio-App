@@ -18,14 +18,17 @@ class TabMappingTest {
     }
 
     @Test
-    fun `tab bar stays hidden while patrimonio is the only tab`() {
-        assertEquals(listOf(TabKey.PATRIMONIO), TabMapping.tabs)
-        assertFalse(TabMapping.tabBarVisible)
+    fun `patrimonio and subscriptions tabs show the tab bar`() {
+        assertEquals(listOf(TabKey.PATRIMONIO, TabKey.SUBSCRIPTIONS), TabMapping.tabs)
+        assertTrue(TabMapping.tabBarVisible)
     }
 
     @Test
     fun `tabForRoute maps each tab route to its TabKey`() {
         assertEquals(TabKey.PATRIMONIO, TabMapping.tabForRoute(Patrimonio::class.qualifiedName))
+        assertEquals(TabKey.SUBSCRIPTIONS, TabMapping.tabForRoute(Subscriptions::class.qualifiedName))
+        assertEquals(TabKey.SUBSCRIPTIONS, TabKey.byId("subs"))
+        assertNull(TabMapping.tabForRoute(EditSubscription::class.qualifiedName))
     }
 
     @Test

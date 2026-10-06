@@ -9,6 +9,8 @@ import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
 import com.denebapps.patrimonio.ui.screens.settings.BackupViewModel
 import com.denebapps.patrimonio.ui.screens.settings.SettingsViewModel
+import com.denebapps.patrimonio.ui.screens.subscriptions.SubscriptionSheetViewModel
+import com.denebapps.patrimonio.ui.screens.subscriptions.SubscriptionsViewModel
 import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import org.koin.core.module.dsl.viewModel
@@ -68,6 +70,24 @@ val presentationModule = module {
             fxRepository = get(),
             initialGoalId = params.getOrNull(),
             initialWithdraw = params.getOrNull() ?: false,
+        )
+    }
+    viewModel {
+        SubscriptionsViewModel(
+            subscriptionRepository = get(),
+            assetRepository = get(),
+            fxRepository = get(),
+            clock = get(),
+            zoneProvider = get(),
+        )
+    }
+    viewModel { params ->
+        SubscriptionSheetViewModel(
+            subscriptionRepository = get(),
+            assetRepository = get(),
+            clock = get(),
+            zoneProvider = get(),
+            subscriptionId = params.getOrNull(),
         )
     }
 }

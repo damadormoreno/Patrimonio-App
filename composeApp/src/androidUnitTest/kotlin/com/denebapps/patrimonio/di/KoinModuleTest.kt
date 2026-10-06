@@ -34,6 +34,8 @@ import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
 import com.denebapps.patrimonio.ui.screens.settings.BackupViewModel
 import com.denebapps.patrimonio.ui.screens.settings.SettingsViewModel
+import com.denebapps.patrimonio.ui.screens.subscriptions.SubscriptionSheetViewModel
+import com.denebapps.patrimonio.ui.screens.subscriptions.SubscriptionsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -280,6 +282,8 @@ class KoinModuleTest {
         assertNotNull(koin.get<AppViewModel>())
         assertNotNull(koin.get<SettingsViewModel>())
         assertNotNull(koin.get<BackupViewModel>())
+        assertNotNull(koin.get<SubscriptionsViewModel>())
+        assertNotNull(koin.get<SubscriptionSheetViewModel> { parametersOf(null) })
         assertNotNull(koin.get<PatrimonioViewModel>())
         assertNotNull(koin.get<AddPatrimonioSheetViewModel> { parametersOf(false, null) })
         assertNotNull(koin.get<GruposViewModel>())
