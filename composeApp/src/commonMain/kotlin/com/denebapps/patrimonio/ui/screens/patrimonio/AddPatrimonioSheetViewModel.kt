@@ -124,7 +124,8 @@ class AddPatrimonioSheetViewModel(
         val f = form.value
         val groupId = f.selectedGroupId ?: return
         val amountMinor = parseAmountToMinor(f.amountText, f.currency) ?: return
-        if (f.name.isBlank()) return
+        val name = f.name.trim()
+        if (name.isEmpty()) return
 
         viewModelScope.launch {
             val amount = CurrencyAmount(Money(amountMinor), f.currency)
@@ -133,7 +134,7 @@ class AddPatrimonioSheetViewModel(
                     Liability(
                         id = idProvider(),
                         group = Liability.LiabilityGroup.valueOf(groupId),
-                        name = f.name,
+                        name = name,
                         subtitle = null,
                         amount = amount,
                     ),
@@ -143,7 +144,7 @@ class AddPatrimonioSheetViewModel(
                     Asset(
                         id = idProvider(),
                         group = Asset.AssetGroup.valueOf(groupId),
-                        name = f.name,
+                        name = name,
                         subtitle = null,
                         amount = amount,
                     ),
