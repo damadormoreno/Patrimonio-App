@@ -24,4 +24,6 @@ data class SavingsGoalLinkEventEntity(
     val toAssetId: String?,
     val kind: String,
     val timestampEpochMs: Long,
+    val fromGroupId: String? = null,
+    val toGroupId: String? = null,
 )

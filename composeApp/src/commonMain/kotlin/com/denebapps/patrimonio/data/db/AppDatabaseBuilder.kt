@@ -8,5 +8,6 @@ import com.denebapps.patrimonio.data.platform.PlatformContext
 expect fun createAppDatabaseBuilder(context: PlatformContext): RoomDatabase.Builder<AppDatabase>
 
 /** Single place to register production migrations, applied identically on Android and iOS.
- *  Schema is still at v1, so there is nothing to add yet. */
+ *  Nothing to add for 1 -> 2: it is declared as an `AutoMigration` on [AppDatabase], which Room applies
+ *  by itself (see `AppDatabaseMigrationTest`). Register hand-written migrations here. */
 fun RoomDatabase.Builder<AppDatabase>.configureAppDatabase(): RoomDatabase.Builder<AppDatabase> = this

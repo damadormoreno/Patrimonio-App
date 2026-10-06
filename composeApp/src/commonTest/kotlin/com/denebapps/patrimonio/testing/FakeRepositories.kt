@@ -33,7 +33,9 @@ import com.denebapps.patrimonio.domain.repository.NegativeSavingsGoalProgressExc
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalAssetNotFoundException
+import com.denebapps.patrimonio.domain.repository.SavingsGoalBuiltinGroupException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalCurrencyMismatchException
+import com.denebapps.patrimonio.domain.repository.SavingsGoalGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.domain.repository.TerminalSavingsGoalException
@@ -220,11 +222,13 @@ class FakeAccountGroupRepository(initial: List<AccountGroup> = emptyList()) : Ac
  * than reimplementing them — a rejected command never mutates [backing] (single atomic
  * `MutableStateFlow.value` assignment happens only after every check passes). [assetCurrencyById]
  * stands in for the real repo's `AssetDao` lookup used by the currency-compatibility check on
- * link/create.
+ * link/create; [persistedGroupIds] stands in for its `AccountGroupDao` lookup (the builtin
+ * "all accounts" group is never persisted, hence never linkable).
  */
 class FakeSavingsGoalRepository(
     initial: List<SavingsGoal> = emptyList(),
     private val assetCurrencyById: Map<String, Currency> = emptyMap(),
+    private val persistedGroupIds: Set<String> = emptySet(),
 ) : SavingsGoalRepository {
     private val backing = MutableStateFlow(initial)
 
@@ -264,6 +268,7 @@ class FakeSavingsGoalRepository(
             throw InvalidSavingsGoalTargetException(command.target.amount.minorUnits)
         }
         command.linkedAssetId?.let { requireCompatibleAsset(command.target.currency, it) }
+        command.linkedGroupId?.let { requireLinkableGroup(it) }
 
         val goalId = nextGoalId++
         backing.value = backing.value + SavingsGoal(
@@ -274,9 +279,13 @@ class FakeSavingsGoalRepository(
             linkedAssetId = command.linkedAssetId,
             lifecycle = SavingsGoalLifecycle.OPEN,
             progress = Money.ZERO,
+            linkedGroupId = command.linkedGroupId,
         )
         command.linkedAssetId?.let { assetId ->
             appendLinkEvent(goalId, fromAssetId = null, toAssetId = assetId, kind = SavingsGoalLinkEventKind.LINK)
+        }
+        command.linkedGroupId?.let { groupId ->
+            appendLinkEvent(goalId, toGroupId = groupId, kind = SavingsGoalLinkEventKind.LINK)
         }
         return goalId
     }
@@ -298,26 +307,70 @@ class FakeSavingsGoalRepository(
 
     override suspend fun link(goalId: Long, assetId: String) {
         val goal = requireOpenGoal(goalId)
-        if (goal.linkedAssetId != null) throw InvalidSavingsGoalTransitionException(goalId, "link")
+        if (goal.linkedAssetId != null || goal.linkedGroupId != null) {
+            throw InvalidSavingsGoalTransitionException(goalId, "link")
+        }
         requireCompatibleAsset(goal.target.currency, assetId)
-        setLinkedAsset(goalId, assetId)
-        appendLinkEvent(goalId, null, assetId, SavingsGoalLinkEventKind.LINK)
+        setLink(goalId, assetId = assetId)
+        appendLinkEvent(goalId, toAssetId = assetId, kind = SavingsGoalLinkEventKind.LINK)
+    }
+
+    override suspend fun linkToGroup(goalId: Long, groupId: String) {
+        val goal = requireOpenGoal(goalId)
+        if (goal.linkedAssetId != null || goal.linkedGroupId != null) {
+            throw InvalidSavingsGoalTransitionException(goalId, "link")
+        }
+        requireLinkableGroup(groupId)
+        setLink(goalId, groupId = groupId)
+        appendLinkEvent(goalId, toGroupId = groupId, kind = SavingsGoalLinkEventKind.LINK)
     }
 
     override suspend fun relink(goalId: Long, assetId: String) {
         val goal = requireOpenGoal(goalId)
-        val previous = goal.linkedAssetId ?: throw InvalidSavingsGoalTransitionException(goalId, "relink")
-        if (previous == assetId) throw InvalidSavingsGoalTransitionException(goalId, "relink")
+        if (goal.linkedAssetId == null && goal.linkedGroupId == null) {
+            throw InvalidSavingsGoalTransitionException(goalId, "relink")
+        }
+        if (goal.linkedAssetId == assetId) throw InvalidSavingsGoalTransitionException(goalId, "relink")
         requireCompatibleAsset(goal.target.currency, assetId)
-        setLinkedAsset(goalId, assetId)
-        appendLinkEvent(goalId, previous, assetId, SavingsGoalLinkEventKind.RELINK)
+        setLink(goalId, assetId = assetId)
+        appendLinkEvent(
+            goalId,
+            fromAssetId = goal.linkedAssetId,
+            toAssetId = assetId,
+            fromGroupId = goal.linkedGroupId,
+            kind = SavingsGoalLinkEventKind.RELINK,
+        )
+    }
+
+    override suspend fun relinkToGroup(goalId: Long, groupId: String) {
+        val goal = requireOpenGoal(goalId)
+        if (goal.linkedAssetId == null && goal.linkedGroupId == null) {
+            throw InvalidSavingsGoalTransitionException(goalId, "relink")
+        }
+        if (goal.linkedGroupId == groupId) throw InvalidSavingsGoalTransitionException(goalId, "relink")
+        requireLinkableGroup(groupId)
+        setLink(goalId, groupId = groupId)
+        appendLinkEvent(
+            goalId,
+            fromAssetId = goal.linkedAssetId,
+            fromGroupId = goal.linkedGroupId,
+            toGroupId = groupId,
+            kind = SavingsGoalLinkEventKind.RELINK,
+        )
     }
 
     override suspend fun unlink(goalId: Long) {
         val goal = requireOpenGoal(goalId)
-        val previous = goal.linkedAssetId ?: throw InvalidSavingsGoalTransitionException(goalId, "unlink")
-        setLinkedAsset(goalId, null)
-        appendLinkEvent(goalId, previous, null, SavingsGoalLinkEventKind.UNLINK)
+        if (goal.linkedAssetId == null && goal.linkedGroupId == null) {
+            throw InvalidSavingsGoalTransitionException(goalId, "unlink")
+        }
+        setLink(goalId)
+        appendLinkEvent(
+            goalId,
+            fromAssetId = goal.linkedAssetId,
+            fromGroupId = goal.linkedGroupId,
+            kind = SavingsGoalLinkEventKind.UNLINK,
+        )
     }
 
     override suspend fun close(goalId: Long) {
@@ -349,6 +402,11 @@ class FakeSavingsGoalRepository(
         if (assetCurrency != goalCurrency) throw SavingsGoalCurrencyMismatchException(goalCurrency, assetCurrency)
     }
 
+    private fun requireLinkableGroup(groupId: String) {
+        if (groupId == AccountGroup.ALL_ACCOUNTS_ID) throw SavingsGoalBuiltinGroupException()
+        if (groupId !in persistedGroupIds) throw SavingsGoalGroupNotFoundException(groupId)
+    }
+
     private fun requirePositiveDelta(amount: Money) {
         if (amount <= Money.ZERO) throw InvalidSavingsGoalDeltaException(amount.minorUnits)
     }
@@ -367,9 +425,11 @@ class FakeSavingsGoalRepository(
 
     private fun appendLinkEvent(
         goalId: Long,
-        fromAssetId: String?,
-        toAssetId: String?,
         kind: SavingsGoalLinkEventKind,
+        fromAssetId: String? = null,
+        toAssetId: String? = null,
+        fromGroupId: String? = null,
+        toGroupId: String? = null,
     ) {
         val event = SavingsGoalLinkEvent(
             id = nextEventId++,
@@ -378,13 +438,17 @@ class FakeSavingsGoalRepository(
             toAssetId = toAssetId,
             kind = kind,
             timestampEpochMs = 0L,
+            fromGroupId = fromGroupId,
+            toGroupId = toGroupId,
         )
         val goalEvents = linkEventsBacking.value[goalId].orEmpty() + event
         linkEventsBacking.value = linkEventsBacking.value + (goalId to goalEvents)
     }
 
-    private fun setLinkedAsset(goalId: Long, assetId: String?) {
-        backing.value = backing.value.map { if (it.id == goalId) it.copy(linkedAssetId = assetId) else it }
+    private fun setLink(goalId: Long, assetId: String? = null, groupId: String? = null) {
+        backing.value = backing.value.map {
+            if (it.id == goalId) it.copy(linkedAssetId = assetId, linkedGroupId = groupId) else it
+        }
     }
 
     private fun setLifecycle(goalId: Long, lifecycle: SavingsGoalLifecycle) {

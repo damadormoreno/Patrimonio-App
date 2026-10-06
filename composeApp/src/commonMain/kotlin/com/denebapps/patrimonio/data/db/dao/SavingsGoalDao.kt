@@ -44,15 +44,24 @@ interface SavingsGoalDataSource {
 
     suspend fun listGoalsLinkedToAsset(assetId: String): List<SavingsGoalEntity>
 
+    suspend fun listGoalsLinkedToGroup(groupId: String): List<SavingsGoalEntity>
+
     suspend fun insertGoal(goal: SavingsGoalEntity): Long
 
     suspend fun insertAllocationEvent(event: SavingsGoalAllocationEventEntity): Long
 
     suspend fun insertLinkEvent(event: SavingsGoalLinkEventEntity): Long
 
+    /** Sets (or, with null, clears) the asset link. Always clears the group link: a goal links to an
+     *  asset XOR a group. */
     suspend fun updateLinkedAsset(goalId: Long, linkedAssetId: String?): Int
 
+    /** Sets the group link. Always clears the asset link: a goal links to an asset XOR a group. */
+    suspend fun updateLinkedGroup(goalId: Long, linkedGroupId: String): Int
+
     suspend fun clearLinkedAsset(assetId: String): Int
+
+    suspend fun clearLinkedGroup(groupId: String): Int
 
     suspend fun updateLifecycle(goalId: Long, lifecycle: String): Int
 }
@@ -90,6 +99,9 @@ abstract class SavingsGoalDao : SavingsGoalDataSource {
     @Query("SELECT * FROM savings_goals WHERE linkedAssetId = :assetId ORDER BY id")
     abstract override suspend fun listGoalsLinkedToAsset(assetId: String): List<SavingsGoalEntity>
 
+    @Query("SELECT * FROM savings_goals WHERE linkedGroupId = :groupId ORDER BY id")
+    abstract override suspend fun listGoalsLinkedToGroup(groupId: String): List<SavingsGoalEntity>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     abstract override suspend fun insertGoal(goal: SavingsGoalEntity): Long
 
@@ -99,11 +111,17 @@ abstract class SavingsGoalDao : SavingsGoalDataSource {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     abstract override suspend fun insertLinkEvent(event: SavingsGoalLinkEventEntity): Long
 
-    @Query("UPDATE savings_goals SET linkedAssetId = :linkedAssetId WHERE id = :goalId")
+    @Query("UPDATE savings_goals SET linkedAssetId = :linkedAssetId, linkedGroupId = NULL WHERE id = :goalId")
     abstract override suspend fun updateLinkedAsset(goalId: Long, linkedAssetId: String?): Int
+
+    @Query("UPDATE savings_goals SET linkedGroupId = :linkedGroupId, linkedAssetId = NULL WHERE id = :goalId")
+    abstract override suspend fun updateLinkedGroup(goalId: Long, linkedGroupId: String): Int
 
     @Query("UPDATE savings_goals SET linkedAssetId = NULL WHERE linkedAssetId = :assetId")
     abstract override suspend fun clearLinkedAsset(assetId: String): Int
+
+    @Query("UPDATE savings_goals SET linkedGroupId = NULL WHERE linkedGroupId = :groupId")
+    abstract override suspend fun clearLinkedGroup(groupId: String): Int
 
     @Query("UPDATE savings_goals SET lifecycle = :lifecycle WHERE id = :goalId")
     abstract override suspend fun updateLifecycle(goalId: Long, lifecycle: String): Int

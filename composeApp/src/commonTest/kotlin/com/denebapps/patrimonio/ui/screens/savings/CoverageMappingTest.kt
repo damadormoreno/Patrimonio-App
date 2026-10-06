@@ -45,4 +45,30 @@ class CoverageMappingTest {
 
         assertEquals(PatrimonioCoverageUi.None, coverageWarning(coverage))
     }
+
+    @Test
+    fun `undercovered shared group maps to GroupWarning`() {
+        val coverage = SavingsGoalCoverage.SharedGroup(
+            groupId = "g1",
+            balance = CurrencyAmount(Money(100_00), Currency.EUR),
+            reserved = CurrencyAmount(Money(120_00), Currency.EUR),
+        )
+
+        assertEquals(PatrimonioCoverageUi.GroupWarning(convertedAtCurrentRate = false), coverageWarning(coverage))
+        assertEquals(
+            PatrimonioCoverageUi.GroupWarning(convertedAtCurrentRate = true),
+            coverageWarning(coverage, convertedAtCurrentRate = true),
+        )
+    }
+
+    @Test
+    fun `covered shared group maps to None`() {
+        val coverage = SavingsGoalCoverage.SharedGroup(
+            groupId = "g1",
+            balance = CurrencyAmount(Money(100_00), Currency.EUR),
+            reserved = CurrencyAmount(Money(100_00), Currency.EUR),
+        )
+
+        assertEquals(PatrimonioCoverageUi.None, coverageWarning(coverage))
+    }
 }

@@ -44,6 +44,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.denebapps.patrimonio.domain.model.Currency
+import com.denebapps.patrimonio.ui.components.Pill
+import com.denebapps.patrimonio.ui.components.PillTone
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 import kotlinx.datetime.Clock
@@ -59,7 +61,8 @@ import org.koin.core.parameter.parametersOf
  * (design.md Decision: sheets as full pushed destinations). [SavingsGoalsUiState.linkableAssets] is
  * ALREADY filtered to [SavingsGoalsUiState.newGoalCurrency] by the ViewModel — this sheet never
  * offers a cross-currency link, so [com.denebapps.patrimonio.domain.repository.SavingsGoalCurrencyMismatchException]
- * is unreachable through normal use.
+ * is unreachable through normal use. [SavingsGoalsUiState.linkableGroups] has no such filter: a group
+ * may mix currencies.
  */
 @Composable
 fun NewGoalSheet(
@@ -114,11 +117,14 @@ fun NewGoalSheet(
 
             TargetDateSection(date = state.newGoalTargetDate, onDateChange = viewModel::onNewGoalDateChange)
 
-            if (state.linkableAssets.isNotEmpty()) {
-                LinkAssetSection(
-                    options = state.linkableAssets,
-                    selectedId = state.newGoalLinkedAssetId,
-                    onSelect = viewModel::onNewGoalLinkChange,
+            if (state.linkableAssets.isNotEmpty() || state.linkableGroups.isNotEmpty()) {
+                LinkTargetSection(
+                    assets = state.linkableAssets,
+                    groups = state.linkableGroups,
+                    selectedAssetId = state.newGoalLinkedAssetId,
+                    selectedGroupId = state.newGoalLinkedGroupId,
+                    onSelectAsset = viewModel::onNewGoalLinkChange,
+                    onSelectGroup = viewModel::onNewGoalGroupLinkChange,
                 )
             }
 
@@ -638,23 +644,44 @@ private fun TargetDateSection(date: LocalDate?, onDateChange: (LocalDate?) -> Un
 }
 
 @Composable
-private fun LinkAssetSection(options: List<LinkableAssetUi>, selectedId: String?, onSelect: (String?) -> Unit) {
-    SheetSectionLabel("Vincular a una cuenta (opcional)")
+private fun LinkTargetSection(
+    assets: List<LinkableAssetUi>,
+    groups: List<LinkableGroupUi>,
+    selectedAssetId: String?,
+    selectedGroupId: String?,
+    onSelectAsset: (String?) -> Unit,
+    onSelectGroup: (String) -> Unit,
+) {
+    SheetSectionLabel("Vincular a una cuenta o grupo (opcional)")
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        LinkAssetOptionRow(label = "Sin vincular", selected = selectedId == null, onClick = { onSelect(null) })
-        options.forEach { option ->
-            LinkAssetOptionRow(
+        LinkOptionRow(
+            label = "Sin vincular",
+            selected = selectedAssetId == null && selectedGroupId == null,
+            onClick = { onSelectAsset(null) },
+        )
+        assets.forEach { option ->
+            LinkOptionRow(
                 label = option.name,
-                selected = option.id == selectedId,
-                onClick = { onSelect(option.id) },
+                selected = option.id == selectedAssetId,
+                onClick = { onSelectAsset(option.id) },
+            )
+        }
+        groups.forEach { option ->
+            LinkOptionRow(
+                label = option.name,
+                selected = option.id == selectedGroupId,
+                onClick = { onSelectGroup(option.id) },
+                isGroup = true,
             )
         }
     }
     Spacer(modifier = Modifier.height(22.dp))
 }
 
+/** One row of the link picker; [isGroup] rows get a folder icon and a "Grupo" pill so they read apart
+ *  from account rows. */
 @Composable
-private fun LinkAssetOptionRow(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun LinkOptionRow(label: String, selected: Boolean, onClick: () -> Unit, isGroup: Boolean = false) {
     val colors = LocalAppColors.current
     Row(
         modifier = Modifier
@@ -677,6 +704,9 @@ private fun LinkAssetOptionRow(label: String, selected: Boolean, onClick: () -> 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        if (isGroup) {
+            Icon(AppIcons.folder, contentDescription = null, tint = colors.brand, modifier = Modifier.size(16.dp))
+        }
         Text(
             text = label,
             color = colors.ink,
@@ -684,6 +714,9 @@ private fun LinkAssetOptionRow(label: String, selected: Boolean, onClick: () -> 
             fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(1f),
         )
+        if (isGroup) {
+            Pill(text = "Grupo", tone = PillTone.Brand)
+        }
         if (selected) {
             Icon(AppIcons.check, contentDescription = null, tint = colors.brand, modifier = Modifier.size(16.dp))
         }

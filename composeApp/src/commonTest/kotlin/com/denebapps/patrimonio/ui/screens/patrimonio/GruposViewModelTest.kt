@@ -6,9 +6,12 @@ import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.SavingsGoal
+import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
 import com.denebapps.patrimonio.testing.FakeAccountGroupRepository
 import com.denebapps.patrimonio.testing.FakeAssetRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
+import com.denebapps.patrimonio.testing.FakeSavingsGoalRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -22,6 +25,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -42,14 +46,40 @@ class GruposViewModelTest {
         amount = CurrencyAmount(Money(minor), Currency.EUR),
     )
 
+    private fun goal(
+        id: Long,
+        name: String,
+        linkedGroupId: String? = null,
+        linkedAssetId: String? = null,
+        lifecycle: SavingsGoalLifecycle = SavingsGoalLifecycle.OPEN,
+    ) = SavingsGoal(
+        id = id,
+        name = name,
+        target = CurrencyAmount(Money(100_000), Currency.EUR),
+        targetDate = null,
+        linkedAssetId = linkedAssetId,
+        lifecycle = lifecycle,
+        progress = Money.ZERO,
+        linkedGroupId = linkedGroupId,
+    )
+
+    private fun groupsWithPersonal() = FakeAccountGroupRepository(
+        listOf(
+            AccountGroup.allAccounts(),
+            AccountGroup("g1", "Personal", showBalance = true, sortOrder = 1, memberAssetIds = emptySet()),
+        ),
+    )
+
     private fun viewModel(
         assets: FakeAssetRepository = FakeAssetRepository(),
         accountGroups: FakeAccountGroupRepository = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts())),
+        savingsGoals: FakeSavingsGoalRepository = FakeSavingsGoalRepository(),
         fx: FakeFxRepository = FakeFxRepository(FxRates(emptyMap())),
         idProvider: () -> String = { "generated-group-id" },
     ) = GruposViewModel(
         assetRepository = assets,
         accountGroupRepository = accountGroups,
+        savingsGoalRepository = savingsGoals,
         fxRepository = fx,
         idProvider = idProvider,
     )
@@ -121,6 +151,158 @@ class GruposViewModelTest {
         vm.onDeleteGroup(AccountGroup.ALL_ACCOUNTS_ID)
         advanceUntilIdle()
 
+        assertTrue(vm.state.value.groups.any { it.builtin })
+        job.cancel()
+    }
+
+    @Test
+    fun `deleting a group without linked goals deletes immediately with no pending confirmation`() =
+        runTest(dispatcher) {
+            val vm = viewModel(accountGroups = groupsWithPersonal())
+            val job = launch { vm.state.collect {} }
+            advanceUntilIdle()
+
+            vm.onDeleteGroup("g1")
+            advanceUntilIdle()
+
+            assertTrue(vm.state.value.groups.none { it.id == "g1" })
+            assertNull(vm.state.value.pendingDeletion)
+            job.cancel()
+        }
+
+    @Test
+    fun `deleting a group with linked goals asks for confirmation and does not delete`() = runTest(dispatcher) {
+        val vm = viewModel(
+            accountGroups = groupsWithPersonal(),
+            savingsGoals = FakeSavingsGoalRepository(
+                listOf(goal(1, "Vacaciones", linkedGroupId = "g1"), goal(2, "Coche", linkedGroupId = "g1")),
+            ),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        vm.onDeleteGroup("g1")
+        advanceUntilIdle()
+
+        assertTrue(vm.state.value.groups.any { it.id == "g1" })
+        assertEquals(
+            GroupDeletionConfirmationUi(
+                groupId = "g1",
+                groupName = "Personal",
+                linkedGoalNames = listOf("Vacaciones", "Coche"),
+            ),
+            vm.state.value.pendingDeletion,
+        )
+        job.cancel()
+    }
+
+    @Test
+    fun `goals in any lifecycle linked to the group trigger the confirmation`() = runTest(dispatcher) {
+        val vm = viewModel(
+            accountGroups = groupsWithPersonal(),
+            savingsGoals = FakeSavingsGoalRepository(
+                listOf(goal(1, "Cerrada", linkedGroupId = "g1", lifecycle = SavingsGoalLifecycle.CLOSED)),
+            ),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        vm.onDeleteGroup("g1")
+        advanceUntilIdle()
+
+        assertEquals(listOf("Cerrada"), vm.state.value.pendingDeletion?.linkedGoalNames)
+        job.cancel()
+    }
+
+    @Test
+    fun `confirming the pending deletion deletes the group and clears the state`() = runTest(dispatcher) {
+        val vm = viewModel(
+            accountGroups = groupsWithPersonal(),
+            savingsGoals = FakeSavingsGoalRepository(listOf(goal(1, "Vacaciones", linkedGroupId = "g1"))),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+        vm.onDeleteGroup("g1")
+        advanceUntilIdle()
+
+        vm.onConfirmDeleteGroup()
+        advanceUntilIdle()
+
+        assertTrue(vm.state.value.groups.none { it.id == "g1" })
+        assertNull(vm.state.value.pendingDeletion)
+        job.cancel()
+    }
+
+    @Test
+    fun `dismissing the pending deletion keeps the group and clears the state`() = runTest(dispatcher) {
+        val vm = viewModel(
+            accountGroups = groupsWithPersonal(),
+            savingsGoals = FakeSavingsGoalRepository(listOf(goal(1, "Vacaciones", linkedGroupId = "g1"))),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+        vm.onDeleteGroup("g1")
+        advanceUntilIdle()
+
+        vm.onDismissDeleteGroup()
+        advanceUntilIdle()
+
+        assertTrue(vm.state.value.groups.any { it.id == "g1" })
+        assertNull(vm.state.value.pendingDeletion)
+        job.cancel()
+    }
+
+    @Test
+    fun `confirming without a pending deletion is a no-op`() = runTest(dispatcher) {
+        val vm = viewModel(accountGroups = groupsWithPersonal())
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        vm.onConfirmDeleteGroup()
+        advanceUntilIdle()
+
+        assertTrue(vm.state.value.groups.any { it.id == "g1" })
+        assertNull(vm.state.value.pendingDeletion)
+        job.cancel()
+    }
+
+    @Test
+    fun `goals linked to another group or to an asset do not trigger the confirmation`() = runTest(dispatcher) {
+        val vm = viewModel(
+            accountGroups = groupsWithPersonal(),
+            savingsGoals = FakeSavingsGoalRepository(
+                listOf(
+                    goal(1, "Otro grupo", linkedGroupId = "g2"),
+                    goal(2, "Una cuenta", linkedAssetId = "a1"),
+                    goal(3, "Sin vincular"),
+                ),
+            ),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        vm.onDeleteGroup("g1")
+        advanceUntilIdle()
+
+        assertTrue(vm.state.value.groups.none { it.id == "g1" })
+        assertNull(vm.state.value.pendingDeletion)
+        job.cancel()
+    }
+
+    @Test
+    fun `deleting the builtin group never asks for confirmation`() = runTest(dispatcher) {
+        val vm = viewModel(
+            savingsGoals = FakeSavingsGoalRepository(
+                listOf(goal(1, "Vacaciones", linkedGroupId = AccountGroup.ALL_ACCOUNTS_ID)),
+            ),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        vm.onDeleteGroup(AccountGroup.ALL_ACCOUNTS_ID)
+        advanceUntilIdle()
+
+        assertNull(vm.state.value.pendingDeletion)
         assertTrue(vm.state.value.groups.any { it.builtin })
         job.cancel()
     }

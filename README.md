@@ -52,10 +52,11 @@ composeApp/src/commonMain/kotlin/com/denebapps/patrimonio/
 
 Ajustes → Datos → *Exportar copia* / *Importar copia* (selector nativo vía
 [FileKit](https://github.com/vinceglb/FileKit)). El archivo es JSON legible
-(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 1}`:
+(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 2}`:
 
 - Incluye activos, pasivos, grupos y miembros, histórico mensual y metas con sus aportaciones y
-  vínculos. No incluye tipos de cambio (caché) ni preferencias.
+  vínculos (una meta se vincula a una cuenta **o** a un grupo). No incluye tipos de cambio (caché)
+  ni preferencias. Las copias de la versión 1 (sin vínculo a grupo) se siguen importando.
 - Importar **reemplaza** todos los datos en una sola transacción. El archivo se valida entero antes
   (divisas, tipos, ids únicos, referencias, reglas del ledger de metas), así que uno inválido no
   toca nada.

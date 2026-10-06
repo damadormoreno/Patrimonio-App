@@ -24,6 +24,7 @@ import org.robolectric.RobolectricTestRunner
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 private class BackupFixedClock(private val instant: Instant) : Clock {
@@ -76,9 +77,15 @@ class BackupRepositoryImplTest {
         db.netWorthDao().upsert(NetWorthSnapshotEntity("2026-09", 140_000, 10_100_000))
         db.savingsGoalDao().insertGoal(SavingsGoalEntity(7, "Viaje", 300_000, "EUR", 20_800, "a1", "OPEN"))
         db.savingsGoalDao().insertGoal(SavingsGoalEntity(12, "Coche", 900_000, "EUR", null, null, "CANCELLED"))
+        db.savingsGoalDao().insertGoal(
+            SavingsGoalEntity(13, "Colchón", 100_000, "EUR", null, null, "OPEN", linkedGroupId = "g1"),
+        )
         db.savingsGoalDao().insertAllocationEvent(SavingsGoalAllocationEventEntity(3, 7, 50_000, 1_000))
         db.savingsGoalDao().insertAllocationEvent(SavingsGoalAllocationEventEntity(4, 7, -20_000, 2_000))
         db.savingsGoalDao().insertLinkEvent(SavingsGoalLinkEventEntity(5, 7, null, "a1", "LINK", 1_000))
+        db.savingsGoalDao().insertLinkEvent(
+            SavingsGoalLinkEventEntity(6, 13, null, null, "LINK", 1_000, toGroupId = "g1"),
+        )
         upserterFor(db).refreshCurrentMonth()
     }
 
@@ -109,7 +116,8 @@ class BackupRepositoryImplTest {
         assertEquals(BackupCodec.VERSION, document.version)
         assertEquals("2026-10-06T10:00:00Z", document.exportedAt)
         assertEquals(2, document.assets.size)
-        assertEquals(listOf(7L, 12L), document.savingsGoals.map { it.id })
+        assertEquals(listOf(7L, 12L, 13L), document.savingsGoals.map { it.id })
+        assertEquals("g1", document.savingsGoals.last().linkedGroupId)
         db.close()
     }
 
@@ -147,6 +155,37 @@ class BackupRepositoryImplTest {
     }
 
     @Test
+    fun `a version 1 backup imports with every goal unlinked from groups`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        testSeedingGate(db).await()
+        val v1 = """
+            {
+              "format": "patrimonio-backup",
+              "version": 1,
+              "exportedAt": "2026-01-01T00:00:00Z",
+              "assets": [{"id": "a1", "group": "BANK", "name": "Cuenta", "amountMinor": 150000, "currency": "EUR"}],
+              "savingsGoals": [
+                {"id": 1, "name": "Viaje", "targetMinor": 300000, "currency": "EUR",
+                 "linkedAssetId": "a1", "lifecycle": "OPEN"}
+              ],
+              "savingsGoalLinkEvents": [
+                {"id": 1, "goalId": 1, "toAssetId": "a1", "kind": "LINK", "timestampEpochMs": 1000}
+              ]
+            }
+        """.trimIndent()
+
+        repositoryFor(db).importJson(v1)
+
+        val goal = db.savingsGoalDao().listAllGoals().single()
+        assertEquals("a1", goal.linkedAssetId)
+        assertNull(goal.linkedGroupId)
+        val link = db.savingsGoalDao().listAllLinkEvents().single()
+        assertNull(link.fromGroupId)
+        assertNull(link.toGroupId)
+        db.close()
+    }
+
+    @Test
     fun `goals created after an import get fresh ids above the imported ones`() = runTest {
         val source = buildInMemoryTestDatabase()
         testSeedingGate(source).await()
@@ -167,7 +206,7 @@ class BackupRepositoryImplTest {
             ),
         )
 
-        assertTrue(newId > 12, "new goal id $newId collides with imported ids")
+        assertTrue(newId > 13, "new goal id $newId collides with imported ids")
         assertNotNull(target.savingsGoalDao().findGoal(7))
         target.close()
     }

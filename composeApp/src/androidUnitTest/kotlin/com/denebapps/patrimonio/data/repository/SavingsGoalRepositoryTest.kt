@@ -4,12 +4,14 @@ import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.SeedingGate
 import com.denebapps.patrimonio.data.db.buildInMemoryTestDatabase
 import com.denebapps.patrimonio.data.db.dao.SavingsGoalDataSource
+import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 import com.denebapps.patrimonio.data.db.testSeedingGate
+import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.Money
@@ -23,7 +25,9 @@ import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalTransitionEx
 import com.denebapps.patrimonio.domain.repository.NegativeSavingsGoalProgressException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalArithmeticOverflowException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalAssetNotFoundException
+import com.denebapps.patrimonio.domain.repository.SavingsGoalBuiltinGroupException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalCurrencyMismatchException
+import com.denebapps.patrimonio.domain.repository.SavingsGoalGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.domain.repository.TerminalSavingsGoalException
@@ -212,6 +216,119 @@ class SavingsGoalRepositoryTest {
     }
 
     @Test
+    fun `create links a goal to a persisted group of any currency and audits it`() = runTest {
+        val fixture = fixture()
+        fixture.seedGroup("g1")
+
+        val goalId = fixture.repository.create(command("Colchón", linkedGroupId = "g1"))
+
+        val goal = fixture.repository.observeAll().first().single()
+        assertEquals("g1", goal.linkedGroupId)
+        assertNull(goal.linkedAssetId)
+        val link = fixture.repository.observeLinkHistory(goalId).first().single()
+        assertEquals(SavingsGoalLinkEventKind.LINK, link.kind)
+        assertEquals("g1", link.toGroupId)
+        assertNull(link.fromGroupId)
+        assertNull(link.fromAssetId)
+        assertNull(link.toAssetId)
+        fixture.close()
+    }
+
+    @Test
+    fun `create rejects a missing group a builtin group and a double link without rows`() = runTest {
+        val fixture = fixture()
+        fixture.seedAsset("asset-eur", "EUR")
+        fixture.seedGroup("g1")
+
+        assertFailsWith<SavingsGoalGroupNotFoundException> {
+            fixture.repository.create(command("Missing", linkedGroupId = "missing"))
+        }
+        assertFailsWith<SavingsGoalBuiltinGroupException> {
+            fixture.repository.create(command("Builtin", linkedGroupId = AccountGroup.ALL_ACCOUNTS_ID))
+        }
+        assertFailsWith<IllegalArgumentException> {
+            command("Both", linkedAssetId = "asset-eur", linkedGroupId = "g1")
+        }
+
+        assertEquals(emptyList(), fixture.repository.observeAll().first())
+        assertEquals(0, fixture.clock.calls)
+        fixture.close()
+    }
+
+    @Test
+    fun `links move between assets and groups keeping the link exclusive and auditing both sides`() = runTest {
+        val fixture = fixture()
+        fixture.seedAsset("asset-1", "EUR")
+        fixture.seedGroup("g1")
+        fixture.seedGroup("g2")
+        val goalId = fixture.repository.create(command("Goal"))
+        fixture.repository.allocate(goalId, Money(400))
+
+        fixture.repository.linkToGroup(goalId, "g1")
+        assertEquals("g1", fixture.repository.observeAll().first().single().linkedGroupId)
+        fixture.repository.relinkToGroup(goalId, "g2")
+        fixture.repository.relink(goalId, "asset-1")
+        val onAsset = fixture.repository.observeAll().first().single()
+        assertEquals("asset-1", onAsset.linkedAssetId)
+        assertNull(onAsset.linkedGroupId)
+        fixture.repository.relinkToGroup(goalId, "g1")
+        val onGroup = fixture.repository.observeAll().first().single()
+        assertEquals("g1", onGroup.linkedGroupId)
+        assertNull(onGroup.linkedAssetId)
+        fixture.repository.unlink(goalId)
+
+        val goal = fixture.repository.observeAll().first().single()
+        assertNull(goal.linkedGroupId)
+        assertNull(goal.linkedAssetId)
+        assertEquals(Money(400), goal.progress)
+        val links = fixture.repository.observeLinkHistory(goalId).first()
+        assertEquals(
+            listOf(
+                SavingsGoalLinkEventKind.LINK,
+                SavingsGoalLinkEventKind.RELINK,
+                SavingsGoalLinkEventKind.RELINK,
+                SavingsGoalLinkEventKind.RELINK,
+                SavingsGoalLinkEventKind.UNLINK,
+            ),
+            links.map { it.kind },
+        )
+        assertEquals(listOf(null, "g1", "g2", null, "g1"), links.map { it.fromGroupId })
+        assertEquals(listOf("g1", "g2", null, "g1", null), links.map { it.toGroupId })
+        assertEquals(listOf(null, null, null, "asset-1", null), links.map { it.fromAssetId })
+        assertEquals(listOf(null, null, "asset-1", null, null), links.map { it.toAssetId })
+        fixture.close()
+    }
+
+    @Test
+    fun `group link transitions reject missing builtin and invalid current links without history`() = runTest {
+        val fixture = fixture()
+        fixture.seedAsset("asset-1", "EUR")
+        fixture.seedGroup("g1")
+        val goalId = fixture.repository.create(command("Goal"))
+
+        assertFailsWith<SavingsGoalGroupNotFoundException> { fixture.repository.linkToGroup(goalId, "missing") }
+        assertFailsWith<SavingsGoalBuiltinGroupException> {
+            fixture.repository.linkToGroup(goalId, AccountGroup.ALL_ACCOUNTS_ID)
+        }
+        assertFailsWith<InvalidSavingsGoalTransitionException> { fixture.repository.relinkToGroup(goalId, "g1") }
+        fixture.repository.linkToGroup(goalId, "g1")
+        assertFailsWith<InvalidSavingsGoalTransitionException> { fixture.repository.linkToGroup(goalId, "g1") }
+        assertFailsWith<InvalidSavingsGoalTransitionException> { fixture.repository.link(goalId, "asset-1") }
+        assertFailsWith<InvalidSavingsGoalTransitionException> { fixture.repository.relinkToGroup(goalId, "g1") }
+        assertFailsWith<SavingsGoalBuiltinGroupException> {
+            fixture.repository.relinkToGroup(goalId, AccountGroup.ALL_ACCOUNTS_ID)
+        }
+        assertFailsWith<SavingsGoalGroupNotFoundException> { fixture.repository.relinkToGroup(goalId, "missing") }
+
+        assertEquals(
+            listOf(SavingsGoalLinkEventKind.LINK),
+            fixture.repository.observeLinkHistory(goalId).first().map { it.kind },
+        )
+        assertEquals("g1", fixture.repository.observeAll().first().single().linkedGroupId)
+        fixture.close()
+    }
+
+    @Test
     fun `target reached remains open and close preserves progress and reservation`() = runTest {
         val fixture = fixture()
         fixture.seedAsset("asset-1", "EUR")
@@ -390,6 +507,8 @@ class SavingsGoalRepositoryTest {
             { repository.withdraw(goalId, Money(1)) },
             { repository.link(goalId, "asset-2") },
             { repository.relink(goalId, "asset-2") },
+            { repository.linkToGroup(goalId, "g1") },
+            { repository.relinkToGroup(goalId, "g1") },
             { repository.unlink(goalId) },
             { repository.close(goalId) },
             { repository.cancel(goalId) },
@@ -404,11 +523,17 @@ class SavingsGoalRepositoryTest {
         return Fixture(db, gate, clock)
     }
 
-    private fun command(name: String, targetMinor: Long = 1_000, linkedAssetId: String? = null) = CreateSavingsGoal(
+    private fun command(
+        name: String,
+        targetMinor: Long = 1_000,
+        linkedAssetId: String? = null,
+        linkedGroupId: String? = null,
+    ) = CreateSavingsGoal(
         name = name,
         target = CurrencyAmount(Money(targetMinor), Currency.EUR),
         targetDate = LocalDate(2027, 1, 2),
         linkedAssetId = linkedAssetId,
+        linkedGroupId = linkedGroupId,
     )
 
     private fun goalEntity(name: String) = SavingsGoalEntity(
@@ -435,6 +560,10 @@ class SavingsGoalRepositoryTest {
 
         suspend fun seedAsset(id: String, currency: String, amountMinor: Long = 50_000, group: String = "BANK") {
             db.assetDao().insert(AssetEntity(id, group, id, null, amountMinor, currency))
+        }
+
+        suspend fun seedGroup(id: String) {
+            db.accountGroupDao().insertGroup(AccountGroupEntity(id, id, true, 0))
         }
 
         fun close() = db.close()

@@ -48,7 +48,15 @@ val dataModule = module {
         )
     }
     single<LiabilityRepository> { LiabilityRepositoryImpl(get(), get(), get(), get()) }
-    single<AccountGroupRepository> { AccountGroupRepositoryImpl(get(), get()) }
+    single<AccountGroupRepository> {
+        AccountGroupRepositoryImpl(
+            appDatabase = get(),
+            accountGroupDao = get(),
+            seedingGate = get(),
+            savingsGoalDataSource = get<SavingsGoalDao>(),
+            clock = get(),
+        )
+    }
     single<NetWorthRepository> { NetWorthRepositoryImpl(get(), get()) }
     single<SavingsGoalRepository> {
         SavingsGoalRepositoryImpl(
@@ -57,6 +65,7 @@ val dataModule = module {
             assetDao = get(),
             seedingGate = get(),
             clock = get(),
+            accountGroupDao = get(),
         )
     }
     single<PreferencesRepository> { PreferencesRepositoryImpl(dataStoreFilePath(get<PlatformContext>())) }

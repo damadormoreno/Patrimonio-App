@@ -52,11 +52,20 @@ val presentationModule = module {
             initialGroupId = params.getOrNull(),
         )
     }
-    viewModel { GruposViewModel(assetRepository = get(), accountGroupRepository = get(), fxRepository = get()) }
+    viewModel {
+        GruposViewModel(
+            assetRepository = get(),
+            accountGroupRepository = get(),
+            savingsGoalRepository = get(),
+            fxRepository = get(),
+        )
+    }
     viewModel { params ->
         SavingsGoalsViewModel(
             savingsGoalRepository = get(),
             assetRepository = get(),
+            accountGroupRepository = get(),
+            fxRepository = get(),
             initialGoalId = params.getOrNull(),
             initialWithdraw = params.getOrNull() ?: false,
         )

@@ -12,12 +12,14 @@ import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
+import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -59,6 +61,7 @@ data class GruposUiState(
     val selectedCount: Int,
     val selectedTotal: Money,
     val canSaveNewGroup: Boolean,
+    val pendingDeletion: GroupDeletionConfirmationUi? = null,
 )
 
 /** Combined repo data snapshot, mirrors [PatrimonioViewModel]'s private data-bundle convention. */
@@ -83,15 +86,18 @@ private data class NewGroupForm(
  * reimplementation of the overlapping-membership contract. Save creates a new, non-builtin
  * [AccountGroup] via [AccountGroupRepository.insertGroup] using [idProvider] for the new String id
  * (same caller-supplied-id convention as [AddPatrimonioSheetViewModel]), then emits one
- * [navigateBack] event.
+ * [navigateBack] event. Deleting a group that still has linked savings goals (any lifecycle) is gated
+ * behind a confirmation exposed as [GruposUiState.pendingDeletion]; the repository unlinks those goals.
  */
 class GruposViewModel(
     private val assetRepository: AssetRepository,
     private val accountGroupRepository: AccountGroupRepository,
+    private val savingsGoalRepository: SavingsGoalRepository,
     fxRepository: FxRepository,
     private val idProvider: () -> String = ::newAccountGroupId,
 ) : ViewModel() {
     private val newGroupForm = MutableStateFlow(NewGroupForm())
+    private val pendingDeletion = MutableStateFlow<GroupDeletionConfirmationUi?>(null)
 
     private val navigateBackChannel = Channel<Unit>(Channel.BUFFERED)
 
@@ -108,15 +114,36 @@ class GruposViewModel(
     val state: StateFlow<GruposUiState> = combine(
         dataFlow,
         newGroupForm,
-    ) { data, form -> buildState(data, form) }.stateIn(
+        pendingDeletion,
+    ) { data, form, pending -> buildState(data, form, pending) }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(GRUPOS_STOP_TIMEOUT_MS),
-        initialValue = buildState(GruposData(emptyList(), emptyList(), FxRates(emptyMap())), NewGroupForm()),
+        initialValue = buildState(GruposData(emptyList(), emptyList(), FxRates(emptyMap())), NewGroupForm(), null),
     )
 
     fun onDeleteGroup(id: String) {
         if (id == AccountGroup.ALL_ACCOUNTS_ID) return
-        viewModelScope.launch { accountGroupRepository.deleteGroup(id) }
+        viewModelScope.launch {
+            val linkedGoalNames = savingsGoalRepository.observeAll().first()
+                .filter { it.linkedGroupId == id }
+                .map { it.name }
+            val groupName = accountGroupRepository.observeAll().first().firstOrNull { it.id == id }?.name
+            if (linkedGoalNames.isEmpty() || groupName == null) {
+                accountGroupRepository.deleteGroup(id)
+            } else {
+                pendingDeletion.value = GroupDeletionConfirmationUi(id, groupName, linkedGoalNames)
+            }
+        }
+    }
+
+    fun onConfirmDeleteGroup() {
+        val pending = pendingDeletion.value ?: return
+        pendingDeletion.value = null
+        viewModelScope.launch { accountGroupRepository.deleteGroup(pending.groupId) }
+    }
+
+    fun onDismissDeleteGroup() {
+        pendingDeletion.value = null
     }
 
     fun onTitleChange(text: String) {
@@ -151,7 +178,11 @@ class GruposViewModel(
         }
     }
 
-    private fun buildState(data: GruposData, form: NewGroupForm): GruposUiState {
+    private fun buildState(
+        data: GruposData,
+        form: NewGroupForm,
+        pendingDeletion: GroupDeletionConfirmationUi?,
+    ): GruposUiState {
         val (assets, accountGroups, rates) = data
 
         val groups = accountGroups.map { group ->
@@ -187,6 +218,7 @@ class GruposViewModel(
             selectedCount = form.selectedAssetIds.size,
             selectedTotal = selectedTotal,
             canSaveNewGroup = form.title.isNotBlank() && form.selectedAssetIds.isNotEmpty(),
+            pendingDeletion = pendingDeletion,
         )
     }
 }

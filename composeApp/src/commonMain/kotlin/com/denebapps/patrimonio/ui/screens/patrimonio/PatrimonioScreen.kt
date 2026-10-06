@@ -652,7 +652,16 @@ private fun MetasSection(
         )
 
         if (state.coverageWarning == PatrimonioCoverageUi.Warning) {
-            CoverageWarningBanner(modifier = Modifier.padding(bottom = 10.dp))
+            CoverageWarningBanner(
+                message = "Lo reservado en tus metas supera el saldo de la cuenta vinculada.",
+                modifier = Modifier.padding(bottom = 10.dp),
+            )
+        }
+        (state.groupCoverageWarning as? PatrimonioCoverageUi.GroupWarning)?.let { warning ->
+            CoverageWarningBanner(
+                message = groupCoverageMessage(warning),
+                modifier = Modifier.padding(bottom = 10.dp),
+            )
         }
 
         if (state.isEmpty) {
@@ -668,8 +677,15 @@ private fun MetasSection(
     }
 }
 
+/** Copy for the group warning: names the group's balance and, when it mixes currencies, says it is
+ *  converted at the current rate. */
+private fun groupCoverageMessage(warning: PatrimonioCoverageUi.GroupWarning): String {
+    val base = "Lo reservado en tus metas supera el saldo del grupo vinculado."
+    return if (warning.convertedAtCurrentRate) "$base Saldo convertido al cambio actual." else base
+}
+
 @Composable
-private fun CoverageWarningBanner(modifier: Modifier = Modifier) {
+private fun CoverageWarningBanner(message: String, modifier: Modifier = Modifier) {
     val colors = LocalAppColors.current
     Row(
         modifier = modifier
@@ -682,7 +698,7 @@ private fun CoverageWarningBanner(modifier: Modifier = Modifier) {
     ) {
         Icon(AppIcons.info, contentDescription = null, tint = colors.alert, modifier = Modifier.size(16.dp))
         Text(
-            text = "Lo reservado en tus metas supera el saldo de la cuenta vinculada.",
+            text = message,
             color = colors.alert,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,

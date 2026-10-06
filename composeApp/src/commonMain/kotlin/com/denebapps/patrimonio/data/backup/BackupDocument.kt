@@ -5,7 +5,9 @@ import kotlinx.serialization.Serializable
 /**
  * On-disk backup format, version [BackupCodec.VERSION]. Deliberately decoupled from the Room
  * entities so a schema migration never silently changes what an exported file looks like: a
- * format change bumps [version] and [BackupCodec] decides what it can still read.
+ * format change bumps [version] and [BackupCodec] decides what it can still read. Version 2 added
+ * the savings-goal group link (`linkedGroupId`, `fromGroupId`/`toGroupId`); every such field
+ * defaults to null so a version 1 file still decodes.
  *
  * Enum-like fields hold the domain enum `name`s and currencies their ISO code; amounts are minor
  * units, dates epoch days, timestamps epoch milliseconds.
@@ -75,6 +77,7 @@ data class SavingsGoalBackup(
     val targetDateEpochDay: Long? = null,
     val linkedAssetId: String? = null,
     val lifecycle: String,
+    val linkedGroupId: String? = null,
 )
 
 @Serializable
@@ -93,4 +96,6 @@ data class SavingsGoalLinkEventBackup(
     val toAssetId: String? = null,
     val kind: String,
     val timestampEpochMs: Long,
+    val fromGroupId: String? = null,
+    val toGroupId: String? = null,
 )
