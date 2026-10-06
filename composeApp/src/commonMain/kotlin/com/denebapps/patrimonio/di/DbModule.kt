@@ -23,6 +23,7 @@ internal fun Module.bindDatabaseDependents() {
     single { get<AppDatabase>().netWorthDao() }
     single { get<AppDatabase>().fxRateDao() }
     single { get<AppDatabase>().savingsGoalDao() }
+    single { get<AppDatabase>().subscriptionDao() }
     single { DatabaseInitializer(get(), get()) }
     single<CoroutineScope> { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
     single { SeedingGate(get(), get()) }

@@ -11,6 +11,7 @@ import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
+import com.denebapps.patrimonio.data.db.entity.SubscriptionEntity
 import com.denebapps.patrimonio.data.db.testSeedingGate
 import com.denebapps.patrimonio.domain.repository.InvalidBackupException
 import kotlinx.coroutines.CoroutineScope
@@ -41,6 +42,7 @@ private data class TablesState(
     val goals: List<SavingsGoalEntity>,
     val allocations: List<SavingsGoalAllocationEventEntity>,
     val links: List<SavingsGoalLinkEventEntity>,
+    val subscriptions: List<SubscriptionEntity>,
 )
 
 @RunWith(RobolectricTestRunner::class)
@@ -64,6 +66,7 @@ class BackupRepositoryImplTest {
         goals = savingsGoalDao().listAllGoals(),
         allocations = savingsGoalDao().listAllAllocationEvents(),
         links = savingsGoalDao().listAllLinkEvents(),
+        subscriptions = subscriptionDao().list(),
     )
 
     /** Rows in every table, with non-trivial goal/event ids, and a current-month snapshot that
@@ -85,6 +88,12 @@ class BackupRepositoryImplTest {
         db.savingsGoalDao().insertLinkEvent(SavingsGoalLinkEventEntity(5, 7, null, "a1", "LINK", 1_000))
         db.savingsGoalDao().insertLinkEvent(
             SavingsGoalLinkEventEntity(6, 13, null, null, "LINK", 1_000, toGroupId = "g1"),
+        )
+        db.subscriptionDao().insert(
+            SubscriptionEntity("s1", "Netflix", 1_299, "EUR", "MONTHLY", 20_484, "a1", active = true),
+        )
+        db.subscriptionDao().insert(
+            SubscriptionEntity("s2", "iCloud", 9_900, "USD", "YEARLY", 20_200, null, active = false),
         )
         upserterFor(db).refreshCurrentMonth()
     }
@@ -133,6 +142,7 @@ class BackupRepositoryImplTest {
 
         val state = db.tables()
         assertTrue(state.assets.isEmpty() && state.goals.isEmpty() && state.allocations.isEmpty())
+        assertTrue(state.subscriptions.isEmpty())
         // The current month is recomputed from the (now empty) assets.
         assertEquals(listOf(NetWorthSnapshotEntity("2026-10", 0, 0)), state.snapshots)
         db.close()

@@ -12,6 +12,7 @@ import com.denebapps.patrimonio.data.repository.LiabilityRepositoryImpl
 import com.denebapps.patrimonio.data.repository.NetWorthRepositoryImpl
 import com.denebapps.patrimonio.data.repository.NetWorthSnapshotUpserter
 import com.denebapps.patrimonio.data.repository.SavingsGoalRepositoryImpl
+import com.denebapps.patrimonio.data.repository.SubscriptionRepositoryImpl
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.BackupRepository
@@ -20,6 +21,7 @@ import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
+import com.denebapps.patrimonio.domain.repository.SubscriptionRepository
 import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import org.koin.dsl.module
@@ -68,6 +70,7 @@ val dataModule = module {
             accountGroupDao = get(),
         )
     }
+    single<SubscriptionRepository> { SubscriptionRepositoryImpl(subscriptionDao = get(), seedingGate = get()) }
     single<PreferencesRepository> { PreferencesRepositoryImpl(dataStoreFilePath(get<PlatformContext>())) }
     single<DataMaintenanceRepository> { DataMaintenanceRepositoryImpl(get()) }
     single<BackupRepository> {

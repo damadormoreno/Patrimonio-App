@@ -11,6 +11,7 @@ import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
+import com.denebapps.patrimonio.data.db.entity.SubscriptionEntity
 import com.denebapps.patrimonio.data.db.testSeedingGate
 import com.denebapps.patrimonio.domain.repository.DataMaintenanceRepository
 import com.denebapps.patrimonio.domain.repository.ThemeMode
@@ -66,6 +67,9 @@ class DataMaintenanceRepositoryImplTest {
             ),
         )
         db.netWorthDao().upsert(NetWorthSnapshotEntity("2026-06", 10_000, 50_000))
+        db.subscriptionDao().insert(
+            SubscriptionEntity("sub-1", "Netflix", 1_299, "EUR", "MONTHLY", 20_000, "asset-1", active = true),
+        )
     }
 
     private suspend fun assertAllFinancialTablesEmpty(db: AppDatabase) {
@@ -74,6 +78,7 @@ class DataMaintenanceRepositoryImplTest {
         assertTrue(db.accountGroupDao().observeAll().first().isEmpty(), "account groups not cleared")
         assertTrue(db.savingsGoalDao().observeAll().first().isEmpty(), "savings goals not cleared")
         assertTrue(db.netWorthDao().observeAll().first().isEmpty(), "net-worth snapshots not cleared")
+        assertTrue(db.subscriptionDao().list().isEmpty(), "subscriptions not cleared")
     }
 
     @Test

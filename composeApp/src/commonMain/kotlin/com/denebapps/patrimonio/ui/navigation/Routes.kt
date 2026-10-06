@@ -22,6 +22,9 @@ object MainZone
 @Serializable
 object Patrimonio
 
+@Serializable
+object Subscriptions
+
 // ── Main zone · pushed (non-tab) destinations ───────────────────────────────
 
 @Serializable
@@ -56,3 +59,7 @@ object NewGoal
  *  affordance — but stays user-switchable inside the sheet. */
 @Serializable
 data class GoalAllocate(val goalId: Long, val withdraw: Boolean = false)
+
+/** Create ([subscriptionId] null, from the FAB or the list CTA) or edit one subscription. */
+@Serializable
+data class EditSubscription(val subscriptionId: String? = null)

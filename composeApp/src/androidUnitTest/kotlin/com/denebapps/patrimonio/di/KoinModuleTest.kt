@@ -26,6 +26,7 @@ import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
+import com.denebapps.patrimonio.domain.repository.SubscriptionRepository
 import com.denebapps.patrimonio.ui.screens.patrimonio.AddPatrimonioSheetViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.GruposViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.PatrimonioViewModel
@@ -33,6 +34,8 @@ import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
 import com.denebapps.patrimonio.ui.screens.settings.BackupViewModel
 import com.denebapps.patrimonio.ui.screens.settings.SettingsViewModel
+import com.denebapps.patrimonio.ui.screens.subscriptions.SubscriptionSheetViewModel
+import com.denebapps.patrimonio.ui.screens.subscriptions.SubscriptionsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -166,6 +169,7 @@ class KoinModuleTest {
         assertNotNull(koin.get<PreferencesRepository>())
         assertNotNull(koin.get<DataMaintenanceRepository>())
         assertNotNull(koin.get<BackupRepository>())
+        assertNotNull(koin.get<SubscriptionRepository>())
     }
 
     @Test
@@ -278,6 +282,8 @@ class KoinModuleTest {
         assertNotNull(koin.get<AppViewModel>())
         assertNotNull(koin.get<SettingsViewModel>())
         assertNotNull(koin.get<BackupViewModel>())
+        assertNotNull(koin.get<SubscriptionsViewModel>())
+        assertNotNull(koin.get<SubscriptionSheetViewModel> { parametersOf(null) })
         assertNotNull(koin.get<PatrimonioViewModel>())
         assertNotNull(koin.get<AddPatrimonioSheetViewModel> { parametersOf(false, null) })
         assertNotNull(koin.get<GruposViewModel>())

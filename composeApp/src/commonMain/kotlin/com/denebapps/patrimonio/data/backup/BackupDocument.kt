@@ -7,7 +7,8 @@ import kotlinx.serialization.Serializable
  * entities so a schema migration never silently changes what an exported file looks like: a
  * format change bumps [version] and [BackupCodec] decides what it can still read. Version 2 added
  * the savings-goal group link (`linkedGroupId`, `fromGroupId`/`toGroupId`); every such field
- * defaults to null so a version 1 file still decodes.
+ * defaults to null so a version 1 file still decodes. Version 3 added [subscriptions], which defaults
+ * to empty for older files.
  *
  * Enum-like fields hold the domain enum `name`s and currencies their ISO code; amounts are minor
  * units, dates epoch days, timestamps epoch milliseconds.
@@ -25,6 +26,7 @@ data class BackupDocument(
     val savingsGoals: List<SavingsGoalBackup> = emptyList(),
     val savingsGoalAllocationEvents: List<SavingsGoalAllocationEventBackup> = emptyList(),
     val savingsGoalLinkEvents: List<SavingsGoalLinkEventBackup> = emptyList(),
+    val subscriptions: List<SubscriptionBackup> = emptyList(),
 )
 
 @Serializable
@@ -98,4 +100,16 @@ data class SavingsGoalLinkEventBackup(
     val timestampEpochMs: Long,
     val fromGroupId: String? = null,
     val toGroupId: String? = null,
+)
+
+@Serializable
+data class SubscriptionBackup(
+    val id: String,
+    val name: String,
+    val amountMinor: Long,
+    val currency: String,
+    val cycle: String,
+    val firstChargeEpochDay: Long,
+    val paidFromAssetId: String? = null,
+    val active: Boolean = true,
 )

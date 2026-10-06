@@ -104,6 +104,32 @@ class AppDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun `migration 2 to 3 adds an empty subscriptions table wired to assets`() {
+        helper.createDatabase(2).use { connection ->
+            connection.execSQL(
+                "INSERT INTO assets (id, `group`, name, subtitle, amountMinor, currency) " +
+                    "VALUES ('a1', 'BANK', 'Cuenta', NULL, 150000, 'EUR')",
+            )
+        }
+
+        helper.runMigrationsAndValidate(3, emptyList()).use { connection ->
+            assertEquals(1L, connection.count("assets"))
+            assertEquals(0L, connection.count("subscriptions"))
+            connection.execSQL("PRAGMA foreign_keys = ON")
+            connection.execSQL(
+                "INSERT INTO subscriptions " +
+                    "(id, name, amountMinor, currency, cycle, firstChargeEpochDay, paidFromAssetId, active) " +
+                    "VALUES ('s1', 'Netflix', 1299, 'EUR', 'MONTHLY', 20000, 'a1', 1)",
+            )
+            connection.execSQL("DELETE FROM assets WHERE id = 'a1'")
+            connection.prepare("SELECT paidFromAssetId FROM subscriptions WHERE id = 's1'").use { row ->
+                assertEquals(true, row.step())
+                assertEquals(true, row.isNull(0))
+            }
+        }
+    }
+
     /** Version 1 data: an asset, two groups (one with a member), two goals (one linked to the asset),
      *  allocation events and one link event. */
     private fun SQLiteConnection.seedVersion1() {

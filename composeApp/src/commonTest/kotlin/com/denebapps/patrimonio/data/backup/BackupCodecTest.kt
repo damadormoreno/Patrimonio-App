@@ -30,7 +30,13 @@ class BackupCodecTest {
             SavingsGoalLinkEventBackup(2, 2, null, null, "LINK", 1_000, fromGroupId = null, toGroupId = "g1"),
             SavingsGoalLinkEventBackup(3, 2, null, null, "GROUP_DELETED", 2_000, fromGroupId = "g1", toGroupId = null),
         ),
+        subscriptions = listOf(
+            SubscriptionBackup("s1", "Netflix", 1_299, "EUR", "MONTHLY", 20_484, paidFromAssetId = "a1"),
+            SubscriptionBackup("s2", "iCloud", 9_900, "USD", "YEARLY", 20_200, active = false),
+        ),
     )
+
+    private val subscription = full.subscriptions.first()
 
     private fun reasonFor(document: BackupDocument): String =
         assertFailsWith<InvalidBackupException> { BackupCodec.decode(BackupCodec.encode(document)) }.message.orEmpty()
@@ -45,7 +51,7 @@ class BackupCodecTest {
         val json = BackupCodec.encode(BackupDocument(exportedAt = "2026-10-06T10:00:00Z"))
 
         assertTrue(""""format": "patrimonio-backup"""" in json, json)
-        assertTrue(""""version": 2""" in json, json)
+        assertTrue(""""version": 3""" in json, json)
     }
 
     @Test
@@ -116,10 +122,10 @@ class BackupCodecTest {
     @Test
     fun `newer format version is rejected with an update hint`() {
         val error = assertFailsWith<InvalidBackupException> {
-            BackupCodec.decode("""{"format":"patrimonio-backup","version":3,"exportedAt":"x"}""")
+            BackupCodec.decode("""{"format":"patrimonio-backup","version":4,"exportedAt":"x"}""")
         }
 
-        assertTrue("v3" in error.message.orEmpty())
+        assertTrue("v4" in error.message.orEmpty())
     }
 
     @Test
@@ -178,5 +184,25 @@ class BackupCodecTest {
             SavingsGoalAllocationEventBackup(2, 1, -20_000, 1_000),
         )
         assertTrue("negativo" in reasonFor(full.copy(savingsGoalAllocationEvents = negative)))
+    }
+
+    @Test
+    fun `a version 2 backup decodes with no subscriptions`() {
+        val document = BackupCodec.decode("""{"format":"patrimonio-backup","version":2,"exportedAt":"x"}""")
+
+        assertEquals(2, document.version)
+        assertEquals(emptyList(), document.subscriptions)
+    }
+
+    @Test
+    fun `invalid subscriptions are rejected`() {
+        fun reasonForSubscription(changed: SubscriptionBackup) = reasonFor(full.copy(subscriptions = listOf(changed)))
+
+        assertTrue("periodicidad" in reasonForSubscription(subscription.copy(cycle = "DAILY")))
+        assertTrue("divisa" in reasonForSubscription(subscription.copy(currency = "CHF")))
+        assertTrue("importe" in reasonForSubscription(subscription.copy(amountMinor = 0)))
+        assertTrue("nombre" in reasonForSubscription(subscription.copy(name = "Netflix ")))
+        assertTrue("activo" in reasonForSubscription(subscription.copy(paidFromAssetId = "missing")))
+        assertTrue("duplicad" in reasonFor(full.copy(subscriptions = listOf(subscription, subscription))))
     }
 }

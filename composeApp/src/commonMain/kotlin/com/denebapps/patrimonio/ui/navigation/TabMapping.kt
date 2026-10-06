@@ -6,6 +6,7 @@ package com.denebapps.patrimonio.ui.navigation
  */
 enum class TabKey(val id: String, val label: String, val iconName: String) {
     PATRIMONIO("patrimonio", "Patrimonio", "wallet"),
+    SUBSCRIPTIONS("subs", "Suscripciones", "receipt"),
     ;
 
     companion object {
@@ -29,6 +30,7 @@ object TabMapping {
 
     private val routeNameToTab: Map<String?, TabKey> = mapOf(
         Patrimonio::class.qualifiedName to TabKey.PATRIMONIO,
+        Subscriptions::class.qualifiedName to TabKey.SUBSCRIPTIONS,
     )
 
     /** Maps a destination's route name to its [TabKey], or `null` if it is not a tab route. */

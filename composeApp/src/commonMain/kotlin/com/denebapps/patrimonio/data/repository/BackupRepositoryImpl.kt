@@ -39,6 +39,7 @@ class BackupRepositoryImpl(
                 savingsGoals = goals.listAllGoals().map { it.toBackup() },
                 savingsGoalAllocationEvents = goals.listAllAllocationEvents().map { it.toBackup() },
                 savingsGoalLinkEvents = goals.listAllLinkEvents().map { it.toBackup() },
+                subscriptions = appDatabase.subscriptionDao().list().map { it.toBackup() },
             )
         }
         return BackupCodec.encode(document)
@@ -58,6 +59,7 @@ class BackupRepositoryImpl(
             document.savingsGoals.forEach { goals.insertGoal(it.toEntity()) }
             document.savingsGoalAllocationEvents.forEach { goals.insertAllocationEvent(it.toEntity()) }
             document.savingsGoalLinkEvents.forEach { goals.insertLinkEvent(it.toEntity()) }
+            document.subscriptions.forEach { appDatabase.subscriptionDao().insert(it.toEntity()) }
             snapshotUpserter.refreshCurrentMonth()
         }
     }

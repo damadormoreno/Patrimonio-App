@@ -11,7 +11,7 @@ presupuestos, categorías ni analítica.
 
 - Kotlin Multiplatform + Compose Multiplatform, un único módulo `:composeApp`
   (`androidTarget`, `iosArm64`, `iosSimulatorArm64`) + `iosApp/` (Xcode).
-- Kotlin 2.2.0, Compose MP 1.9.0, AGP 8.7.3, minSdk 29 / target 35.
+- Kotlin 2.2.0, Compose MP 1.9.0, AGP 8.9.1, minSdk 29 / compileSdk 36 / target 35.
 - Room KMP 2.7.1 (`BundledSQLiteDriver`), DataStore preferences, Koin 4, navigation-compose,
   Ktor (tipos de cambio de Frankfurter), kotlinx-datetime.
 - Paquete / applicationId / bundle id: `com.denebapps.patrimonio`.
@@ -69,9 +69,10 @@ dispositivo.
 ## Roadmap
 
 1. ~~**Backup**~~: export/import JSON desde Ajustes (ver *Copias de seguridad*).
-2. **Suscripciones**: alta con importe, divisa y periodicidad, coste mensual/anual normalizado a
-   EUR con el FX existente, vínculo opcional al activo que paga y notificaciones locales de
-   renovación (`expect/actual`: WorkManager / `UNUserNotificationCenter`).
-3. **Login + sync** (opcional): Google / Apple / email junto con sincronización. Los ids de
+2. ~~**Suscripciones**~~: pestaña con gasto mensual/anual en EUR, próximos cargos, pausadas y
+   activo que paga (informativo, no mueve saldos).
+3. **Avisos de renovación**: notificaciones locales antes de cada cargo (`expect/actual`:
+   WorkManager / `UNUserNotificationCenter`).
+4. **Login + sync** (opcional): Google / Apple / email junto con sincronización. Los ids de
    activos, pasivos y grupos ya son `String` (UUID); las metas de ahorro usan `Long`
    autogenerado y habría que migrarlas antes de sincronizar.
