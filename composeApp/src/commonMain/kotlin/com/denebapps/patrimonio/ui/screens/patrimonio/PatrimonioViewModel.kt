@@ -2,6 +2,8 @@ package com.denebapps.patrimonio.ui.screens.patrimonio
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.denebapps.patrimonio.domain.calc.AccountUsage
+import com.denebapps.patrimonio.domain.calc.accountUsage
 import com.denebapps.patrimonio.domain.calc.assetsByGroup
 import com.denebapps.patrimonio.domain.calc.liabilitiesByGroup
 import com.denebapps.patrimonio.domain.calc.monthDelta
@@ -15,12 +17,14 @@ import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.NetWorthSnapshot
+import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.model.YearMonth
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
+import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -50,6 +54,9 @@ data class PatrimonioItemUi(
     val subtitle: String?,
     val amount: Money,
     val currency: Currency,
+    /** The account is followed by an open goal / held by one of the user's groups (liabilities: never). */
+    val inGoal: Boolean = false,
+    val inGroup: Boolean = false,
 )
 
 /** One per-group card (spec: Per-Group List Rows). */
@@ -91,7 +98,8 @@ private data class PatrimonioData(
  * for the Patrimonio tab (design.md Data Flow). Combines [AssetRepository]/[LiabilityRepository]/
  * [NetWorthRepository]/[AccountGroupRepository]/[FxRepository] `Flow`s into a nested `combine` data
  * bundle (5-arity, per the `StatsViewModel.dataFlow` precedent), then combines that bundle with the
- * internal [view] toggle and the injected [monthFlow] (design.md Decision 1 & 3).
+ * savings goals (they tag the accounts they follow), the internal [view] toggle and the injected
+ * [monthFlow] (design.md Decision 1 & 3).
  */
 class PatrimonioViewModel(
     assetRepository: AssetRepository,
@@ -99,6 +107,7 @@ class PatrimonioViewModel(
     netWorthRepository: NetWorthRepository,
     accountGroupRepository: AccountGroupRepository,
     fxRepository: FxRepository,
+    savingsGoalRepository: SavingsGoalRepository,
     private val clock: Clock,
     private val zoneProvider: () -> TimeZone,
     monthFlow: Flow<YearMonth>,
@@ -122,15 +131,17 @@ class PatrimonioViewModel(
 
     val state: StateFlow<PatrimonioUiState> = combine(
         dataFlow,
+        savingsGoalRepository.observeAll(),
         view,
         monthFlow,
-    ) { data, selectedView, currentMonth ->
-        buildState(data, selectedView, currentMonth)
+    ) { data, goals, selectedView, currentMonth ->
+        buildState(data, goals, selectedView, currentMonth)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(PATRIMONIO_STOP_TIMEOUT_MS),
         initialValue = buildState(
             PatrimonioData(emptyList(), emptyList(), emptyList(), emptyList(), FxRates(emptyMap())),
+            emptyList(),
             PatrimonioView.ACTIVOS,
             initialMonth,
         ),
@@ -142,6 +153,7 @@ class PatrimonioViewModel(
 
     private fun buildState(
         data: PatrimonioData,
+        goals: List<SavingsGoal>,
         selectedView: PatrimonioView,
         currentMonth: YearMonth,
     ): PatrimonioUiState {
@@ -180,13 +192,14 @@ class PatrimonioViewModel(
             }
         }
 
+        val usage = accountUsage(goals, accountGroups)
         val groups = when (selectedView) {
             PatrimonioView.ACTIVOS -> assetsByGroup(assets, rates).map { groupTotal ->
                 val items = assets.filter { it.group == groupTotal.group }
                 PatrimonioGroupUi(
                     groupId = groupTotal.group.name,
                     label = assetGroupLabel(groupTotal.group),
-                    items = items.map { it.toItemUi() },
+                    items = items.map { it.toItemUi(usage[it.id]) },
                     itemCountLabel = itemCountLabel(items.size),
                     sharePct = percentage(groupTotal.total, viewTotal),
                     total = groupTotal.total,
@@ -223,7 +236,15 @@ class PatrimonioViewModel(
     }
 }
 
-private fun Asset.toItemUi() = PatrimonioItemUi(id, name, subtitle, amount.amount, amount.currency)
+private fun Asset.toItemUi(usage: AccountUsage?) = PatrimonioItemUi(
+    id = id,
+    name = name,
+    subtitle = subtitle,
+    amount = amount.amount,
+    currency = amount.currency,
+    inGoal = usage?.goalNames.orEmpty().isNotEmpty(),
+    inGroup = usage?.groupNames.orEmpty().isNotEmpty(),
+)
 
 private fun Liability.toItemUi() = PatrimonioItemUi(id, name, subtitle, amount.amount, amount.currency)
 

@@ -519,6 +519,32 @@ class GruposViewModelTest {
         assertEquals(listOf(AccountGroup.ALL_ACCOUNTS_ID), accountGroups.current.map { it.id })
         eventsJob.cancel()
     }
+
+    @Test
+    fun `the checklist tags accounts with their goals and their other groups`() = runTest(dispatcher) {
+        val vm = viewModel(
+            assets = FakeAssetRepository(listOf(asset("a1", "Cuenta 1", 100_000), asset("a2", "Cuenta 2", 200_000))),
+            accountGroups = FakeAccountGroupRepository(
+                listOf(
+                    AccountGroup.allAccounts(),
+                    AccountGroup("g1", "Personal", showBalance = true, sortOrder = 1, memberAssetIds = setOf("a1")),
+                    AccountGroup("g2", "Ahorro", showBalance = true, sortOrder = 2, memberAssetIds = setOf("a1", "a2")),
+                ),
+            ),
+            savingsGoals = FakeSavingsGoalRepository(listOf(goal("goal-1", "Viaje", linkedAssetIds = setOf("a2")))),
+            editingGroupId = "g1",
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        val checklist = vm.state.value.assetChecklist.associateBy { it.id }
+        // The edited group itself ("Personal") is not a tag.
+        assertEquals(listOf("Ahorro"), checklist.getValue("a1").groupNames)
+        assertEquals(emptyList(), checklist.getValue("a1").goalNames)
+        assertEquals(listOf("Ahorro"), checklist.getValue("a2").groupNames)
+        assertEquals(listOf("Viaje"), checklist.getValue("a2").goalNames)
+        job.cancel()
+    }
 }
 
 private fun AccountGroup.builtin(): Boolean = id == AccountGroup.ALL_ACCOUNTS_ID

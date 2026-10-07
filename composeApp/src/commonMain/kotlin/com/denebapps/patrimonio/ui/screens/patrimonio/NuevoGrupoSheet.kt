@@ -35,6 +35,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.denebapps.patrimonio.ui.components.AccountUsageTags
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 import org.koin.compose.viewmodel.koinViewModel
@@ -319,6 +320,11 @@ private fun AssetChecklistRow(item: AssetChecklistItemUi, onToggle: () -> Unit) 
                     maxLines = 1,
                 )
             }
+            AccountUsageTags(
+                goalNames = item.goalNames,
+                groupNames = item.groupNames,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
         Box(
             modifier = Modifier

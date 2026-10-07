@@ -2,6 +2,9 @@ package com.denebapps.patrimonio.ui.screens.savings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.denebapps.patrimonio.domain.calc.AccountUsage
+import com.denebapps.patrimonio.domain.calc.accountUsage
+import com.denebapps.patrimonio.domain.calc.goalNamesByLinkedGroup
 import com.denebapps.patrimonio.domain.calc.goalsSharingLinkedBalance
 import com.denebapps.patrimonio.domain.calc.parseAmountToMinor
 import com.denebapps.patrimonio.domain.calc.trackedBalance
@@ -65,13 +68,20 @@ data class SavingsGoalRowUi(
 data class SharedBalanceNoticeUi(val targetLabel: String, val goalNames: List<String>)
 
 /** One asset offered by the goal form's link picker, of any currency: the tracked balance converts it
- *  to the goal's currency. Several can be picked at once. */
-data class LinkableAssetUi(val id: String, val name: String, val currency: Currency)
+ *  to the goal's currency. Several can be picked at once. [goalNames]/[groupNames]: the other open goals
+ *  that already follow it and the groups that hold it. */
+data class LinkableAssetUi(
+    val id: String,
+    val name: String,
+    val currency: Currency,
+    val goalNames: List<String> = emptyList(),
+    val groupNames: List<String> = emptyList(),
+)
 
 /** One persisted account group offered by the create form's optional link picker. Groups carry no
  *  currency restriction (their balance is converted at the current rate) and the builtin "all
  *  accounts" group is never offered: it is synthesized, not a row, so it cannot be linked. */
-data class LinkableGroupUi(val id: String, val name: String)
+data class LinkableGroupUi(val id: String, val name: String, val goalNames: List<String> = emptyList())
 
 data class SavingsGoalsUiState(
     val goals: List<SavingsGoalRowUi>,
@@ -363,11 +373,17 @@ class SavingsGoalsViewModel(
             )
         }
 
-        val linkableAssets = assets.map { LinkableAssetUi(it.id, it.name, it.amount.currency) }
+        val editingGoalId = forms.newGoal.editingGoalId
+        val usage = accountUsage(goals, groups, excludeGoalId = editingGoalId)
+        val linkableAssets = assets.map { asset ->
+            val assetUsage = usage[asset.id] ?: AccountUsage()
+            LinkableAssetUi(asset.id, asset.name, asset.amount.currency, assetUsage.goalNames, assetUsage.groupNames)
+        }
 
+        val goalsByGroup = goalNamesByLinkedGroup(goals, excludeGoalId = editingGoalId)
         val linkableGroups = groups
             .filter { it.id != AccountGroup.ALL_ACCOUNTS_ID }
-            .map { LinkableGroupUi(it.id, it.name) }
+            .map { LinkableGroupUi(it.id, it.name, goalsByGroup[it.id].orEmpty()) }
 
         val newGoalTargetMinor = parseAmountToMinor(forms.newGoal.targetText, forms.newGoal.currency)
 

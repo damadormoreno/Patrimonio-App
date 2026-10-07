@@ -2,6 +2,7 @@ package com.denebapps.patrimonio.ui.screens.patrimonio
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.denebapps.patrimonio.domain.calc.accountUsage
 import com.denebapps.patrimonio.domain.calc.groupMembers
 import com.denebapps.patrimonio.domain.calc.groupTotal
 import com.denebapps.patrimonio.domain.calc.toEur
@@ -9,6 +10,7 @@ import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.repository.AccountGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
@@ -57,6 +59,9 @@ data class AssetChecklistItemUi(
     val subtitle: String?,
     val group: Asset.AssetGroup,
     val selected: Boolean,
+    /** Open goals that follow the account and the other groups that hold it. */
+    val goalNames: List<String> = emptyList(),
+    val groupNames: List<String> = emptyList(),
 )
 
 data class GruposUiState(
@@ -77,6 +82,7 @@ private data class GruposData(
     val assets: List<Asset>,
     val accountGroups: List<AccountGroup>,
     val rates: FxRates,
+    val goals: List<SavingsGoal> = emptyList(),
 )
 
 /** NuevoGrupo form fields, kept separate from repo-derived [GruposData] (design.md Decision 1:
@@ -125,7 +131,8 @@ class GruposViewModel(
         assetRepository.observeAll(),
         accountGroupRepository.observeAll(),
         fxRepository.observeRates(),
-    ) { assets, accountGroups, rates -> GruposData(assets, accountGroups, rates) }
+        savingsGoalRepository.observeAll(),
+    ) { assets, accountGroups, rates, goals -> GruposData(assets, accountGroups, rates, goals) }
 
     val state: StateFlow<GruposUiState> = combine(
         dataFlow,
@@ -249,7 +256,7 @@ class GruposViewModel(
         form: NewGroupForm,
         pendingDeletion: GroupDeletionConfirmationUi?,
     ): GruposUiState {
-        val (assets, accountGroups, rates) = data
+        val (assets, accountGroups, rates, goals) = data
 
         val movableIds = accountGroups.map { it.id }.filter { it != AccountGroup.ALL_ACCOUNTS_ID }
         val groups = accountGroups.map { group ->
@@ -267,6 +274,7 @@ class GruposViewModel(
             )
         }
 
+        val usage = accountUsage(goals, accountGroups, excludeGroupId = editingGroupId)
         val checklist = assets.map { asset ->
             AssetChecklistItemUi(
                 id = asset.id,
@@ -274,6 +282,8 @@ class GruposViewModel(
                 subtitle = asset.subtitle,
                 group = asset.group,
                 selected = asset.id in form.selectedAssetIds,
+                goalNames = usage[asset.id]?.goalNames.orEmpty(),
+                groupNames = usage[asset.id]?.groupNames.orEmpty(),
             )
         }
         val selectedTotal = assets
