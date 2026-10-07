@@ -76,11 +76,13 @@ class GruposViewModelTest {
         savingsGoals: FakeSavingsGoalRepository = FakeSavingsGoalRepository(),
         fx: FakeFxRepository = FakeFxRepository(FxRates(emptyMap())),
         idProvider: () -> String = { "generated-group-id" },
+        editingGroupId: String? = null,
     ) = GruposViewModel(
         assetRepository = assets,
         accountGroupRepository = accountGroups,
         savingsGoalRepository = savingsGoals,
         fxRepository = fx,
+        editingGroupId = editingGroupId,
         idProvider = idProvider,
     )
 
@@ -393,6 +395,128 @@ class GruposViewModelTest {
         assertEquals(setOf("a1"), newGroup.memberAssetIds)
         assertEquals(1, events)
         job.cancel()
+        eventsJob.cancel()
+    }
+
+    @Test
+    fun `editing a group starts from its values and saving replaces name visibility and members`() =
+        runTest(dispatcher) {
+            val accountGroups = FakeAccountGroupRepository(
+                listOf(
+                    AccountGroup.allAccounts(),
+                    AccountGroup("g1", "Personal", showBalance = true, sortOrder = 1, memberAssetIds = setOf("a1")),
+                ),
+            )
+            val vm = viewModel(
+                assets = FakeAssetRepository(
+                    listOf(asset("a1", "Cuenta 1", 100_000), asset("a2", "Cuenta 2", 200_000)),
+                ),
+                accountGroups = accountGroups,
+                editingGroupId = "g1",
+            )
+            val job = launch { vm.state.collect {} }
+            var events = 0
+            val eventsJob = launch { vm.navigateBack.collect { events++ } }
+            advanceUntilIdle()
+
+            val loaded = vm.state.value
+            assertTrue(loaded.isEditing)
+            assertEquals("Personal", loaded.title)
+            assertEquals(setOf("a1"), loaded.assetChecklist.filter { it.selected }.map { it.id }.toSet())
+            assertTrue(loaded.canSaveNewGroup)
+
+            vm.onTitleChange("Día a día")
+            vm.onShowBalanceToggle()
+            vm.onAssetToggle("a1")
+            vm.onAssetToggle("a2")
+            advanceUntilIdle()
+            vm.onSaveNewGroup()
+            advanceUntilIdle()
+
+            val edited = accountGroups.current.single { it.id == "g1" }
+            assertEquals("Día a día", edited.name)
+            assertFalse(edited.showBalance)
+            assertEquals(setOf("a2"), edited.memberAssetIds)
+            assertEquals(2, accountGroups.current.size)
+            assertEquals(1, events)
+            job.cancel()
+            eventsJob.cancel()
+        }
+
+    @Test
+    fun `arrows move a group within the persisted ones and never past the builtin group`() = runTest(dispatcher) {
+        val accountGroups = FakeAccountGroupRepository(
+            listOf(
+                AccountGroup.allAccounts(),
+                AccountGroup("g1", "Uno", showBalance = true, sortOrder = 0, memberAssetIds = emptySet()),
+                AccountGroup("g2", "Dos", showBalance = true, sortOrder = 0, memberAssetIds = emptySet()),
+                AccountGroup("g3", "Tres", showBalance = true, sortOrder = 0, memberAssetIds = emptySet()),
+            ),
+        )
+        val vm = viewModel(accountGroups = accountGroups)
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        val initial = vm.state.value.groups.associateBy { it.id }
+        assertFalse(initial.getValue(AccountGroup.ALL_ACCOUNTS_ID).canMoveUp)
+        assertFalse(initial.getValue(AccountGroup.ALL_ACCOUNTS_ID).canMoveDown)
+        assertFalse(initial.getValue("g1").canMoveUp)
+        assertTrue(initial.getValue("g1").canMoveDown)
+        assertFalse(initial.getValue("g3").canMoveDown)
+
+        vm.onMoveGroup("g3", up = true)
+        vm.onMoveGroup("g3", up = true)
+        vm.onMoveGroup("g3", up = true) // Already first among the persisted groups: no-op.
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(AccountGroup.ALL_ACCOUNTS_ID, "g3", "g1", "g2"),
+            vm.state.value.groups.map { it.id },
+        )
+        assertEquals(listOf(0, 1, 2), accountGroups.current.drop(1).map { it.sortOrder })
+
+        vm.onMoveGroup("g3", up = false)
+        advanceUntilIdle()
+        assertEquals(listOf("g1", "g3", "g2"), vm.state.value.groups.drop(1).map { it.id })
+        job.cancel()
+    }
+
+    @Test
+    fun `a new group goes after the existing ones`() = runTest(dispatcher) {
+        val accountGroups = FakeAccountGroupRepository(
+            listOf(
+                AccountGroup.allAccounts(),
+                AccountGroup("g1", "Uno", showBalance = true, sortOrder = 4, memberAssetIds = emptySet()),
+            ),
+        )
+        val vm = viewModel(
+            assets = FakeAssetRepository(listOf(asset("a1", "Cuenta 1", 100_000))),
+            accountGroups = accountGroups,
+            idProvider = { "g-new" },
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        vm.onTitleChange("Nuevo")
+        vm.onAssetToggle("a1")
+        vm.onSaveNewGroup()
+        advanceUntilIdle()
+
+        assertEquals(5, accountGroups.current.single { it.id == "g-new" }.sortOrder)
+        job.cancel()
+    }
+
+    @Test
+    fun `editing a group that no longer exists navigates back without saving`() = runTest(dispatcher) {
+        val accountGroups = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts()))
+        val vm = viewModel(accountGroups = accountGroups, editingGroupId = "gone")
+        var events = 0
+        val eventsJob = launch { vm.navigateBack.collect { events++ } }
+        advanceUntilIdle()
+
+        assertEquals(1, events)
+        assertFalse(vm.state.value.canSaveNewGroup)
+        assertEquals(listOf(AccountGroup.ALL_ACCOUNTS_ID), accountGroups.current.map { it.id })
         eventsJob.cancel()
     }
 }

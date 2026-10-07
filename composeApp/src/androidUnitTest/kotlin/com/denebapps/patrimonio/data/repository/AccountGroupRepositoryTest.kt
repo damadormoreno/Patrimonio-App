@@ -11,6 +11,7 @@ import com.denebapps.patrimonio.data.db.insertGoalReturningId
 import com.denebapps.patrimonio.data.db.testSeedingGate
 import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
+import com.denebapps.patrimonio.domain.repository.AccountGroupNotFoundException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -21,6 +22,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -131,6 +133,58 @@ class AccountGroupRepositoryTest {
         assertEquals("g1", db.savingsGoalDao().findGoal(goalId)?.linkedGroupId)
         assertEquals("g1", db.accountGroupDao().findGroup("g1")?.id)
         assertTrue(db.savingsGoalDao().listAllLinkEvents().isEmpty())
+        db.close()
+    }
+
+    @Test
+    fun `editing a group updates it in place and keeps its linked goals`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repo = groupRepository(db)
+        db.assetDao().insert(AssetEntity("a1", "BANK", "Checking", null, 100_00, "EUR"))
+        db.assetDao().insert(AssetEntity("a2", "CASH", "Wallet", null, 20_00, "EUR"))
+        repo.insertGroup(AccountGroup("g1", "Savings", true, 3, memberAssetIds = setOf("a1")))
+        val goalId = db.savingsGoalDao().insertGoalReturningId(goal("Open", linkedGroupId = "g1"))
+
+        repo.updateGroup(AccountGroup("g1", "Colchón", false, 0, memberAssetIds = setOf("a2")))
+
+        val group = repo.observeAll().first().single { it.id == "g1" }
+        assertEquals("Colchón", group.name)
+        assertEquals(false, group.showBalance)
+        assertEquals(3, group.sortOrder)
+        assertEquals(setOf("a2"), group.memberAssetIds)
+        // An UPDATE, not a REPLACE: the goal keeps its group link and no unlink event is written.
+        assertEquals("g1", db.savingsGoalDao().findGoal(goalId)?.linkedGroupId)
+        assertTrue(db.savingsGoalDao().listAllLinkEvents().isEmpty())
+        db.close()
+    }
+
+    @Test
+    fun `reordering persists the position of each group`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repo = groupRepository(db)
+        listOf("g1", "g2", "g3").forEach { id ->
+            repo.insertGroup(AccountGroup(id, id, true, 0, memberAssetIds = emptySet()))
+        }
+
+        repo.reorderGroups(listOf("g3", "g1", "g2"))
+
+        assertEquals(
+            listOf(AccountGroup.ALL_ACCOUNTS_ID, "g3", "g1", "g2"),
+            repo.observeAll().first().map { it.id },
+        )
+        db.close()
+    }
+
+    @Test
+    fun `editing a missing or builtin group fails without changes`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repo = groupRepository(db)
+
+        assertFailsWith<AccountGroupNotFoundException> {
+            repo.updateGroup(AccountGroup("missing", "X", true, 0, memberAssetIds = emptySet()))
+        }
+        assertFailsWith<IllegalArgumentException> { repo.updateGroup(AccountGroup.allAccounts()) }
+        assertTrue(db.accountGroupDao().listGroups().isEmpty())
         db.close()
     }
 

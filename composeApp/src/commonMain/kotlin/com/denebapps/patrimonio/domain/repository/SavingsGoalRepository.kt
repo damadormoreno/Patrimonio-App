@@ -43,6 +43,10 @@ interface SavingsGoalRepository {
     suspend fun close(goalId: String)
 
     suspend fun cancel(goalId: String)
+
+    /** Removes the goal and its whole history, whatever its lifecycle. Unlike [cancel] nothing is
+     *  kept. @throws SavingsGoalNotFoundException when it does not exist. */
+    suspend fun delete(goalId: String)
 }
 
 data class CreateSavingsGoal(

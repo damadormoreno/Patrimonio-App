@@ -139,12 +139,16 @@ fun MainScaffold() {
             composable<Grupos> {
                 GruposSheet(
                     onNavigateBack = { mainNavController.popBackStack() },
-                    onNewGroup = { mainNavController.navigate(NuevoGrupo) },
+                    onNewGroup = { mainNavController.navigate(NuevoGrupo()) },
+                    onEditGroup = { groupId -> mainNavController.navigate(NuevoGrupo(groupId = groupId)) },
                     onNewAsset = { mainNavController.navigate(AddPatrimonio(isLiability = false, groupId = null)) },
                 )
             }
-            composable<NuevoGrupo> {
-                NuevoGrupoSheet(onNavigateBack = { mainNavController.popBackStack() })
+            composable<NuevoGrupo> { backStackEntry ->
+                NuevoGrupoSheet(
+                    groupId = backStackEntry.toRoute<NuevoGrupo>().groupId,
+                    onNavigateBack = { mainNavController.popBackStack() },
+                )
             }
             composable<NewGoal> {
                 NewGoalSheet(onNavigateBack = { mainNavController.popBackStack() })

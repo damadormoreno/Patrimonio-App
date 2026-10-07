@@ -9,6 +9,7 @@ import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.repository.AccountGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
@@ -23,6 +24,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
@@ -42,6 +45,9 @@ data class AccountGroupRowUi(
     val showBalance: Boolean,
     val total: Money,
     val members: List<GruposMemberUi>,
+    /** Reordering arrows; the builtin group is always first and never moves. */
+    val canMoveUp: Boolean = false,
+    val canMoveDown: Boolean = false,
 )
 
 /** One checklist row in the NuevoGrupo form (spec: Create Account Group Form). */
@@ -62,6 +68,8 @@ data class GruposUiState(
     val selectedTotal: Money,
     val canSaveNewGroup: Boolean,
     val pendingDeletion: GroupDeletionConfirmationUi? = null,
+    /** The form edits an existing group instead of creating one. */
+    val isEditing: Boolean = false,
 )
 
 /** Combined repo data snapshot, mirrors [PatrimonioViewModel]'s private data-bundle convention. */
@@ -77,6 +85,8 @@ private data class NewGroupForm(
     val title: String = "",
     val showBalance: Boolean = true,
     val selectedAssetIds: Set<String> = emptySet(),
+    /** False until an edited group's current values are in the form; saving waits for it. */
+    val loaded: Boolean = true,
 )
 
 /**
@@ -88,16 +98,22 @@ private data class NewGroupForm(
  * (same caller-supplied-id convention as [AddPatrimonioSheetViewModel]), then emits one
  * [navigateBack] event. Deleting a group that still has linked savings goals (any lifecycle) is gated
  * behind a confirmation exposed as [GruposUiState.pendingDeletion]; the repository unlinks those goals.
+ *
+ * With [editingGroupId] the form edits that group instead: it starts from the group's current name,
+ * balance visibility and members, and saving updates it in place (same id, position and linked
+ * goals). If the group no longer exists the form just navigates back.
  */
 class GruposViewModel(
     private val assetRepository: AssetRepository,
     private val accountGroupRepository: AccountGroupRepository,
     private val savingsGoalRepository: SavingsGoalRepository,
     fxRepository: FxRepository,
+    private val editingGroupId: String? = null,
     private val idProvider: () -> String = ::newAccountGroupId,
 ) : ViewModel() {
-    private val newGroupForm = MutableStateFlow(NewGroupForm())
+    private val newGroupForm = MutableStateFlow(NewGroupForm(loaded = editingGroupId == null))
     private val pendingDeletion = MutableStateFlow<GroupDeletionConfirmationUi?>(null)
+    private val reorderMutex = Mutex()
 
     private val navigateBackChannel = Channel<Unit>(Channel.BUFFERED)
 
@@ -118,8 +134,30 @@ class GruposViewModel(
     ) { data, form, pending -> buildState(data, form, pending) }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(GRUPOS_STOP_TIMEOUT_MS),
-        initialValue = buildState(GruposData(emptyList(), emptyList(), FxRates(emptyMap())), NewGroupForm(), null),
+        initialValue = buildState(
+            GruposData(emptyList(), emptyList(), FxRates(emptyMap())),
+            newGroupForm.value,
+            null,
+        ),
     )
+
+    init {
+        if (editingGroupId != null) {
+            viewModelScope.launch {
+                val group = accountGroupRepository.observeAll().first()
+                    .firstOrNull { it.id == editingGroupId && it.id != AccountGroup.ALL_ACCOUNTS_ID }
+                if (group == null) {
+                    navigateBackChannel.send(Unit)
+                } else {
+                    newGroupForm.value = NewGroupForm(
+                        title = group.name,
+                        showBalance = group.showBalance,
+                        selectedAssetIds = group.memberAssetIds.orEmpty(),
+                    )
+                }
+            }
+        }
+    }
 
     fun onDeleteGroup(id: String) {
         if (id == AccountGroup.ALL_ACCOUNTS_ID) return
@@ -132,6 +170,22 @@ class GruposViewModel(
                 accountGroupRepository.deleteGroup(id)
             } else {
                 pendingDeletion.value = GroupDeletionConfirmationUi(id, groupName, linkedGoalNames)
+            }
+        }
+    }
+
+    /** Moves a persisted group one place up or down and saves the whole order. Taps are serialized so
+     *  each move starts from the order the previous one saved. */
+    fun onMoveGroup(id: String, up: Boolean) {
+        viewModelScope.launch {
+            reorderMutex.withLock {
+                val ids = accountGroupRepository.observeAll().first()
+                    .map { it.id }
+                    .filter { it != AccountGroup.ALL_ACCOUNTS_ID }
+                val from = ids.indexOf(id)
+                val to = if (up) from - 1 else from + 1
+                if (from < 0 || to !in ids.indices) return@withLock
+                accountGroupRepository.reorderGroups(ids.toMutableList().apply { add(to, removeAt(from)) })
             }
         }
     }
@@ -160,20 +214,32 @@ class GruposViewModel(
         newGroupForm.value = newGroupForm.value.copy(selectedAssetIds = updated)
     }
 
+    /** Creates the group, or updates the edited one (see [editingGroupId]). */
     fun onSaveNewGroup() {
         val form = newGroupForm.value
-        if (form.title.isBlank() || form.selectedAssetIds.isEmpty()) return
+        if (!form.canSave()) return
 
         viewModelScope.launch {
-            accountGroupRepository.insertGroup(
-                AccountGroup(
-                    id = idProvider(),
-                    name = form.title.trim(),
-                    showBalance = form.showBalance,
-                    sortOrder = 0,
-                    memberAssetIds = form.selectedAssetIds,
-                ),
+            // New groups go last; an edit keeps its position (updateGroup ignores sortOrder).
+            val nextSortOrder = accountGroupRepository.observeAll().first()
+                .filter { it.id != AccountGroup.ALL_ACCOUNTS_ID }
+                .maxOfOrNull { it.sortOrder + 1 } ?: 0
+            val group = AccountGroup(
+                id = editingGroupId ?: idProvider(),
+                name = form.title.trim(),
+                showBalance = form.showBalance,
+                sortOrder = nextSortOrder,
+                memberAssetIds = form.selectedAssetIds,
             )
+            if (editingGroupId == null) {
+                accountGroupRepository.insertGroup(group)
+            } else {
+                try {
+                    accountGroupRepository.updateGroup(group)
+                } catch (_: AccountGroupNotFoundException) {
+                    // Deleted meanwhile (e.g. from another screen): nothing left to edit.
+                }
+            }
             navigateBackChannel.send(Unit)
         }
     }
@@ -185,8 +251,10 @@ class GruposViewModel(
     ): GruposUiState {
         val (assets, accountGroups, rates) = data
 
+        val movableIds = accountGroups.map { it.id }.filter { it != AccountGroup.ALL_ACCOUNTS_ID }
         val groups = accountGroups.map { group ->
             val members = groupMembers(group, assets)
+            val position = movableIds.indexOf(group.id)
             AccountGroupRowUi(
                 id = group.id,
                 name = group.name,
@@ -194,6 +262,8 @@ class GruposViewModel(
                 showBalance = group.showBalance,
                 total = groupTotal(group, assets, rates),
                 members = members.map { GruposMemberUi(it.id, it.name, it.amount.toEur(rates), it.group) },
+                canMoveUp = position > 0,
+                canMoveDown = position in 0 until movableIds.lastIndex,
             )
         }
 
@@ -217,11 +287,14 @@ class GruposViewModel(
             assetChecklist = checklist,
             selectedCount = form.selectedAssetIds.size,
             selectedTotal = selectedTotal,
-            canSaveNewGroup = form.title.isNotBlank() && form.selectedAssetIds.isNotEmpty(),
+            canSaveNewGroup = form.canSave(),
             pendingDeletion = pendingDeletion,
+            isEditing = editingGroupId != null,
         )
     }
 }
+
+private fun NewGroupForm.canSave(): Boolean = loaded && title.isNotBlank() && selectedAssetIds.isNotEmpty()
 
 @OptIn(ExperimentalUuidApi::class)
 private fun newAccountGroupId(): String = Uuid.random().toString()

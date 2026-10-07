@@ -351,6 +351,29 @@ class SavingsGoalRepositoryTest {
     }
 
     @Test
+    fun `delete removes an open or cancelled goal with its whole history`() = runTest {
+        val fixture = fixture()
+        fixture.seedAsset("asset-1", "EUR")
+        val openId = fixture.repository.create(command("Open", linkedAssetId = "asset-1"))
+        val cancelledId = fixture.repository.create(command("Cancelled"))
+        val keptId = fixture.repository.create(command("Kept"))
+        fixture.repository.allocate(openId, Money(250))
+        fixture.repository.allocate(cancelledId, Money(100))
+        fixture.repository.cancel(cancelledId)
+
+        fixture.repository.delete(openId)
+        fixture.repository.delete(cancelledId)
+
+        assertEquals(listOf(keptId), fixture.repository.observeAll().first().map { it.id })
+        assertTrue(fixture.db.savingsGoalDao().listAllAllocationEvents().isEmpty())
+        assertTrue(fixture.db.savingsGoalDao().listAllLinkEvents().isEmpty())
+        // The linked asset stays: deleting a goal never touches what it pointed at.
+        assertEquals("asset-1", fixture.db.assetDao().find("asset-1")?.id)
+        assertFailsWith<SavingsGoalNotFoundException> { fixture.repository.delete(openId) }
+        fixture.close()
+    }
+
+    @Test
     fun `cancel funded appends exact release while empty cancel writes no zero event`() = runTest {
         val fixture = fixture()
         val fundedId = fixture.repository.create(command("Funded"))

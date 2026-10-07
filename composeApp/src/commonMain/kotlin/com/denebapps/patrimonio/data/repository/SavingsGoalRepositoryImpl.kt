@@ -204,6 +204,11 @@ class SavingsGoalRepositoryImpl(
         }
     }
 
+    override suspend fun delete(goalId: String) {
+        seedingGate.await()
+        if (dataSource.deleteGoal(goalId) == 0) throw SavingsGoalNotFoundException(goalId)
+    }
+
     private suspend fun requireOpenGoal(goalId: String): SavingsGoalEntity {
         val goal = dataSource.findGoal(goalId) ?: throw SavingsGoalNotFoundException(goalId)
         val lifecycle = SavingsGoalLifecycle.valueOf(goal.lifecycle)

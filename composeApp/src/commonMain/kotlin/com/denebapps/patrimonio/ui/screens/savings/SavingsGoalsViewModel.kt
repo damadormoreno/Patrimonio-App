@@ -2,9 +2,10 @@ package com.denebapps.patrimonio.ui.screens.savings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.denebapps.patrimonio.domain.calc.groupMembers
+import com.denebapps.patrimonio.domain.calc.goalsSharingLinkedBalance
 import com.denebapps.patrimonio.domain.calc.parseAmountToMinor
-import com.denebapps.patrimonio.domain.calc.savingsGoalCoverage
+import com.denebapps.patrimonio.domain.calc.trackedBalance
+import com.denebapps.patrimonio.domain.calc.tracksLinkedBalance
 import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.Currency
@@ -47,7 +48,17 @@ data class SavingsGoalRowUi(
     val closed: Boolean,
     val linkedAssetId: String?,
     val linkedGroupId: String?,
+    /** [progress] is the balance of the linked asset or group ([linkedTargetName]), not allocations:
+     *  allocate and withdraw do not apply. */
+    val tracksBalance: Boolean = false,
+    val linkedTargetName: String? = null,
+    /** The tracked balance needs an exchange rate that is not available; [progress] shows zero. */
+    val balanceUnavailable: Boolean = false,
 )
+
+/** Several open goals follow the balance of the same asset or group ([targetName]); each one counts it
+ *  in full. */
+data class SharedBalanceNoticeUi(val targetName: String, val goalNames: List<String>)
 
 /** One same-currency asset offered by the create form's optional link picker (spec: Create Goal
  *  Form — "an asset link MUST be optional and, when offered, restricted to assets sharing the
@@ -62,8 +73,7 @@ data class LinkableGroupUi(val id: String, val name: String)
 data class SavingsGoalsUiState(
     val goals: List<SavingsGoalRowUi>,
     val isEmpty: Boolean,
-    val coverageWarning: PatrimonioCoverageUi,
-    val groupCoverageWarning: PatrimonioCoverageUi,
+    val sharedBalanceNotices: List<SharedBalanceNoticeUi>,
     val newGoalName: String,
     val newGoalTargetText: String,
     val newGoalCurrency: Currency,
@@ -116,16 +126,14 @@ private data class Forms(
  * (design.md Decision 1 & 8) — one new instance per pushed destination (`GruposViewModel`/`Grupos`+
  * `NuevoGrupo` precedent), all sharing this single class. Every command maps 1:1 to a
  * [SavingsGoalRepository] atomic command (design.md Interfaces) — no new domain behavior is
- * introduced here. Reuses [savingsGoalCoverage] plus [coverageWarning] to derive the ONE shared
- * undercoverage warning (savings-goals-core spec: "Shared native-currency coverage") across every
- * currently-linked goal — never a per-goal covered amount or priority (spec: Shared Undercoverage
- * Warning Only). [initialGoalId]/[initialWithdraw] seed [SavingsGoalsUiState.selectedGoal]/
+ * introduced here. An open goal linked to an asset or a group shows that balance as its progress
+ * ([trackedBalance]) and takes no allocations; goals sharing a balance get one notice per shared
+ * target. [initialGoalId]/[initialWithdraw] seed [SavingsGoalsUiState.selectedGoal]/
  * [SavingsGoalsUiState.withdraw] for the `GoalAllocate` destination; both default to `null`/`false`
  * for the section and `NewGoal` instances, where they are unused.
  *
  * A new goal links to an asset XOR a persisted group XOR nothing ([onNewGoalLinkChange] and
- * [onNewGoalGroupLinkChange] replace each other). Group coverage is reported separately in
- * [SavingsGoalsUiState.groupCoverageWarning] (one shared warning, like the asset one).
+ * [onNewGoalGroupLinkChange] replace each other).
  */
 class SavingsGoalsViewModel(
     private val savingsGoalRepository: SavingsGoalRepository,
@@ -142,10 +150,10 @@ class SavingsGoalsViewModel(
 
     private val navigateBackChannel = Channel<Unit>(Channel.BUFFERED)
 
-    /** One-shot nav-back signal, emitted after a successful [onSaveNewGoal] (`AddPatrimonioSheetViewModel`
-     *  precedent). Allocate/withdraw/cancel do NOT navigate back — the sheet stays open so the updated
-     *  progress is visible in place (spec: Reactive Goals State — "the affected goal's progress
-     *  updates in place without reload"). */
+    /** One-shot nav-back signal, emitted after a successful [onSaveNewGoal] or [onDeleteGoal]
+     *  (`AddPatrimonioSheetViewModel` precedent). Allocate/withdraw/cancel do NOT navigate back — the
+     *  sheet stays open so the updated progress is visible in place (spec: Reactive Goals State — "the
+     *  affected goal's progress updates in place without reload"). */
     val navigateBack: Flow<Unit> = navigateBackChannel.receiveAsFlow()
 
     private val dataFlow = combine(
@@ -274,34 +282,31 @@ class SavingsGoalsViewModel(
         }
     }
 
+    /** Deletes the selected goal and its history, then navigates back. Callers confirm first. */
+    fun onDeleteGoal() {
+        val goalId = selectedGoalId.value ?: return
+        viewModelScope.launch {
+            try {
+                savingsGoalRepository.delete(goalId)
+                errorMessage.value = null
+                navigateBackChannel.send(Unit)
+            } catch (e: RuntimeException) {
+                errorMessage.value = "No se pudo eliminar la meta."
+            }
+        }
+    }
+
     private fun buildState(data: SavingsGoalsData, forms: Forms): SavingsGoalsUiState {
         val (goals, assets, groups, rates) = data
 
-        val rows = goals.map { it.toRowUi() }
-
-        // ONE shared warning across every currently-linked goal (spec: Shared Undercoverage Warning
-        // Only) — pick any one linked goal per distinct linked asset id (savingsGoalCoverage's
-        // reserved sum is per-asset, identical for every goal sharing that asset — SavingsGoalCalcTest
-        // "shared coverage counts each goal id once without per-goal priority").
-        val coverageWarning = goals
-            .filter { it.linkedAssetId != null }
-            .distinctBy { it.linkedAssetId }
-            .map { linkedGoal -> coverageWarning(savingsGoalCoverage(linkedGoal, assets, goals)) }
-            .firstOrNull { it == PatrimonioCoverageUi.Warning } ?: PatrimonioCoverageUi.None
-
-        // Group coverage is expressed in each goal's own currency, so (unlike the per-asset case) goals
-        // sharing a group are evaluated one by one; the section still shows ONE shared group warning.
-        val groupWarnings = goals
-            .filter { it.linkedGroupId != null }
-            .map { linkedGoal ->
-                val converted = needsConversion(linkedGoal, assets, groups, goals)
-                coverageWarning(savingsGoalCoverage(linkedGoal, assets, goals, groups, rates), converted)
-            }
-            .filterIsInstance<PatrimonioCoverageUi.GroupWarning>()
-        val groupCoverageWarning = if (groupWarnings.isEmpty()) {
-            PatrimonioCoverageUi.None
-        } else {
-            PatrimonioCoverageUi.GroupWarning(groupWarnings.any { it.convertedAtCurrentRate })
+        val targetNames = assets.associate { it.id to it.name } + groups.associate { it.id to it.name }
+        val rows = goals.map { goal -> goal.toRowUi(assets, groups, rates, targetNames) }
+        val sharedBalanceNotices = goalsSharingLinkedBalance(goals).map { sharing ->
+            val first = sharing.first()
+            SharedBalanceNoticeUi(
+                targetName = targetNames[first.linkedAssetId ?: first.linkedGroupId].orEmpty(),
+                goalNames = sharing.map { it.name },
+            )
         }
 
         val linkableAssets = assets
@@ -322,8 +327,7 @@ class SavingsGoalsViewModel(
         return SavingsGoalsUiState(
             goals = rows,
             isEmpty = rows.isEmpty(),
-            coverageWarning = coverageWarning,
-            groupCoverageWarning = groupCoverageWarning,
+            sharedBalanceNotices = sharedBalanceNotices,
             newGoalName = forms.newGoal.name,
             newGoalTargetText = forms.newGoal.targetText,
             newGoalCurrency = forms.newGoal.currency,
@@ -338,6 +342,7 @@ class SavingsGoalsViewModel(
             allocateAmountText = forms.allocate.amountText,
             canSubmitAllocate = selectedGoal != null &&
                 !selectedGoal.closed &&
+                !selectedGoal.tracksBalance &&
                 allocateAmountMinor != null &&
                 allocateAmountMinor > 0,
             errorMessage = forms.errorMessage,
@@ -345,33 +350,40 @@ class SavingsGoalsViewModel(
     }
 }
 
-private fun SavingsGoal.toRowUi() = SavingsGoalRowUi(
-    id = id,
-    name = name,
-    target = target,
-    progress = progress,
-    progressPct = progressPercentage(progress, target.amount),
-    targetReached = targetReached,
-    closed = lifecycle != SavingsGoalLifecycle.OPEN,
-    linkedAssetId = linkedAssetId,
-    linkedGroupId = linkedGroupId,
-)
-
-/** True when [goal]'s group coverage converts anything: a member asset, or another goal sharing the group,
- *  is in a currency other than [goal]'s. */
-private fun needsConversion(
-    goal: SavingsGoal,
+/** A goal that tracks a linked balance shows that balance as its progress (zero when it cannot be
+ *  computed); any other goal shows its own allocations. */
+private fun SavingsGoal.toRowUi(
     assets: List<Asset>,
     groups: List<AccountGroup>,
-    allGoals: List<SavingsGoal>,
-): Boolean {
-    val group = groups.firstOrNull { it.id == goal.linkedGroupId } ?: return false
-    val currency = goal.target.currency
-    return groupMembers(group, assets).any { it.amount.currency != currency } ||
-        allGoals.any { it.linkedGroupId == group.id && it.target.currency != currency }
+    rates: FxRates,
+    targetNames: Map<String, String>,
+): SavingsGoalRowUi {
+    val balance = trackedBalance(this, assets, groups, rates)
+    val shown = if (tracksLinkedBalance) balance ?: Money.ZERO else progress
+    return SavingsGoalRowUi(
+        id = id,
+        name = name,
+        target = target,
+        progress = shown,
+        progressPct = progressPercentage(shown, target.amount),
+        targetReached = shown >= target.amount,
+        closed = lifecycle != SavingsGoalLifecycle.OPEN,
+        linkedAssetId = linkedAssetId,
+        linkedGroupId = linkedGroupId,
+        tracksBalance = tracksLinkedBalance,
+        linkedTargetName = (linkedAssetId ?: linkedGroupId)?.let(targetNames::get),
+        balanceUnavailable = tracksLinkedBalance && balance == null,
+    )
 }
 
 private fun progressPercentage(progress: Money, target: Money): Int {
     if (target.minorUnits <= 0L) return 0
     return (progress.minorUnits.toDouble() * 100.0 / target.minorUnits.toDouble()).roundToInt()
+}
+
+/** Where a linked goal's progress comes from, or null for goals that take allocations. */
+fun trackedBalanceCaption(goal: SavingsGoalRowUi): String? = when {
+    !goal.tracksBalance -> null
+    goal.balanceUnavailable -> "Sin tipo de cambio para calcular el saldo de «${goal.linkedTargetName.orEmpty()}»"
+    else -> "Sigue el saldo de «${goal.linkedTargetName.orEmpty()}»"
 }

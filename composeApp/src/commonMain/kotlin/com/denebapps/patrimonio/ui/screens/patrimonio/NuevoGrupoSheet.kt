@@ -38,17 +38,20 @@ import androidx.compose.ui.unit.sp
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 import org.koin.compose.viewmodel.koinViewModel
+import org.koin.core.parameter.parametersOf
 
-/** Full-height create-account-group destination (spec: Create Account Group Form). Rendered as a
- *  `composable<NuevoGrupo>` entry, sharing [GruposViewModel]'s NuevoGrupo form state (design.md
- *  Decision 1 / File Changes). Pops the back stack once [GruposViewModel.navigateBack] emits
- *  (`AddPatrimonioSheet` precedent). Ports `design-reference/grupos.jsx`'s `NuevoGrupoSheet`.
+/** Full-height create-account-group destination (spec: Create Account Group Form), or edit form for
+ *  the group with [groupId]. Rendered as a `composable<NuevoGrupo>` entry, sharing [GruposViewModel]'s
+ *  NuevoGrupo form state (design.md Decision 1 / File Changes). Pops the back stack once
+ *  [GruposViewModel.navigateBack] emits (`AddPatrimonioSheet` precedent). Ports
+ *  `design-reference/grupos.jsx`'s `NuevoGrupoSheet`.
  */
 @Composable
 fun NuevoGrupoSheet(
     modifier: Modifier = Modifier,
+    groupId: String? = null,
     onNavigateBack: () -> Unit = {},
-    viewModel: GruposViewModel = koinViewModel(),
+    viewModel: GruposViewModel = koinViewModel(parameters = { parametersOf(groupId) }),
 ) {
     val state by viewModel.state.collectAsState()
     val colors = LocalAppColors.current
@@ -71,7 +74,12 @@ fun NuevoGrupoSheet(
                 .background(color = colors.line, shape = RoundedCornerShape(999.dp)),
         )
 
-        NuevoGrupoTopBar(canSave = state.canSaveNewGroup, onCancel = onNavigateBack, onSave = viewModel::onSaveNewGroup)
+        NuevoGrupoTopBar(
+            title = if (state.isEditing) "Editar grupo" else "Nuevo grupo de cuentas",
+            canSave = state.canSaveNewGroup,
+            onCancel = onNavigateBack,
+            onSave = viewModel::onSaveNewGroup,
+        )
 
         Column(
             modifier = Modifier
@@ -130,7 +138,7 @@ fun NuevoGrupoSheet(
 }
 
 @Composable
-private fun NuevoGrupoTopBar(canSave: Boolean, onCancel: () -> Unit, onSave: () -> Unit) {
+private fun NuevoGrupoTopBar(title: String, canSave: Boolean, onCancel: () -> Unit, onSave: () -> Unit) {
     val colors = LocalAppColors.current
 
     Row(
@@ -153,7 +161,7 @@ private fun NuevoGrupoTopBar(canSave: Boolean, onCancel: () -> Unit, onSave: () 
             Icon(AppIcons.close, contentDescription = "Volver", tint = colors.ink2, modifier = Modifier.size(16.dp))
         }
         Text(
-            text = "Nuevo grupo de cuentas",
+            text = title,
             color = colors.ink,
             fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,

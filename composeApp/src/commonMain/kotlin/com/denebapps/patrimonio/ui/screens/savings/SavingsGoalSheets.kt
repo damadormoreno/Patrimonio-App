@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
@@ -34,6 +35,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +46,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.denebapps.patrimonio.domain.model.Currency
+import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.ui.components.Pill
 import com.denebapps.patrimonio.ui.components.PillTone
 import com.denebapps.patrimonio.ui.icons.AppIcons
@@ -146,7 +149,8 @@ fun NewGoalSheet(
  * Allocate/withdraw + cancel destination for one goal (spec: Allocate and Withdraw Funds, Cancel and
  * Closed-Goal Restrictions). A closed goal (cancelled or explicitly closed) hides every mutation
  * affordance and shows only its final preserved/read-only progress (spec: "Closed goal hides
- * mutation actions").
+ * mutation actions"). Any goal, open or closed, can be deleted after a confirmation; the sheet then
+ * closes.
  */
 @Composable
 fun GoalAllocateSheet(
@@ -159,6 +163,12 @@ fun GoalAllocateSheet(
     val state by viewModel.state.collectAsState()
     val colors = LocalAppColors.current
     val goal = state.selectedGoal
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    var confirmCancel by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        viewModel.navigateBack.collect { onNavigateBack() }
+    }
 
     Column(
         modifier = modifier
@@ -215,6 +225,15 @@ fun GoalAllocateSheet(
                     lineHeight = 18.sp,
                     modifier = Modifier.padding(top = 16.dp),
                 )
+            } else if (goal.tracksBalance) {
+                Text(
+                    text = "${trackedBalanceCaption(goal)}. El progreso se actualiza solo cuando cambia ese " +
+                        "saldo, así que aquí no se asigna ni se retira dinero.",
+                    color = colors.muted,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                    modifier = Modifier.padding(top = 16.dp),
+                )
             } else {
                 AllocateModeSegmented(withdraw = state.withdraw, onModeChange = viewModel::onWithdrawModeChange)
 
@@ -240,7 +259,9 @@ fun GoalAllocateSheet(
                     onClick = viewModel::onSubmitAllocate,
                     modifier = Modifier.padding(top = 16.dp),
                 )
+            }
 
+            if (!goal.closed) {
                 Text(
                     text = "Cancelar meta",
                     color = colors.expense,
@@ -253,14 +274,90 @@ fun GoalAllocateSheet(
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
-                            onClick = viewModel::onCancelGoal,
+                            onClick = { confirmCancel = true },
                         )
                         .padding(vertical = 10.dp),
                 )
             }
 
+            if ((goal.closed || goal.tracksBalance) && state.errorMessage != null) {
+                Text(
+                    text = state.errorMessage.orEmpty(),
+                    color = colors.expense,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+
+            Text(
+                text = "Eliminar meta",
+                color = colors.muted,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = if (goal.closed) 20.dp else 4.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { confirmDelete = true },
+                    )
+                    .padding(vertical = 10.dp),
+            )
+
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    if (confirmCancel && goal != null) {
+        val released = when {
+            goal.tracksBalance -> "El saldo de «${goal.linkedTargetName.orEmpty()}» no cambia y la"
+            goal.progress > Money.ZERO ->
+                "Se liberarán los ${formatSavingsAmount(goal.progress, goal.target.currency)} asignados y la"
+            else -> "La"
+        }
+        AlertDialog(
+            onDismissRequest = { confirmCancel = false },
+            title = { Text("Cancelar meta") },
+            text = {
+                Text(
+                    "$released meta quedará cerrada: seguirás viéndola, pero ya no admitirá movimientos. " +
+                        "Esta acción no se puede deshacer.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmCancel = false
+                    viewModel.onCancelGoal()
+                }) { Text("Cancelar meta", color = colors.expense) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmCancel = false }) { Text("Volver") }
+            },
+        )
+    }
+
+    if (confirmDelete && goal != null) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Eliminar meta") },
+            text = {
+                Text(
+                    "Se borrará \"${goal.name}\" con todo su historial de aportaciones. " +
+                        "Esta acción no se puede deshacer.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    viewModel.onDeleteGoal()
+                }) { Text("Eliminar", color = colors.expense) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") }
+            },
+        )
     }
 }
 
@@ -772,7 +869,7 @@ private fun currencySymbolSavings(currency: Currency): String = when (currency) 
 
 /** Formats [money] in its own [currency] (not EUR-converted) — duplicated per-file
  *  (`PatrimonioScreen.formatItemAmount` precedent). */
-private fun formatSavingsAmount(money: com.denebapps.patrimonio.domain.model.Money, currency: Currency): String {
+private fun formatSavingsAmount(money: Money, currency: Currency): String {
     val decimals = currency.decimals
     var factor = 1L
     repeat(decimals) { factor *= 10 }

@@ -19,6 +19,7 @@ import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEvent
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
 import com.denebapps.patrimonio.domain.model.Subscription
 import com.denebapps.patrimonio.domain.model.YearMonth
+import com.denebapps.patrimonio.domain.repository.AccountGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.BackupRepository
@@ -250,6 +251,8 @@ class FakeNetWorthRepository(initial: List<NetWorthSnapshot> = emptyList()) : Ne
 class FakeAccountGroupRepository(initial: List<AccountGroup> = emptyList()) : AccountGroupRepository {
     private val backing = MutableStateFlow(initial)
 
+    val current: List<AccountGroup> get() = backing.value
+
     override fun observeAll(): Flow<List<AccountGroup>> = backing
 
     override suspend fun insertGroup(group: AccountGroup) {
@@ -258,6 +261,25 @@ class FakeAccountGroupRepository(initial: List<AccountGroup> = emptyList()) : Ac
 
     override suspend fun setMembers(groupId: String, assetIds: Set<String>) {
         backing.value = backing.value.map { if (it.id == groupId) it.copy(memberAssetIds = assetIds) else it }
+    }
+
+    override suspend fun updateGroup(group: AccountGroup) {
+        if (backing.value.none { it.id == group.id }) throw AccountGroupNotFoundException(group.id)
+        backing.value = backing.value.map {
+            if (it.id == group.id) {
+                it.copy(name = group.name, showBalance = group.showBalance, memberAssetIds = group.memberAssetIds)
+            } else {
+                it
+            }
+        }
+    }
+
+    override suspend fun reorderGroups(groupIds: List<String>) {
+        val reordered = backing.value.map { group ->
+            val index = groupIds.indexOf(group.id)
+            if (index >= 0) group.copy(sortOrder = index) else group
+        }
+        backing.value = reordered.sortedBy { it.sortOrder }
     }
 
     override suspend fun deleteGroup(id: String) {
@@ -432,6 +454,13 @@ class FakeSavingsGoalRepository(
     override suspend fun close(goalId: String) {
         requireOpenGoal(goalId)
         setLifecycle(goalId, SavingsGoalLifecycle.CLOSED)
+    }
+
+    override suspend fun delete(goalId: String) {
+        if (backing.value.none { it.id == goalId }) throw SavingsGoalNotFoundException(goalId)
+        backing.value = backing.value.filterNot { it.id == goalId }
+        eventsBacking.value = eventsBacking.value - goalId
+        linkEventsBacking.value = linkEventsBacking.value - goalId
     }
 
     override suspend fun cancel(goalId: String) {

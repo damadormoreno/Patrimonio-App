@@ -55,10 +55,11 @@ import com.denebapps.patrimonio.ui.components.PillTone
 import com.denebapps.patrimonio.ui.components.ScreenHeader
 import com.denebapps.patrimonio.ui.components.SectionRow
 import com.denebapps.patrimonio.ui.icons.AppIcons
-import com.denebapps.patrimonio.ui.screens.savings.PatrimonioCoverageUi
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalRowUi
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsUiState
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
+import com.denebapps.patrimonio.ui.screens.savings.SharedBalanceNoticeUi
+import com.denebapps.patrimonio.ui.screens.savings.trackedBalanceCaption
 import com.denebapps.patrimonio.ui.theme.AppShadows
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 import com.denebapps.patrimonio.ui.theme.LocalAppShapes
@@ -630,7 +631,7 @@ private fun AddPatrimonioCta(label: String, onClick: () -> Unit, modifier: Modif
 }
 
 /**
- * Metas de ahorro section (spec: `savings-goals-ui` — Goals List, Shared Undercoverage Warning Only,
+ * Metas de ahorro section (spec: `savings-goals-ui` — Goals List, shared-balance notices,
  * Empty State and Create CTA). Renders below the Activos/Pasivos block regardless of [PatrimonioView]
  * — goals are an independent concept from the asset/liability toggle. [onNewGoal]/[onGoalTap] push
  * `NewGoal`/`GoalAllocate(goalId)` (design.md Data Flow).
@@ -651,17 +652,8 @@ private fun MetasSection(
             showDivider = false,
         )
 
-        if (state.coverageWarning == PatrimonioCoverageUi.Warning) {
-            CoverageWarningBanner(
-                message = "Lo reservado en tus metas supera el saldo de la cuenta vinculada.",
-                modifier = Modifier.padding(bottom = 10.dp),
-            )
-        }
-        (state.groupCoverageWarning as? PatrimonioCoverageUi.GroupWarning)?.let { warning ->
-            CoverageWarningBanner(
-                message = groupCoverageMessage(warning),
-                modifier = Modifier.padding(bottom = 10.dp),
-            )
+        state.sharedBalanceNotices.forEach { notice ->
+            NoticeBanner(message = sharedBalanceMessage(notice), modifier = Modifier.padding(bottom = 10.dp))
         }
 
         if (state.isEmpty) {
@@ -677,15 +669,15 @@ private fun MetasSection(
     }
 }
 
-/** Copy for the group warning: names the group's balance and, when it mixes currencies, says it is
- *  converted at the current rate. */
-private fun groupCoverageMessage(warning: PatrimonioCoverageUi.GroupWarning): String {
-    val base = "Lo reservado en tus metas supera el saldo del grupo vinculado."
-    return if (warning.convertedAtCurrentRate) "$base Saldo convertido al cambio actual." else base
+/** «Viaje» y «Coche» siguen el saldo de «Ahorro»: cada una lo cuenta entero. */
+private fun sharedBalanceMessage(notice: SharedBalanceNoticeUi): String {
+    val names = notice.goalNames.map { "«$it»" }
+    val goals = names.dropLast(1).joinToString(", ") + " y " + names.last()
+    return "$goals siguen el saldo de «${notice.targetName}»: cada una lo cuenta entero."
 }
 
 @Composable
-private fun CoverageWarningBanner(message: String, modifier: Modifier = Modifier) {
+private fun NoticeBanner(message: String, modifier: Modifier = Modifier) {
     val colors = LocalAppColors.current
     Row(
         modifier = modifier
@@ -762,6 +754,16 @@ private fun SavingsGoalRow(goal: SavingsGoalRowUi, onClick: () -> Unit, modifier
             )
         }
         SavingsGoalProgressBar(pct = goal.progressPct, modifier = Modifier.padding(top = 8.dp))
+        trackedBalanceCaption(goal)?.let { caption ->
+            Text(
+                text = caption,
+                color = colors.muted,
+                fontSize = 11.5.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
     }
 }
 

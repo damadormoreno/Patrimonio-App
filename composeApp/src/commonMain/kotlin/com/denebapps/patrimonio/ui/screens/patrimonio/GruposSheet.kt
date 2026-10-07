@@ -56,6 +56,7 @@ fun GruposSheet(
     modifier: Modifier = Modifier,
     onNavigateBack: () -> Unit = {},
     onNewGroup: () -> Unit = {},
+    onEditGroup: (String) -> Unit = {},
     onNewAsset: () -> Unit = {},
     viewModel: GruposViewModel = koinViewModel(),
 ) {
@@ -150,7 +151,9 @@ fun GruposSheet(
                             expanded = if (group.id in expanded) expanded - group.id else expanded + group.id
                         },
                         editing = editing,
+                        onEdit = { onEditGroup(group.id) },
                         onDelete = { viewModel.onDeleteGroup(group.id) },
+                        onMove = { up -> viewModel.onMoveGroup(group.id, up) },
                     )
                 }
             }
@@ -261,7 +264,9 @@ private fun GrupoRow(
     expanded: Boolean,
     onToggle: () -> Unit,
     editing: Boolean,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onMove: (up: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAppColors.current
@@ -324,30 +329,33 @@ private fun GrupoRow(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     if (!group.builtin) {
-                        Box(
-                            modifier = Modifier
-                                .size(30.dp)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                    onClick = onDelete,
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = AppIcons.trash,
-                                contentDescription = "Eliminar ${group.name}",
-                                tint = colors.expense,
-                                modifier = Modifier.size(16.dp),
-                            )
-                        }
+                        RowActionButton(
+                            icon = AppIcons.arrowUp,
+                            contentDescription = "Subir ${group.name}",
+                            tint = colors.ink2,
+                            enabled = group.canMoveUp,
+                            onClick = { onMove(true) },
+                        )
+                        RowActionButton(
+                            icon = AppIcons.arrowDown,
+                            contentDescription = "Bajar ${group.name}",
+                            tint = colors.ink2,
+                            enabled = group.canMoveDown,
+                            onClick = { onMove(false) },
+                        )
+                        RowActionButton(
+                            icon = AppIcons.pencil,
+                            contentDescription = "Editar ${group.name}",
+                            tint = colors.ink2,
+                            onClick = onEdit,
+                        )
+                        RowActionButton(
+                            icon = AppIcons.trash,
+                            contentDescription = "Eliminar ${group.name}",
+                            tint = colors.expense,
+                            onClick = onDelete,
+                        )
                     }
-                    Icon(
-                        imageVector = AppIcons.grip,
-                        contentDescription = null,
-                        tint = colors.muted2,
-                        modifier = Modifier.size(17.dp),
-                    )
                 }
             }
         }
@@ -403,6 +411,34 @@ private fun GrupoRow(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun RowActionButton(
+    icon: ImageVector,
+    contentDescription: String,
+    tint: Color,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+) {
+    Box(
+        modifier = Modifier
+            .size(30.dp)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                enabled = enabled,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = if (enabled) tint else LocalAppColors.current.line,
+            modifier = Modifier.size(16.dp),
+        )
     }
 }
 
