@@ -37,6 +37,8 @@ val LightColors =
         catSubs = Color(0xFF8A6E9A),
         catSalary = Color(0xFF4F6F5C),
         catOther = Color(0xFF8E8675),
+        chartGain = Color(0xFF2F6DA8),
+        chartLoss = Color(0xFFBF5B2C),
     )
 
 val DarkColors =
@@ -70,4 +72,6 @@ val DarkColors =
         catSubs = Color(0xFFB08FBE),
         catSalary = Color(0xFF87B395),
         catOther = Color(0xFFA89F8E),
+        chartGain = Color(0xFF5A8ED0),
+        chartLoss = Color(0xFFD4733F),
     )

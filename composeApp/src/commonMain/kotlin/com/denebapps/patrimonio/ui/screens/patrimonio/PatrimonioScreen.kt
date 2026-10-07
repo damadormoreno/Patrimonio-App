@@ -50,6 +50,7 @@ import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.ui.components.EmptyState
 import com.denebapps.patrimonio.ui.components.FabContentBottomSpacing
+import com.denebapps.patrimonio.ui.components.HeaderIconBtn
 import com.denebapps.patrimonio.ui.components.Pill
 import com.denebapps.patrimonio.ui.components.PillTone
 import com.denebapps.patrimonio.ui.components.ScreenHeader
@@ -88,6 +89,7 @@ fun PatrimonioScreen(
     viewModel: PatrimonioViewModel = koinViewModel(),
     savingsGoalsViewModel: SavingsGoalsViewModel = koinViewModel(),
     onOpenGroups: () -> Unit = {},
+    onOpenHistory: () -> Unit = {},
     onAddItem: (PatrimonioView, String?) -> Unit = { _, _ -> },
     onViewChange: (PatrimonioView) -> Unit = {},
     onNewGoal: () -> Unit = {},
@@ -100,7 +102,11 @@ fun PatrimonioScreen(
     LaunchedEffect(state.view) { onViewChange(state.view) }
 
     Column(modifier.fillMaxSize().background(colors.bg)) {
-        ScreenHeader(title = "Patrimonio", eyebrow = state.monthLabel)
+        ScreenHeader(
+            title = "Patrimonio",
+            eyebrow = state.monthLabel,
+            right = { HeaderIconBtn(icon = AppIcons.calendar, onClick = onOpenHistory, label = "Evolución mensual") },
+        )
         Column(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
         ) {

@@ -33,6 +33,10 @@ object Settings
 @Serializable
 object Profile
 
+/** Month-by-month net worth ("Evolución mensual"), opened from the Patrimonio header. */
+@Serializable
+object NetWorthHistory
+
 /** Add-only Patrimonio item form (spec: Add Patrimonio Item Form). [isLiability] is the mode the
  *  route is opened with — the FAB uses the active Activos/Pasivos toggle, a per-group add affordance
  *  uses that card's mode — but the user MAY still switch mode inside the form. [groupId] prefills the
