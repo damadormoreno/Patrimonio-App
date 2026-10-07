@@ -44,14 +44,17 @@ class DataMaintenanceRepositoryImplTest {
         )
         db.accountGroupDao().insertGroup(AccountGroupEntity("group-1", "Daily", showBalance = true, sortOrder = 0))
         db.accountGroupDao().insertMember(AccountGroupMemberEntity("group-1", "asset-1"))
-        val goalId = db.savingsGoalDao().insertGoal(
+        val goalId = "goal-1"
+        db.savingsGoalDao().insertGoal(
             SavingsGoalEntity(
+                id = goalId,
                 name = "Trip",
                 targetMinor = 25_000,
                 currency = "EUR",
                 targetDateEpochDay = null,
                 linkedAssetId = "asset-1",
                 lifecycle = "OPEN",
+                createdAtEpochMs = 1L,
             ),
         )
         db.savingsGoalDao().insertAllocationEvent(

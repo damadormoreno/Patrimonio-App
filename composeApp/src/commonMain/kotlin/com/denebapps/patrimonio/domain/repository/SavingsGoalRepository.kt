@@ -13,35 +13,36 @@ import kotlinx.datetime.LocalDate
 interface SavingsGoalRepository {
     fun observeAll(): Flow<List<SavingsGoal>>
 
-    fun observeAllocationHistory(goalId: Long): Flow<List<SavingsGoalAllocationEvent>>
+    fun observeAllocationHistory(goalId: String): Flow<List<SavingsGoalAllocationEvent>>
 
-    fun observeLinkHistory(goalId: Long): Flow<List<SavingsGoalLinkEvent>>
+    fun observeLinkHistory(goalId: String): Flow<List<SavingsGoalLinkEvent>>
 
-    suspend fun create(command: CreateSavingsGoal): Long
+    /** @return the new goal's id. */
+    suspend fun create(command: CreateSavingsGoal): String
 
-    suspend fun allocate(goalId: Long, amount: Money)
+    suspend fun allocate(goalId: String, amount: Money)
 
-    suspend fun withdraw(goalId: Long, amount: Money)
+    suspend fun withdraw(goalId: String, amount: Money)
 
     /** Links an unlinked goal to an asset of the goal's currency. */
-    suspend fun link(goalId: Long, assetId: String)
+    suspend fun link(goalId: String, assetId: String)
 
     /** Links an unlinked goal to a persisted account group (any currency mix). The builtin
      *  "all accounts" group is not linkable. */
-    suspend fun linkToGroup(goalId: Long, groupId: String)
+    suspend fun linkToGroup(goalId: String, groupId: String)
 
     /** Moves an already-linked goal (to an asset or a group) to another asset of its currency. */
-    suspend fun relink(goalId: Long, assetId: String)
+    suspend fun relink(goalId: String, assetId: String)
 
     /** Moves an already-linked goal (to an asset or a group) to another persisted account group. */
-    suspend fun relinkToGroup(goalId: Long, groupId: String)
+    suspend fun relinkToGroup(goalId: String, groupId: String)
 
     /** Removes the current link, whether it targets an asset or a group. */
-    suspend fun unlink(goalId: Long)
+    suspend fun unlink(goalId: String)
 
-    suspend fun close(goalId: Long)
+    suspend fun close(goalId: String)
 
-    suspend fun cancel(goalId: Long)
+    suspend fun cancel(goalId: String)
 }
 
 data class CreateSavingsGoal(
@@ -76,7 +77,7 @@ class SavingsGoalArithmeticOverflowException(leftMinor: Long, operation: String,
 class SavingsGoalCurrencyMismatchException(goalCurrency: Currency, assetCurrency: Currency) :
     IllegalArgumentException("Savings goal currency $goalCurrency does not match asset currency $assetCurrency")
 
-class SavingsGoalNotFoundException(goalId: Long) :
+class SavingsGoalNotFoundException(goalId: String) :
     NoSuchElementException("Savings goal $goalId was not found")
 
 class SavingsGoalAssetNotFoundException(assetId: String) :
@@ -88,8 +89,8 @@ class SavingsGoalGroupNotFoundException(groupId: String) :
 class SavingsGoalBuiltinGroupException :
     IllegalArgumentException("The builtin all-accounts group cannot be linked to a savings goal")
 
-class TerminalSavingsGoalException(goalId: Long, lifecycle: SavingsGoalLifecycle) :
+class TerminalSavingsGoalException(goalId: String, lifecycle: SavingsGoalLifecycle) :
     IllegalStateException("Savings goal $goalId is terminal: $lifecycle")
 
-class InvalidSavingsGoalTransitionException(goalId: Long, transition: String) :
+class InvalidSavingsGoalTransitionException(goalId: String, transition: String) :
     IllegalStateException("Savings goal $goalId cannot perform transition '$transition'")

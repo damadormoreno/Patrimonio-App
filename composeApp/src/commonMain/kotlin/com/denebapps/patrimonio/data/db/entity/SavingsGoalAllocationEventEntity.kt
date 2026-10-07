@@ -19,7 +19,7 @@ import androidx.room.PrimaryKey
 )
 data class SavingsGoalAllocationEventEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val goalId: Long,
+    val goalId: String,
     val deltaMinor: Long,
     val timestampEpochMs: Long,
 )

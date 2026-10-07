@@ -58,7 +58,7 @@ object NewGoal
  *  allocate/withdraw toggle — `false` from a plain goal-row tap, `true` from a dedicated withdraw
  *  affordance — but stays user-switchable inside the sheet. */
 @Serializable
-data class GoalAllocate(val goalId: Long, val withdraw: Boolean = false)
+data class GoalAllocate(val goalId: String, val withdraw: Boolean = false)
 
 /** Create ([subscriptionId] null, from the FAB or the list CTA) or edit one subscription. */
 @Serializable

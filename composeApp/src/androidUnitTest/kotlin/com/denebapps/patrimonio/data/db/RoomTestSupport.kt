@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Room
 import androidx.sqlite.driver.AndroidSQLiteDriver
 import androidx.test.core.app.ApplicationProvider
+import com.denebapps.patrimonio.data.db.dao.SavingsGoalDao
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 
@@ -28,6 +30,12 @@ fun buildInMemoryTestDatabase(): AppDatabase {
         .setDriver(AndroidSQLiteDriver())
         .setQueryCoroutineContext(Dispatchers.Default)
         .build()
+}
+
+/** Inserts [goal] and returns its id, for tests written against the old autoincrement `insertGoal`. */
+suspend fun SavingsGoalDao.insertGoalReturningId(goal: SavingsGoalEntity): String {
+    insertGoal(goal)
+    return goal.id
 }
 
 /** A [SeedingGate] whose [DatabaseInitializer.ensureSeeded] starts immediately on [this] scope —

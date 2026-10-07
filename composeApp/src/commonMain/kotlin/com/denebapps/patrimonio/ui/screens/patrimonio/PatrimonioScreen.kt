@@ -90,7 +90,7 @@ fun PatrimonioScreen(
     onAddItem: (PatrimonioView, String?) -> Unit = { _, _ -> },
     onViewChange: (PatrimonioView) -> Unit = {},
     onNewGoal: () -> Unit = {},
-    onGoalTap: (Long) -> Unit = {},
+    onGoalTap: (String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val savingsState by savingsGoalsViewModel.state.collectAsState()
@@ -639,7 +639,7 @@ private fun AddPatrimonioCta(label: String, onClick: () -> Unit, modifier: Modif
 private fun MetasSection(
     state: SavingsGoalsUiState,
     onNewGoal: () -> Unit,
-    onGoalTap: (Long) -> Unit,
+    onGoalTap: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAppColors.current

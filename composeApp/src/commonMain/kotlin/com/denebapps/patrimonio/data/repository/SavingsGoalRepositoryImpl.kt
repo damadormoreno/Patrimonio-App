@@ -43,6 +43,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.datetime.Clock
 import kotlinx.datetime.LocalDate
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 class SavingsGoalRepositoryImpl(
     private val database: AppDatabase,
@@ -51,13 +53,14 @@ class SavingsGoalRepositoryImpl(
     private val seedingGate: SeedingGate,
     private val clock: Clock,
     private val accountGroupDao: AccountGroupDao = database.accountGroupDao(),
+    private val newGoalId: () -> String = ::randomGoalId,
 ) : SavingsGoalRepository {
     override fun observeAll(): Flow<List<SavingsGoal>> = flow {
         seedingGate.await()
         emitAll(dataSource.observeAll().map { rows -> rows.map(::toDomain) })
     }
 
-    override fun observeAllocationHistory(goalId: Long): Flow<List<SavingsGoalAllocationEvent>> = flow {
+    override fun observeAllocationHistory(goalId: String): Flow<List<SavingsGoalAllocationEvent>> = flow {
         seedingGate.await()
         emitAll(
             dataSource.observeAllocationHistory(goalId).map { rows ->
@@ -66,38 +69,41 @@ class SavingsGoalRepositoryImpl(
         )
     }
 
-    override fun observeLinkHistory(goalId: Long): Flow<List<SavingsGoalLinkEvent>> = flow {
+    override fun observeLinkHistory(goalId: String): Flow<List<SavingsGoalLinkEvent>> = flow {
         seedingGate.await()
         emitAll(dataSource.observeLinkHistory(goalId).map { rows -> rows.map(::toDomain) })
     }
 
-    override suspend fun create(command: CreateSavingsGoal): Long {
+    override suspend fun create(command: CreateSavingsGoal): String {
         seedingGate.await()
         validateCreate(command)
         return database.writeTransaction {
             command.linkedAssetId?.let { assetId -> requireCompatibleAsset(command.target.currency, assetId) }
             command.linkedGroupId?.let { groupId -> requireLinkableGroup(groupId) }
-            val goalId =
-                dataSource.insertGoal(
-                    SavingsGoalEntity(
-                        name = command.name,
-                        targetMinor = command.target.amount.minorUnits,
-                        currency = command.target.currency.code,
-                        targetDateEpochDay = command.targetDate?.toEpochDays()?.toLong(),
-                        linkedAssetId = command.linkedAssetId,
-                        lifecycle = SavingsGoalLifecycle.OPEN.name,
-                        linkedGroupId = command.linkedGroupId,
-                    ),
-                )
+            val goalId = newGoalId()
+            val now = clock.now().toEpochMilliseconds()
+            dataSource.insertGoal(
+                SavingsGoalEntity(
+                    id = goalId,
+                    name = command.name,
+                    targetMinor = command.target.amount.minorUnits,
+                    currency = command.target.currency.code,
+                    targetDateEpochDay = command.targetDate?.toEpochDays()?.toLong(),
+                    linkedAssetId = command.linkedAssetId,
+                    lifecycle = SavingsGoalLifecycle.OPEN.name,
+                    linkedGroupId = command.linkedGroupId,
+                    createdAtEpochMs = now,
+                ),
+            )
             val target =
                 command.linkedAssetId?.let { LinkTarget.Asset(it) }
                     ?: command.linkedGroupId?.let { LinkTarget.Group(it) }
-            target?.let { dataSource.insertLinkEvent(linkEvent(goalId, null, it, SavingsGoalLinkEventKind.LINK)) }
+            target?.let { dataSource.insertLinkEvent(linkEvent(goalId, null, it, SavingsGoalLinkEventKind.LINK, now)) }
             goalId
         }
     }
 
-    override suspend fun allocate(goalId: Long, amount: Money) {
+    override suspend fun allocate(goalId: String, amount: Money) {
         seedingGate.await()
         requirePositiveDelta(amount)
         database.writeTransaction {
@@ -108,7 +114,7 @@ class SavingsGoalRepositoryImpl(
         }
     }
 
-    override suspend fun withdraw(goalId: Long, amount: Money) {
+    override suspend fun withdraw(goalId: String, amount: Money) {
         seedingGate.await()
         requirePositiveDelta(amount)
         database.writeTransaction {
@@ -119,7 +125,7 @@ class SavingsGoalRepositoryImpl(
         }
     }
 
-    override suspend fun link(goalId: Long, assetId: String) {
+    override suspend fun link(goalId: String, assetId: String) {
         seedingGate.await()
         database.writeTransaction {
             val goal = requireOpenGoal(goalId)
@@ -131,7 +137,7 @@ class SavingsGoalRepositoryImpl(
         }
     }
 
-    override suspend fun linkToGroup(goalId: Long, groupId: String) {
+    override suspend fun linkToGroup(goalId: String, groupId: String) {
         seedingGate.await()
         database.writeTransaction {
             val goal = requireOpenGoal(goalId)
@@ -143,7 +149,7 @@ class SavingsGoalRepositoryImpl(
         }
     }
 
-    override suspend fun relink(goalId: Long, assetId: String) {
+    override suspend fun relink(goalId: String, assetId: String) {
         seedingGate.await()
         database.writeTransaction {
             val goal = requireOpenGoal(goalId)
@@ -156,7 +162,7 @@ class SavingsGoalRepositoryImpl(
         }
     }
 
-    override suspend fun relinkToGroup(goalId: Long, groupId: String) {
+    override suspend fun relinkToGroup(goalId: String, groupId: String) {
         seedingGate.await()
         database.writeTransaction {
             val goal = requireOpenGoal(goalId)
@@ -169,7 +175,7 @@ class SavingsGoalRepositoryImpl(
         }
     }
 
-    override suspend fun unlink(goalId: Long) {
+    override suspend fun unlink(goalId: String) {
         seedingGate.await()
         database.writeTransaction {
             val goal = requireOpenGoal(goalId)
@@ -179,7 +185,7 @@ class SavingsGoalRepositoryImpl(
         }
     }
 
-    override suspend fun close(goalId: Long) {
+    override suspend fun close(goalId: String) {
         seedingGate.await()
         database.writeTransaction {
             requireOpenGoal(goalId)
@@ -187,7 +193,7 @@ class SavingsGoalRepositoryImpl(
         }
     }
 
-    override suspend fun cancel(goalId: Long) {
+    override suspend fun cancel(goalId: String) {
         seedingGate.await()
         database.writeTransaction {
             requireOpenGoal(goalId)
@@ -198,14 +204,14 @@ class SavingsGoalRepositoryImpl(
         }
     }
 
-    private suspend fun requireOpenGoal(goalId: Long): SavingsGoalEntity {
+    private suspend fun requireOpenGoal(goalId: String): SavingsGoalEntity {
         val goal = dataSource.findGoal(goalId) ?: throw SavingsGoalNotFoundException(goalId)
         val lifecycle = SavingsGoalLifecycle.valueOf(goal.lifecycle)
         if (lifecycle != SavingsGoalLifecycle.OPEN) throw TerminalSavingsGoalException(goalId, lifecycle)
         return goal
     }
 
-    private suspend fun currentProgress(goalId: Long): Money =
+    private suspend fun currentProgress(goalId: String): Money =
         checkedSavingsGoalProgress(dataSource.listAllocationHistory(goalId).map(::toDomain))
 
     private suspend fun requireCompatibleAsset(goalCurrency: Currency, assetId: String) {
@@ -220,22 +226,27 @@ class SavingsGoalRepositoryImpl(
         accountGroupDao.findGroup(groupId) ?: throw SavingsGoalGroupNotFoundException(groupId)
     }
 
-    private fun allocationEvent(goalId: Long, delta: Money) = SavingsGoalAllocationEventEntity(
+    private fun allocationEvent(goalId: String, delta: Money) = SavingsGoalAllocationEventEntity(
         goalId = goalId,
         deltaMinor = delta.minorUnits,
         timestampEpochMs = clock.now().toEpochMilliseconds(),
     )
 
-    private fun linkEvent(goalId: Long, from: LinkTarget?, to: LinkTarget?, kind: SavingsGoalLinkEventKind) =
-        SavingsGoalLinkEventEntity(
-            goalId = goalId,
-            fromAssetId = (from as? LinkTarget.Asset)?.id,
-            toAssetId = (to as? LinkTarget.Asset)?.id,
-            kind = kind.name,
-            timestampEpochMs = clock.now().toEpochMilliseconds(),
-            fromGroupId = (from as? LinkTarget.Group)?.id,
-            toGroupId = (to as? LinkTarget.Group)?.id,
-        )
+    private fun linkEvent(
+        goalId: String,
+        from: LinkTarget?,
+        to: LinkTarget?,
+        kind: SavingsGoalLinkEventKind,
+        timestampEpochMs: Long = clock.now().toEpochMilliseconds(),
+    ) = SavingsGoalLinkEventEntity(
+        goalId = goalId,
+        fromAssetId = (from as? LinkTarget.Asset)?.id,
+        toAssetId = (to as? LinkTarget.Asset)?.id,
+        kind = kind.name,
+        timestampEpochMs = timestampEpochMs,
+        fromGroupId = (from as? LinkTarget.Group)?.id,
+        toGroupId = (to as? LinkTarget.Group)?.id,
+    )
 }
 
 /** What a goal is linked to: an asset XOR a group. */
@@ -247,6 +258,9 @@ private sealed interface LinkTarget {
 
 private fun SavingsGoalEntity.currentLink(): LinkTarget? =
     linkedAssetId?.let { LinkTarget.Asset(it) } ?: linkedGroupId?.let { LinkTarget.Group(it) }
+
+@OptIn(ExperimentalUuidApi::class)
+private fun randomGoalId(): String = Uuid.random().toString()
 
 private fun validateCreate(command: CreateSavingsGoal) {
     if (command.name.isEmpty() || command.name != command.name.trim()) {

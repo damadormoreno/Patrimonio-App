@@ -4,14 +4,16 @@ import com.denebapps.patrimonio.domain.repository.InvalidBackupException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class BackupCodecTest {
     private val asset = AssetBackup("a1", "BANK", "Cuenta", null, 150_000, "EUR")
     private val usdAsset = AssetBackup("a2", "INVEST", "Broker", "IBKR", 9_900, "USD")
-    private val goal = SavingsGoalBackup(1, "Viaje", 300_000, "EUR", null, "a1", "OPEN")
-    private val groupGoal = SavingsGoalBackup(2, "Colchón", 100_000, "EUR", null, null, "OPEN", linkedGroupId = "g1")
+    private val goal = SavingsGoalBackup("goal-1", "Viaje", 300_000, "EUR", null, "a1", "OPEN", createdAtEpochMs = 1)
+    private val groupGoal =
+        SavingsGoalBackup("goal-2", "Colchón", 100_000, "EUR", null, null, "OPEN", "g1", createdAtEpochMs = 2)
 
     private val full = BackupDocument(
         exportedAt = "2026-10-06T10:00:00Z",
@@ -22,13 +24,22 @@ class BackupCodecTest {
         netWorthSnapshots = listOf(NetWorthSnapshotBackup("2026-09", 150_000, 10_000_000)),
         savingsGoals = listOf(goal, groupGoal),
         savingsGoalAllocationEvents = listOf(
-            SavingsGoalAllocationEventBackup(1, 1, 50_000, 1_000),
-            SavingsGoalAllocationEventBackup(2, 1, -20_000, 2_000),
+            SavingsGoalAllocationEventBackup(1, "goal-1", 50_000, 1_000),
+            SavingsGoalAllocationEventBackup(2, "goal-1", -20_000, 2_000),
         ),
         savingsGoalLinkEvents = listOf(
-            SavingsGoalLinkEventBackup(1, 1, null, "a1", "LINK", 1_000),
-            SavingsGoalLinkEventBackup(2, 2, null, null, "LINK", 1_000, fromGroupId = null, toGroupId = "g1"),
-            SavingsGoalLinkEventBackup(3, 2, null, null, "GROUP_DELETED", 2_000, fromGroupId = "g1", toGroupId = null),
+            SavingsGoalLinkEventBackup(1, "goal-1", null, "a1", "LINK", 1_000),
+            SavingsGoalLinkEventBackup(2, "goal-2", null, null, "LINK", 1_000, fromGroupId = null, toGroupId = "g1"),
+            SavingsGoalLinkEventBackup(
+                3,
+                "goal-2",
+                null,
+                null,
+                "GROUP_DELETED",
+                2_000,
+                fromGroupId = "g1",
+                toGroupId = null,
+            ),
         ),
         subscriptions = listOf(
             SubscriptionBackup("s1", "Netflix", 1_299, "EUR", "MONTHLY", 20_484, paidFromAssetId = "a1"),
@@ -51,7 +62,7 @@ class BackupCodecTest {
         val json = BackupCodec.encode(BackupDocument(exportedAt = "2026-10-06T10:00:00Z"))
 
         assertTrue(""""format": "patrimonio-backup"""" in json, json)
-        assertTrue(""""version": 3""" in json, json)
+        assertTrue(""""version": 4""" in json, json)
     }
 
     @Test
@@ -82,10 +93,58 @@ class BackupCodecTest {
     }
 
     @Test
+    fun `numeric goal ids from older backups become UUIDs and their events follow`() {
+        val document = BackupCodec.decode(
+            """
+            {
+              "format": "patrimonio-backup",
+              "version": 3,
+              "exportedAt": "2026-10-06T10:00:00Z",
+              "savingsGoals": [
+                {"id": 12, "name": "Coche", "targetMinor": 900000, "currency": "EUR", "lifecycle": "OPEN"},
+                {"id": 7, "name": "Viaje", "targetMinor": 300000, "currency": "EUR", "lifecycle": "OPEN"}
+              ],
+              "savingsGoalAllocationEvents": [
+                {"id": 3, "goalId": 7, "deltaMinor": 50000, "timestampEpochMs": 1000},
+                {"id": 4, "goalId": 12, "deltaMinor": 10000, "timestampEpochMs": 2000}
+              ],
+              "savingsGoalLinkEvents": [
+                {"id": 5, "goalId": 7, "kind": "UNLINK", "timestampEpochMs": 1000}
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val (coche, viaje) = document.savingsGoals
+        assertTrue(UUID.matches(coche.id), coche.id)
+        assertTrue(UUID.matches(viaje.id), viaje.id)
+        assertNotEquals(coche.id, viaje.id)
+        // The old id keeps the creation order, as in the database migration.
+        assertEquals(12, coche.createdAtEpochMs)
+        assertEquals(7, viaje.createdAtEpochMs)
+        assertEquals(listOf(viaje.id, coche.id), document.savingsGoalAllocationEvents.map { it.goalId })
+        assertEquals(viaje.id, document.savingsGoalLinkEvents.single().goalId)
+    }
+
+    @Test
+    fun `an older backup event pointing at a missing goal is still rejected`() {
+        val error = assertFailsWith<InvalidBackupException> {
+            BackupCodec.decode(
+                """
+                {"format": "patrimonio-backup", "version": 3, "exportedAt": "x",
+                 "savingsGoalAllocationEvents": [{"id": 1, "goalId": 99, "deltaMinor": 1, "timestampEpochMs": 1}]}
+                """.trimIndent(),
+            )
+        }
+
+        assertTrue("99" in error.message.orEmpty(), error.message)
+    }
+
+    @Test
     fun `a version 2 backup keeps the group link on goals and link events`() {
         val decoded = BackupCodec.decode(BackupCodec.encode(full))
 
-        assertEquals("g1", decoded.savingsGoals.single { it.id == 2L }.linkedGroupId)
+        assertEquals("g1", decoded.savingsGoals.single { it.id == "goal-2" }.linkedGroupId)
         assertEquals("g1", decoded.savingsGoalLinkEvents.single { it.kind == "GROUP_DELETED" }.fromGroupId)
     }
 
@@ -122,10 +181,10 @@ class BackupCodecTest {
     @Test
     fun `newer format version is rejected with an update hint`() {
         val error = assertFailsWith<InvalidBackupException> {
-            BackupCodec.decode("""{"format":"patrimonio-backup","version":4,"exportedAt":"x"}""")
+            BackupCodec.decode("""{"format":"patrimonio-backup","version":5,"exportedAt":"x"}""")
         }
 
-        assertTrue("v4" in error.message.orEmpty())
+        assertTrue("v5" in error.message.orEmpty())
     }
 
     @Test
@@ -157,7 +216,7 @@ class BackupCodecTest {
         reasonFor(full.copy(accountGroupMembers = listOf(AccountGroupMemberBackup("missing", "a1"))))
         reasonFor(full.copy(savingsGoals = listOf(goal.copy(linkedAssetId = "missing"))))
         assertTrue("grupo" in reasonFor(full.copy(savingsGoals = listOf(groupGoal.copy(linkedGroupId = "missing")))))
-        reasonFor(full.copy(savingsGoalAllocationEvents = listOf(SavingsGoalAllocationEventBackup(9, 99, 1, 1))))
+        reasonFor(full.copy(savingsGoalAllocationEvents = listOf(SavingsGoalAllocationEventBackup(9, "missing", 1, 1))))
     }
 
     @Test
@@ -177,11 +236,11 @@ class BackupCodecTest {
     fun `savings goal ledger rules mirror the domain`() {
         reasonFor(full.copy(savingsGoals = listOf(goal.copy(targetMinor = 0))))
         reasonFor(full.copy(savingsGoals = listOf(goal.copy(name = " Viaje"))))
-        reasonFor(full.copy(savingsGoalAllocationEvents = listOf(SavingsGoalAllocationEventBackup(1, 1, 0, 1))))
+        reasonFor(full.copy(savingsGoalAllocationEvents = listOf(SavingsGoalAllocationEventBackup(1, "goal-1", 0, 1))))
         // Replayed in (timestamp, id) order: the withdrawal happens first and would go negative.
         val negative = listOf(
-            SavingsGoalAllocationEventBackup(1, 1, 50_000, 2_000),
-            SavingsGoalAllocationEventBackup(2, 1, -20_000, 1_000),
+            SavingsGoalAllocationEventBackup(1, "goal-1", 50_000, 2_000),
+            SavingsGoalAllocationEventBackup(2, "goal-1", -20_000, 1_000),
         )
         assertTrue("negativo" in reasonFor(full.copy(savingsGoalAllocationEvents = negative)))
     }
@@ -204,5 +263,9 @@ class BackupCodecTest {
         assertTrue("nombre" in reasonForSubscription(subscription.copy(name = "Netflix ")))
         assertTrue("activo" in reasonForSubscription(subscription.copy(paidFromAssetId = "missing")))
         assertTrue("duplicad" in reasonFor(full.copy(subscriptions = listOf(subscription, subscription))))
+    }
+
+    private companion object {
+        val UUID = Regex("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
     }
 }

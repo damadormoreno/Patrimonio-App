@@ -33,11 +33,29 @@ internal fun NetWorthSnapshotEntity.toBackup() = NetWorthSnapshotBackup(yearMont
 
 internal fun NetWorthSnapshotBackup.toEntity() = NetWorthSnapshotEntity(yearMonth, assetsMinor, liabsMinor)
 
-internal fun SavingsGoalEntity.toBackup() =
-    SavingsGoalBackup(id, name, targetMinor, currency, targetDateEpochDay, linkedAssetId, lifecycle, linkedGroupId)
+internal fun SavingsGoalEntity.toBackup() = SavingsGoalBackup(
+    id,
+    name,
+    targetMinor,
+    currency,
+    targetDateEpochDay,
+    linkedAssetId,
+    lifecycle,
+    linkedGroupId,
+    createdAtEpochMs,
+)
 
-internal fun SavingsGoalBackup.toEntity() =
-    SavingsGoalEntity(id, name, targetMinor, currency, targetDateEpochDay, linkedAssetId, lifecycle, linkedGroupId)
+internal fun SavingsGoalBackup.toEntity() = SavingsGoalEntity(
+    id,
+    name,
+    targetMinor,
+    currency,
+    targetDateEpochDay,
+    linkedAssetId,
+    lifecycle,
+    linkedGroupId,
+    createdAtEpochMs,
+)
 
 internal fun SavingsGoalAllocationEventEntity.toBackup() =
     SavingsGoalAllocationEventBackup(id, goalId, deltaMinor, timestampEpochMs)

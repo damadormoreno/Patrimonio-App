@@ -38,7 +38,7 @@ private const val SAVINGS_GOALS_STOP_TIMEOUT_MS = 5_000L
  *  Closed-Goal Restrictions — a closed goal must not offer allocate/withdraw/link/relink/unlink/
  *  close/cancel while still showing its preserved [progress]). */
 data class SavingsGoalRowUi(
-    val id: Long,
+    val id: String,
     val name: String,
     val target: CurrencyAmount,
     val progress: Money,
@@ -104,7 +104,7 @@ private data class NewGoalForm(
 private data class AllocateForm(val withdraw: Boolean, val amountText: String = "")
 
 private data class Forms(
-    val selectedGoalId: Long?,
+    val selectedGoalId: String?,
     val newGoal: NewGoalForm,
     val allocate: AllocateForm,
     val errorMessage: String?,
@@ -132,7 +132,7 @@ class SavingsGoalsViewModel(
     private val assetRepository: AssetRepository,
     accountGroupRepository: AccountGroupRepository,
     fxRepository: FxRepository,
-    initialGoalId: Long? = null,
+    initialGoalId: String? = null,
     initialWithdraw: Boolean = false,
 ) : ViewModel() {
     private val selectedGoalId = MutableStateFlow(initialGoalId)
