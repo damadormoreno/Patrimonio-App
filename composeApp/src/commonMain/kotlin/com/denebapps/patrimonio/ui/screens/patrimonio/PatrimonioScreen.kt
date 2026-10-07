@@ -3,6 +3,7 @@ package com.denebapps.patrimonio.ui.screens.patrimonio
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,13 +21,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.denebapps.patrimonio.domain.calc.AccountAssignment
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.Liability
@@ -173,6 +179,24 @@ fun PatrimonioScreen(
                     trailing = { Text(formatMoneyEs(viewTotal), color = colors.muted, fontSize = 12.sp) },
                     showDivider = false,
                 )
+                if (state.view == PatrimonioView.ACTIVOS) {
+                    AccountFilterBar(
+                        state = state,
+                        onAssignmentChange = viewModel::onAssignmentFilterChange,
+                        onTypeToggle = viewModel::onTypeFilterToggle,
+                        onClear = viewModel::onClearFilters,
+                        modifier = Modifier.padding(bottom = 12.dp),
+                    )
+                }
+                if (state.groups.isEmpty() && state.filterSummary != null) {
+                    Text(
+                        text = "Ninguna cuenta coincide con el filtro.",
+                        color = colors.muted,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp),
+                    )
+                }
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     state.groups.forEach { group ->
                         PatrimonioGroupCard(group = group, onAdd = { onAddItem(state.view, group.groupId) })
@@ -503,7 +527,11 @@ private fun PatrimonioGroupCard(group: PatrimonioGroupUi, onAdd: () -> Unit, mod
             Column(Modifier.weight(1f)) {
                 Text(group.label, color = colors.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 Text(
-                    text = "${group.itemCountLabel} · ${group.sharePct}% del total",
+                    text = if (group.filtered) {
+                        group.itemCountLabel
+                    } else {
+                        "${group.itemCountLabel} · ${group.sharePct}% del total"
+                    },
                     color = colors.muted,
                     fontSize = 11.sp,
                     modifier = Modifier.padding(top = 1.dp),
@@ -623,6 +651,121 @@ private fun PatrimonioItemRow(
 @Composable
 private fun UsageIcon(icon: ImageVector, description: String) {
     Icon(icon, contentDescription = description, tint = LocalAppColors.current.muted, modifier = Modifier.size(13.dp))
+}
+
+/**
+ * Filters the asset list: an assignment menu (goals / groups / unassigned) and one chip per asset
+ * type, combinable. While a filter is active, a line under the chips shows what it leaves; the header
+ * totals and the composition bar stay global.
+ */
+@Composable
+private fun AccountFilterBar(
+    state: PatrimonioUiState,
+    onAssignmentChange: (AccountAssignment) -> Unit,
+    onTypeToggle: (Asset.AssetGroup) -> Unit,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = LocalAppColors.current
+    var menuOpen by remember { mutableStateOf(false) }
+    val assignment = state.filter.assignment
+    Column(modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box {
+                FilterChip(
+                    label = if (assignment == AccountAssignment.ALL) "Asignación" else assignmentLabel(assignment),
+                    selected = assignment != AccountAssignment.ALL,
+                    onClick = { menuOpen = true },
+                    trailingIcon = AppIcons.chevronD,
+                )
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    AccountAssignment.entries.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(assignmentLabel(option)) },
+                            onClick = {
+                                menuOpen = false
+                                onAssignmentChange(option)
+                            },
+                            trailingIcon = {
+                                if (option == assignment) {
+                                    Icon(imageVector = AppIcons.check, contentDescription = null, tint = colors.brand)
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+            state.typeFilterOptions.forEach { option ->
+                FilterChip(label = option.label, selected = option.selected, onClick = { onTypeToggle(option.group) })
+            }
+        }
+        state.filterSummary?.let { summary ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val accounts = if (summary.count == 1) "1 cuenta" else "${summary.count} cuentas"
+                Text(
+                    text = "Filtrado: ${formatMoneyEs(summary.total)} · $accounts",
+                    color = colors.ink2,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "Quitar filtros",
+                    color = colors.brand,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onClear,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit, trailingIcon: ImageVector? = null) {
+    val colors = LocalAppColors.current
+    val shape = RoundedCornerShape(999.dp)
+    Row(
+        modifier = Modifier
+            .background(if (selected) colors.ink else colors.surface, shape)
+            .border(1.dp, if (selected) colors.ink else colors.line, shape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = label,
+            color = if (selected) colors.bg else colors.ink2,
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        trailingIcon?.let { icon ->
+            val tint = if (selected) colors.bg else colors.muted
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(13.dp))
+        }
+    }
+}
+
+private fun assignmentLabel(assignment: AccountAssignment): String = when (assignment) {
+    AccountAssignment.ALL -> "Todas"
+    AccountAssignment.IN_GOALS -> "En metas"
+    AccountAssignment.IN_GROUPS -> "En grupos"
+    AccountAssignment.UNASSIGNED -> "Sin asignar"
 }
 
 @Composable

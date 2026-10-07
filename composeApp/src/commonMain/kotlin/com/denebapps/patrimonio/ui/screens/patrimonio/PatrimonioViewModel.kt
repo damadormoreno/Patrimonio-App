@@ -2,6 +2,8 @@ package com.denebapps.patrimonio.ui.screens.patrimonio
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.denebapps.patrimonio.domain.calc.AccountAssignment
+import com.denebapps.patrimonio.domain.calc.AccountFilter
 import com.denebapps.patrimonio.domain.calc.AccountUsage
 import com.denebapps.patrimonio.domain.calc.accountUsage
 import com.denebapps.patrimonio.domain.calc.assetsByGroup
@@ -67,7 +69,16 @@ data class PatrimonioGroupUi(
     val itemCountLabel: String,
     val sharePct: Int,
     val total: Money,
+    /** The account filter hides some of the group's items: [items], [total] and [itemCountLabel] cover
+     *  only the visible ones ("2 de 5 elementos") and [sharePct] is not shown. */
+    val filtered: Boolean = false,
 )
+
+/** One asset-type chip of the account filter. */
+data class TypeFilterOptionUi(val group: Asset.AssetGroup, val label: String, val selected: Boolean)
+
+/** Total (EUR) and number of the accounts the active filter shows. */
+data class FilterSummaryUi(val total: Money, val count: Int)
 
 data class PatrimonioUiState(
     val monthLabel: String,
@@ -83,6 +94,11 @@ data class PatrimonioUiState(
     val groups: List<PatrimonioGroupUi>,
     val groupsCount: Int,
     val isEmpty: Boolean,
+    /** Account filter (assets view only): current choice, chips for the types the user has, and the
+     *  summary of what it shows (null while no filter is active or in the liabilities view). */
+    val filter: AccountFilter = AccountFilter(),
+    val typeFilterOptions: List<TypeFilterOptionUi> = emptyList(),
+    val filterSummary: FilterSummaryUi? = null,
 )
 
 private data class PatrimonioData(
@@ -114,6 +130,9 @@ class PatrimonioViewModel(
 ) : ViewModel() {
     private val view = MutableStateFlow(PatrimonioView.ACTIVOS)
 
+    /** Lives as long as this ViewModel; never persisted, so the app always opens on every account. */
+    private val filter = MutableStateFlow(AccountFilter())
+
     private val initialMonth: YearMonth = run {
         val today = clock.todayIn(zoneProvider())
         YearMonth(today.year, today.monthNumber)
@@ -134,8 +153,9 @@ class PatrimonioViewModel(
         savingsGoalRepository.observeAll(),
         view,
         monthFlow,
-    ) { data, goals, selectedView, currentMonth ->
-        buildState(data, goals, selectedView, currentMonth)
+        filter,
+    ) { data, goals, selectedView, currentMonth, accountFilter ->
+        buildState(data, goals, selectedView, currentMonth, accountFilter)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(PATRIMONIO_STOP_TIMEOUT_MS),
@@ -144,6 +164,7 @@ class PatrimonioViewModel(
             emptyList(),
             PatrimonioView.ACTIVOS,
             initialMonth,
+            AccountFilter(),
         ),
     )
 
@@ -151,11 +172,25 @@ class PatrimonioViewModel(
         view.value = value
     }
 
+    fun onAssignmentFilterChange(assignment: AccountAssignment) {
+        filter.value = filter.value.copy(assignment = assignment)
+    }
+
+    fun onTypeFilterToggle(type: Asset.AssetGroup) {
+        val types = filter.value.types
+        filter.value = filter.value.copy(types = if (type in types) types - type else types + type)
+    }
+
+    fun onClearFilters() {
+        filter.value = AccountFilter()
+    }
+
     private fun buildState(
         data: PatrimonioData,
         goals: List<SavingsGoal>,
         selectedView: PatrimonioView,
         currentMonth: YearMonth,
+        accountFilter: AccountFilter,
     ): PatrimonioUiState {
         val (assets, liabilities, snapshots, accountGroups, rates) = data
         val totalAssets = assets.fold(Money.ZERO) { acc, a -> acc + a.amount.toEur(rates) }
@@ -193,16 +228,27 @@ class PatrimonioViewModel(
         }
 
         val usage = accountUsage(goals, accountGroups)
+        val filtering = selectedView == PatrimonioView.ACTIVOS && accountFilter.isActive
+        val visibleAssets = if (filtering) assets.filter { accountFilter.matches(it, usage[it.id]) } else assets
         val groups = when (selectedView) {
-            PatrimonioView.ACTIVOS -> assetsByGroup(assets, rates).map { groupTotal ->
+            PatrimonioView.ACTIVOS -> assetsByGroup(assets, rates).mapNotNull { groupTotal ->
                 val items = assets.filter { it.group == groupTotal.group }
+                val visible = visibleAssets.filter { it.group == groupTotal.group }
+                if (visible.isEmpty()) return@mapNotNull null
+                // A type chip alone keeps whole groups; only a partially hidden group reads "2 de 5".
+                val partial = visible.size < items.size
                 PatrimonioGroupUi(
                     groupId = groupTotal.group.name,
                     label = assetGroupLabel(groupTotal.group),
-                    items = items.map { it.toItemUi(usage[it.id]) },
-                    itemCountLabel = itemCountLabel(items.size),
+                    items = visible.map { it.toItemUi(usage[it.id]) },
+                    itemCountLabel = if (partial) {
+                        "${visible.size} de ${itemCountLabel(items.size)}"
+                    } else {
+                        itemCountLabel(items.size)
+                    },
                     sharePct = percentage(groupTotal.total, viewTotal),
-                    total = groupTotal.total,
+                    total = if (partial) eurTotal(visible, rates) else groupTotal.total,
+                    filtered = partial,
                 )
             }
             PatrimonioView.PASIVOS -> liabilitiesByGroup(liabilities, rates).map { groupTotal ->
@@ -232,6 +278,9 @@ class PatrimonioViewModel(
             groups = groups,
             groupsCount = accountGroups.size,
             isEmpty = if (selectedView == PatrimonioView.ACTIVOS) assets.isEmpty() else liabilities.isEmpty(),
+            filter = accountFilter,
+            typeFilterOptions = typeFilterOptions(assets, accountFilter),
+            filterSummary = FilterSummaryUi(eurTotal(visibleAssets, rates), visibleAssets.size).takeIf { filtering },
         )
     }
 }
@@ -247,6 +296,24 @@ private fun Asset.toItemUi(usage: AccountUsage?) = PatrimonioItemUi(
 )
 
 private fun Liability.toItemUi() = PatrimonioItemUi(id, name, subtitle, amount.amount, amount.currency)
+
+private fun eurTotal(assets: List<Asset>, rates: FxRates): Money =
+    assets.fold(Money.ZERO) { acc, asset -> acc + asset.amount.toEur(rates) }
+
+/** One chip per type the user has, plus any selected type that no longer has accounts so it can be
+ *  unselected; in the enum's order. */
+private fun typeFilterOptions(assets: List<Asset>, filter: AccountFilter): List<TypeFilterOptionUi> {
+    val present = assets.mapTo(mutableSetOf()) { it.group } + filter.types
+    return Asset.AssetGroup.entries
+        .filter { it in present }
+        .map { TypeFilterOptionUi(it, typeChipLabel(it), it in filter.types) }
+}
+
+/** Shorter than [assetGroupLabel] so the chips fit in a row. */
+private fun typeChipLabel(group: Asset.AssetGroup): String = when (group) {
+    Asset.AssetGroup.BANK -> "Bancos"
+    else -> assetGroupLabel(group)
+}
 
 private fun itemCountLabel(count: Int): String = if (count == 1) "1 elemento" else "$count elementos"
 
