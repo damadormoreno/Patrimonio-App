@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.ui.screens.settings
 
+import com.denebapps.patrimonio.domain.repository.RenewalReminderSettings
 import com.denebapps.patrimonio.domain.repository.ThemeMode
 import com.denebapps.patrimonio.testing.FakeDataMaintenanceRepository
 import com.denebapps.patrimonio.testing.FakePreferencesRepository
@@ -221,6 +222,28 @@ class SettingsViewModelTest {
         // Dialog cancel/dismiss stays UI-only (local rememberSaveable) — it never reaches the VM,
         // so the destructive command only ever runs from the explicit confirm action.
         assertEquals(0, maintenance.clearCalls)
+        job.cancel()
+    }
+
+    @Test
+    fun `renewal reminders start off and keep the lead time across toggles`() = runTest(dispatcher) {
+        val preferences = FakePreferencesRepository()
+        val viewModel = SettingsViewModel(preferences, FakeDataMaintenanceRepository(), "1.0.0")
+        val job = launch { viewModel.state.collect {} }
+        advanceUntilIdle()
+        assertEquals(RenewalReminderSettings(enabled = false, leadDays = 1), viewModel.state.value.reminders)
+
+        viewModel.onRemindersEnabledChange(true)
+        advanceUntilIdle()
+        viewModel.onReminderLeadDaysSelect(3)
+        advanceUntilIdle()
+        viewModel.onRemindersEnabledChange(false)
+        advanceUntilIdle()
+
+        assertEquals(RenewalReminderSettings(enabled = false, leadDays = 3), viewModel.state.value.reminders)
+        viewModel.onRemindersEnabledChange(true)
+        advanceUntilIdle()
+        assertEquals(RenewalReminderSettings(enabled = true, leadDays = 3), viewModel.state.value.reminders)
         job.cancel()
     }
 }

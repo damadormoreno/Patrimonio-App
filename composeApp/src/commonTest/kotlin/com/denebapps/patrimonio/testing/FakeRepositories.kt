@@ -33,6 +33,7 @@ import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NegativeSavingsGoalProgressException
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
+import com.denebapps.patrimonio.domain.repository.RenewalReminderSettings
 import com.denebapps.patrimonio.domain.repository.SavingsGoalAssetNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalBuiltinGroupException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalCurrencyMismatchException
@@ -43,6 +44,8 @@ import com.denebapps.patrimonio.domain.repository.SubscriptionNotFoundException
 import com.denebapps.patrimonio.domain.repository.SubscriptionRepository
 import com.denebapps.patrimonio.domain.repository.TerminalSavingsGoalException
 import com.denebapps.patrimonio.domain.repository.ThemeMode
+import com.denebapps.patrimonio.notifications.LocalNotification
+import com.denebapps.patrimonio.notifications.ReminderScheduler
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -75,6 +78,14 @@ class FakePreferencesRepository(
 
     override suspend fun setLastName(value: String) {
         lastNameBacking.value = value
+    }
+
+    private val remindersBacking = MutableStateFlow(RenewalReminderSettings())
+
+    override fun observeRenewalReminders(): StateFlow<RenewalReminderSettings> = remindersBacking
+
+    override suspend fun setRenewalReminders(settings: RenewalReminderSettings) {
+        remindersBacking.value = settings
     }
 }
 
@@ -152,6 +163,19 @@ class FakeAssetRepository(initial: List<Asset> = emptyList()) : AssetRepository 
 
     fun emit(assets: List<Asset>) {
         backing.value = assets
+    }
+}
+
+/** Records every [replaceAll] call; [failure] makes the next calls throw. */
+class FakeReminderScheduler : ReminderScheduler {
+    val calls = mutableListOf<List<LocalNotification>>()
+    var failure: Throwable? = null
+
+    val scheduled: List<LocalNotification> get() = calls.lastOrNull().orEmpty()
+
+    override suspend fun replaceAll(notifications: List<LocalNotification>) {
+        failure?.let { throw it }
+        calls += notifications
     }
 }
 

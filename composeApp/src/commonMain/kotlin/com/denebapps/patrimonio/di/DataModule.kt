@@ -22,6 +22,9 @@ import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.domain.repository.SubscriptionRepository
+import com.denebapps.patrimonio.notifications.ReminderScheduler
+import com.denebapps.patrimonio.notifications.RenewalReminderSync
+import com.denebapps.patrimonio.notifications.createReminderScheduler
 import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import org.koin.dsl.module
@@ -68,6 +71,16 @@ val dataModule = module {
             seedingGate = get(),
             clock = get(),
             accountGroupDao = get(),
+        )
+    }
+    single<ReminderScheduler> { createReminderScheduler(get<PlatformContext>()) }
+    single {
+        RenewalReminderSync(
+            subscriptionRepository = get(),
+            preferencesRepository = get(),
+            scheduler = get(),
+            clock = get(),
+            zoneProvider = get(),
         )
     }
     single<SubscriptionRepository> { SubscriptionRepositoryImpl(subscriptionDao = get(), seedingGate = get()) }
