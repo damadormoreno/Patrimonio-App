@@ -4,6 +4,7 @@ import com.denebapps.patrimonio.data.backup.BackupCodec
 import com.denebapps.patrimonio.data.backup.BackupDocument
 import com.denebapps.patrimonio.data.backup.toBackup
 import com.denebapps.patrimonio.data.backup.toEntity
+import com.denebapps.patrimonio.data.backup.toLinkedAssetEntities
 import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.SeedingGate
 import com.denebapps.patrimonio.data.db.clearFinancialTables
@@ -29,6 +30,7 @@ class BackupRepositoryImpl(
         seedingGate.await()
         val document = appDatabase.writeTransaction {
             val goals = appDatabase.savingsGoalDao()
+            val linkedAssetIds = goals.listAllLinkedAssets().groupBy({ it.goalId }, { it.assetId })
             BackupDocument(
                 exportedAt = clock.now().toString(),
                 assets = appDatabase.assetDao().list().map { it.toBackup() },
@@ -36,7 +38,7 @@ class BackupRepositoryImpl(
                 accountGroups = appDatabase.accountGroupDao().listGroups().map { it.toBackup() },
                 accountGroupMembers = appDatabase.accountGroupDao().listMembers().map { it.toBackup() },
                 netWorthSnapshots = appDatabase.netWorthDao().list().map { it.toBackup() },
-                savingsGoals = goals.listAllGoals().map { it.toBackup() },
+                savingsGoals = goals.listAllGoals().map { it.toBackup(linkedAssetIds[it.id].orEmpty()) },
                 savingsGoalAllocationEvents = goals.listAllAllocationEvents().map { it.toBackup() },
                 savingsGoalLinkEvents = goals.listAllLinkEvents().map { it.toBackup() },
                 subscriptions = appDatabase.subscriptionDao().list().map { it.toBackup() },
@@ -56,7 +58,10 @@ class BackupRepositoryImpl(
             document.accountGroupMembers.forEach { appDatabase.accountGroupDao().insertMember(it.toEntity()) }
             document.netWorthSnapshots.forEach { appDatabase.netWorthDao().upsert(it.toEntity()) }
             val goals = appDatabase.savingsGoalDao()
-            document.savingsGoals.forEach { goals.insertGoal(it.toEntity()) }
+            document.savingsGoals.forEach { goal ->
+                goals.insertGoal(goal.toEntity())
+                goals.insertLinkedAssets(goal.toLinkedAssetEntities())
+            }
             document.savingsGoalAllocationEvents.forEach { goals.insertAllocationEvent(it.toEntity()) }
             document.savingsGoalLinkEvents.forEach { goals.insertLinkEvent(it.toEntity()) }
             document.subscriptions.forEach { appDatabase.subscriptionDao().insert(it.toEntity()) }

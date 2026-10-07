@@ -9,6 +9,7 @@ import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.LiabilityEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 import com.denebapps.patrimonio.data.db.entity.SubscriptionEntity
@@ -52,11 +53,11 @@ class DataMaintenanceRepositoryImplTest {
                 targetMinor = 25_000,
                 currency = "EUR",
                 targetDateEpochDay = null,
-                linkedAssetId = "asset-1",
                 lifecycle = "OPEN",
                 createdAtEpochMs = 1L,
             ),
         )
+        db.savingsGoalDao().insertLinkedAssets(listOf(SavingsGoalAssetEntity(goalId, "asset-1")))
         db.savingsGoalDao().insertAllocationEvent(
             SavingsGoalAllocationEventEntity(goalId = goalId, deltaMinor = 5_000, timestampEpochMs = 1L),
         )
@@ -80,6 +81,7 @@ class DataMaintenanceRepositoryImplTest {
         assertTrue(db.liabilityDao().observeAll().first().isEmpty(), "liabilities not cleared")
         assertTrue(db.accountGroupDao().observeAll().first().isEmpty(), "account groups not cleared")
         assertTrue(db.savingsGoalDao().observeAll().first().isEmpty(), "savings goals not cleared")
+        assertTrue(db.savingsGoalDao().listAllLinkedAssets().isEmpty(), "goal accounts not cleared")
         assertTrue(db.netWorthDao().observeAll().first().isEmpty(), "net-worth snapshots not cleared")
         assertTrue(db.subscriptionDao().list().isEmpty(), "subscriptions not cleared")
     }

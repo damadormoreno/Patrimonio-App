@@ -39,6 +39,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -62,11 +63,8 @@ import org.koin.core.parameter.parametersOf
  * Goal form for the `NewGoal` destination (spec: Create Goal Form); with [goalId] it edits that goal
  * (name, target, date and link; the currency stays). Ports the same full-
  * pushed-destination sheet chrome as [com.denebapps.patrimonio.ui.screens.patrimonio.AddPatrimonioSheet]
- * (design.md Decision: sheets as full pushed destinations). [SavingsGoalsUiState.linkableAssets] is
- * ALREADY filtered to [SavingsGoalsUiState.newGoalCurrency] by the ViewModel — this sheet never
- * offers a cross-currency link, so [com.denebapps.patrimonio.domain.repository.SavingsGoalCurrencyMismatchException]
- * is unreachable through normal use. [SavingsGoalsUiState.linkableGroups] has no such filter: a group
- * may mix currencies.
+ * (design.md Decision: sheets as full pushed destinations). The goal can follow several accounts
+ * (checkboxes, any currency: the balance is converted) or one group, never both.
  */
 @Composable
 fun NewGoalSheet(
@@ -131,9 +129,11 @@ fun NewGoalSheet(
                 LinkTargetSection(
                     assets = state.linkableAssets,
                     groups = state.linkableGroups,
-                    selectedAssetId = state.newGoalLinkedAssetId,
+                    goalCurrency = state.newGoalCurrency,
+                    selectedAssetIds = state.newGoalLinkedAssetIds,
                     selectedGroupId = state.newGoalLinkedGroupId,
-                    onSelectAsset = viewModel::onNewGoalLinkChange,
+                    onUnlink = viewModel::onNewGoalUnlink,
+                    onToggleAsset = viewModel::onNewGoalAssetToggle,
                     onSelectGroup = viewModel::onNewGoalGroupLinkChange,
                 )
             }
@@ -336,7 +336,7 @@ fun GoalAllocateSheet(
 
     if (confirmCancel && goal != null) {
         val released = when {
-            goal.tracksBalance -> "El saldo de «${goal.linkedTargetName.orEmpty()}» no cambia y la"
+            goal.tracksBalance -> "El saldo de ${goal.linkedTargetLabel.orEmpty()} no cambia y la"
             goal.progress > Money.ZERO ->
                 "Se liberarán los ${formatSavingsAmount(goal.progress, goal.target.currency)} asignados y la"
             else -> "La"
@@ -773,41 +773,71 @@ private fun TargetDateSection(date: LocalDate?, onDateChange: (LocalDate?) -> Un
 private fun LinkTargetSection(
     assets: List<LinkableAssetUi>,
     groups: List<LinkableGroupUi>,
-    selectedAssetId: String?,
+    goalCurrency: Currency,
+    selectedAssetIds: Set<String>,
     selectedGroupId: String?,
-    onSelectAsset: (String?) -> Unit,
+    onUnlink: () -> Unit,
+    onToggleAsset: (String) -> Unit,
     onSelectGroup: (String) -> Unit,
 ) {
-    SheetSectionLabel("Vincular a una cuenta o grupo (opcional)")
+    SheetSectionLabel("Seguir el saldo de cuentas o de un grupo (opcional)")
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         LinkOptionRow(
             label = "Sin vincular",
-            selected = selectedAssetId == null && selectedGroupId == null,
-            onClick = { onSelectAsset(null) },
+            selected = selectedAssetIds.isEmpty() && selectedGroupId == null,
+            onClick = onUnlink,
         )
-        assets.forEach { option ->
-            LinkOptionRow(
-                label = option.name,
-                selected = option.id == selectedAssetId,
-                onClick = { onSelectAsset(option.id) },
-            )
+        if (assets.isNotEmpty()) {
+            LinkSubheader("Cuentas · puedes marcar varias")
+            assets.forEach { option ->
+                LinkOptionRow(
+                    label = option.name,
+                    selected = option.id in selectedAssetIds,
+                    onClick = { onToggleAsset(option.id) },
+                    kind = LinkOptionKind.Account,
+                    currencyTag = option.currency.takeIf { it != goalCurrency }?.code,
+                )
+            }
         }
-        groups.forEach { option ->
-            LinkOptionRow(
-                label = option.name,
-                selected = option.id == selectedGroupId,
-                onClick = { onSelectGroup(option.id) },
-                isGroup = true,
-            )
+        if (groups.isNotEmpty()) {
+            LinkSubheader("Grupos")
+            groups.forEach { option ->
+                LinkOptionRow(
+                    label = option.name,
+                    selected = option.id == selectedGroupId,
+                    onClick = { onSelectGroup(option.id) },
+                    kind = LinkOptionKind.Group,
+                )
+            }
         }
     }
     Spacer(modifier = Modifier.height(22.dp))
 }
 
-/** One row of the link picker; [isGroup] rows get a folder icon and a "Grupo" pill so they read apart
- *  from account rows. */
 @Composable
-private fun LinkOptionRow(label: String, selected: Boolean, onClick: () -> Unit, isGroup: Boolean = false) {
+private fun LinkSubheader(text: String) {
+    Text(
+        text = text,
+        color = LocalAppColors.current.ink2,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier.padding(top = 6.dp),
+    )
+}
+
+/** [Account] rows are checkboxes (several can be picked); the rest pick one option. */
+private enum class LinkOptionKind { None, Account, Group }
+
+/** One row of the link picker. Account rows get a checkbox and, when it differs from the goal's, their
+ *  currency; group rows a folder icon and a "Grupo" pill so they read apart from account rows. */
+@Composable
+private fun LinkOptionRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    kind: LinkOptionKind = LinkOptionKind.None,
+    currencyTag: String? = null,
+) {
     val colors = LocalAppColors.current
     Row(
         modifier = Modifier
@@ -830,8 +860,11 @@ private fun LinkOptionRow(label: String, selected: Boolean, onClick: () -> Unit,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        if (isGroup) {
-            Icon(AppIcons.folder, contentDescription = null, tint = colors.brand, modifier = Modifier.size(16.dp))
+        when (kind) {
+            LinkOptionKind.Account -> CheckMark(checked = selected)
+            LinkOptionKind.Group ->
+                Icon(AppIcons.folder, contentDescription = null, tint = colors.brand, modifier = Modifier.size(16.dp))
+            LinkOptionKind.None -> Unit
         }
         Text(
             text = label,
@@ -840,10 +873,11 @@ private fun LinkOptionRow(label: String, selected: Boolean, onClick: () -> Unit,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(1f),
         )
-        if (isGroup) {
+        currencyTag?.let { Pill(text = it, tone = PillTone.Neutral) }
+        if (kind == LinkOptionKind.Group) {
             Pill(text = "Grupo", tone = PillTone.Brand)
         }
-        if (selected) {
+        if (selected && kind != LinkOptionKind.Account) {
             Icon(AppIcons.check, contentDescription = null, tint = colors.brand, modifier = Modifier.size(16.dp))
         }
     }
@@ -924,3 +958,21 @@ private val MONTHS_ES_LONG_SAVINGS = listOf(
     "enero", "febrero", "marzo", "abril", "mayo", "junio",
     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
 )
+
+/** Square checkbox for the multi-select account rows (group rows pick a single option). */
+@Composable
+private fun CheckMark(checked: Boolean) {
+    val colors = LocalAppColors.current
+    val shape = RoundedCornerShape(6.dp)
+    Box(
+        modifier = Modifier
+            .size(20.dp)
+            .background(color = if (checked) colors.ink else Color.Transparent, shape = shape)
+            .border(1.5.dp, if (checked) colors.ink else colors.line, shape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (checked) {
+            Icon(AppIcons.check, contentDescription = null, tint = colors.bg, modifier = Modifier.size(13.dp))
+        }
+    }
+}

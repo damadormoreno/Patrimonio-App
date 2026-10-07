@@ -9,6 +9,7 @@ import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.LiabilityEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 import com.denebapps.patrimonio.data.db.entity.SubscriptionEntity
@@ -46,6 +47,7 @@ private data class TablesState(
     val goals: List<SavingsGoalEntity>,
     val allocations: List<SavingsGoalAllocationEventEntity>,
     val links: List<SavingsGoalLinkEventEntity>,
+    val goalAssets: List<SavingsGoalAssetEntity>,
     val subscriptions: List<SubscriptionEntity>,
 )
 
@@ -70,6 +72,7 @@ class BackupRepositoryImplTest {
         goals = savingsGoalDao().listAllGoals(),
         allocations = savingsGoalDao().listAllAllocationEvents(),
         links = savingsGoalDao().listAllLinkEvents(),
+        goalAssets = savingsGoalDao().listAllLinkedAssets(),
         subscriptions = subscriptionDao().list(),
     )
 
@@ -83,17 +86,19 @@ class BackupRepositoryImplTest {
         db.accountGroupDao().insertMember(AccountGroupMemberEntity("g1", "a1"))
         db.netWorthDao().upsert(NetWorthSnapshotEntity("2026-09", 140_000, 10_100_000))
         db.savingsGoalDao().insertGoal(
-            SavingsGoalEntity(VIAJE, "Viaje", 300_000, "EUR", 20_800, "a1", "OPEN", createdAtEpochMs = 7),
+            SavingsGoalEntity(VIAJE, "Viaje", 300_000, "EUR", 20_800, "OPEN", createdAtEpochMs = 7),
+        )
+        db.savingsGoalDao().insertLinkedAssets(listOf("a1", "a2").map { SavingsGoalAssetEntity(VIAJE, it) })
+        db.savingsGoalDao().insertGoal(
+            SavingsGoalEntity(COCHE, "Coche", 900_000, "EUR", null, "CANCELLED", createdAtEpochMs = 12),
         )
         db.savingsGoalDao().insertGoal(
-            SavingsGoalEntity(COCHE, "Coche", 900_000, "EUR", null, null, "CANCELLED", createdAtEpochMs = 12),
-        )
-        db.savingsGoalDao().insertGoal(
-            SavingsGoalEntity(COLCHON, "Colchón", 100_000, "EUR", null, null, "OPEN", "g1", createdAtEpochMs = 13),
+            SavingsGoalEntity(COLCHON, "Colchón", 100_000, "EUR", null, "OPEN", "g1", createdAtEpochMs = 13),
         )
         db.savingsGoalDao().insertAllocationEvent(SavingsGoalAllocationEventEntity(3, VIAJE, 50_000, 1_000))
         db.savingsGoalDao().insertAllocationEvent(SavingsGoalAllocationEventEntity(4, VIAJE, -20_000, 2_000))
         db.savingsGoalDao().insertLinkEvent(SavingsGoalLinkEventEntity(5, VIAJE, null, "a1", "LINK", 1_000))
+        db.savingsGoalDao().insertLinkEvent(SavingsGoalLinkEventEntity(7, VIAJE, null, "a2", "LINK", 1_000))
         db.savingsGoalDao().insertLinkEvent(
             SavingsGoalLinkEventEntity(6, COLCHON, null, null, "LINK", 1_000, toGroupId = "g1"),
         )
@@ -135,6 +140,7 @@ class BackupRepositoryImplTest {
         assertEquals(2, document.assets.size)
         assertEquals(listOf(VIAJE, COCHE, COLCHON), document.savingsGoals.map { it.id })
         assertEquals("g1", document.savingsGoals.last().linkedGroupId)
+        assertEquals(listOf("a1", "a2"), document.savingsGoals.first().linkedAssetIds)
         db.close()
     }
 
@@ -165,7 +171,9 @@ class BackupRepositoryImplTest {
         val repository = repositoryFor(db)
 
         assertFailsWith<InvalidBackupException> { repository.importJson("""{"format":"otra-app"}""") }
-        val dangling = repository.exportJson().replace("\"linkedAssetId\": \"a1\"", "\"linkedAssetId\": \"nope\"")
+        // The last account a goal follows, pointing at an asset that is not in the file.
+        val dangling = repository.exportJson().replace("\"a2\"\n", "\"nope\"\n")
+        assertTrue("\"nope\"" in dangling)
         assertFailsWith<InvalidBackupException> { repository.importJson(dangling) }
 
         assertEquals(before, db.tables())
@@ -173,7 +181,7 @@ class BackupRepositoryImplTest {
     }
 
     @Test
-    fun `a version 1 backup imports with every goal unlinked from groups`() = runTest {
+    fun `a version 1 backup imports its single asset link into the goal accounts`() = runTest {
         val db = buildInMemoryTestDatabase()
         testSeedingGate(db).await()
         val v1 = """
@@ -195,7 +203,7 @@ class BackupRepositoryImplTest {
         repositoryFor(db).importJson(v1)
 
         val goal = db.savingsGoalDao().listAllGoals().single()
-        assertEquals("a1", goal.linkedAssetId)
+        assertEquals(listOf("a1"), db.savingsGoalDao().listLinkedAssetIds(goal.id))
         assertNull(goal.linkedGroupId)
         val link = db.savingsGoalDao().listAllLinkEvents().single()
         assertEquals(goal.id, link.goalId)

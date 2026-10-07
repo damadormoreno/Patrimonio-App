@@ -103,7 +103,7 @@ class SavingsGoalCalcTest {
                 id = "goal-1",
                 targetMinor = 100,
                 progressMinor = 0,
-                linkedAssetId = "asset-1",
+                linkedAssetIds = setOf("asset-1"),
                 linkedGroupId = "group-1",
             )
         }
@@ -111,10 +111,21 @@ class SavingsGoalCalcTest {
 
     @Test
     fun `an open goal linked to an asset tracks its balance whatever it allocated`() {
-        val goal = goal(id = "goal-1", targetMinor = 500, progressMinor = 0, linkedAssetId = "a1")
+        val goal = goal(id = "goal-1", targetMinor = 500, progressMinor = 0, linkedAssetIds = setOf("a1"))
 
         assertTrue(goal.tracksLinkedBalance)
         assertEquals(Money(420), trackedBalance(goal, listOf(asset("a1", 420), asset("a2", 900)), emptyList(), null))
+    }
+
+    @Test
+    fun `several linked assets track their sum converted to the goal currency`() {
+        val rates = FxRates(mapOf(Currency.USD to 500_000L)) // 1 USD = 0.5 EUR
+        val assets = listOf(asset("a1", 100), asset("a2", 400, Currency.USD), asset("outside", 9_999))
+        val goal = goal(id = "goal-1", targetMinor = 500, progressMinor = 0, linkedAssetIds = setOf("a1", "a2"))
+
+        assertEquals(Money(300), trackedBalance(goal, assets, emptyList(), rates))
+        assertNull(trackedBalance(goal, assets, emptyList(), rates = null))
+        assertNull(trackedBalance(goal, assets.filter { it.id != "a2" }, emptyList(), rates))
     }
 
     @Test
@@ -145,9 +156,9 @@ class SavingsGoalCalcTest {
 
         listOf(
             goal(id = "unlinked", targetMinor = 100, progressMinor = 10),
-            goal("closed", 100, 10, linkedAssetId = "a1", lifecycle = SavingsGoalLifecycle.CLOSED),
+            goal("closed", 100, 10, linkedAssetIds = setOf("a1"), lifecycle = SavingsGoalLifecycle.CLOSED),
             goal("cancelled", 100, 0, linkedGroupId = "g1", lifecycle = SavingsGoalLifecycle.CANCELLED),
-            goal(id = "missing-asset", targetMinor = 100, progressMinor = 0, linkedAssetId = "deleted"),
+            goal(id = "missing-asset", targetMinor = 100, progressMinor = 0, linkedAssetIds = setOf("deleted")),
             goal(id = "missing-group", targetMinor = 100, progressMinor = 0, linkedGroupId = "deleted"),
             goal("builtin", 100, 0, linkedGroupId = AccountGroup.ALL_ACCOUNTS_ID),
         ).forEach { goal ->
@@ -167,12 +178,12 @@ class SavingsGoalCalcTest {
 
     @Test
     fun `goals tracking the same asset or group are reported together`() {
-        val sharedAsset1 = goal(id = "s1", targetMinor = 100, progressMinor = 0, linkedAssetId = "a1")
-        val sharedAsset2 = goal(id = "s2", targetMinor = 100, progressMinor = 0, linkedAssetId = "a1")
+        val sharedAsset1 = goal(id = "s1", targetMinor = 100, progressMinor = 0, linkedAssetIds = setOf("a1"))
+        val sharedAsset2 = goal(id = "s2", targetMinor = 100, progressMinor = 0, linkedAssetIds = setOf("a1"))
         val sharedGroup1 = goal(id = "g1-1", targetMinor = 100, progressMinor = 0, linkedGroupId = "g1")
         val sharedGroup2 = goal(id = "g1-2", targetMinor = 100, progressMinor = 0, linkedGroupId = "g1")
-        val alone = goal(id = "alone", targetMinor = 100, progressMinor = 0, linkedAssetId = "a2")
-        val cancelledOnA1 = goal("c", 100, 0, linkedAssetId = "a1", lifecycle = SavingsGoalLifecycle.CANCELLED)
+        val alone = goal(id = "alone", targetMinor = 100, progressMinor = 0, linkedAssetIds = setOf("a2"))
+        val cancelledOnA1 = goal("c", 100, 0, linkedAssetIds = setOf("a1"), lifecycle = SavingsGoalLifecycle.CANCELLED)
         val unlinked = goal(id = "u", targetMinor = 100, progressMinor = 0)
 
         val sharing = goalsSharingLinkedBalance(
@@ -180,9 +191,25 @@ class SavingsGoalCalcTest {
         )
 
         assertEquals(
-            setOf(listOf("s1", "s2"), listOf("g1-1", "g1-2")),
-            sharing.map { goals -> goals.map { it.id } }.toSet(),
+            setOf(listOf("a1") to listOf("s1", "s2"), listOf("g1") to listOf("g1-1", "g1-2")),
+            sharing.map { shared -> shared.targetIds to shared.goals.map { it.id } }.toSet(),
         )
+    }
+
+    @Test
+    fun `goals sharing several accounts get one entry and overlapping ones another`() {
+        val both1 = goal(id = "b1", targetMinor = 100, progressMinor = 0, linkedAssetIds = setOf("a1", "a2"))
+        val both2 = goal(id = "b2", targetMinor = 100, progressMinor = 0, linkedAssetIds = setOf("a1", "a2"))
+        val overlap = goal(id = "o", targetMinor = 100, progressMinor = 0, linkedAssetIds = setOf("a2", "a3"))
+
+        fun sharing(vararg goals: SavingsGoal) =
+            goalsSharingLinkedBalance(goals.toList()).map { shared -> shared.targetIds to shared.goals.map { it.id } }
+
+        assertEquals(
+            setOf(listOf("a1") to listOf("b1", "b2"), listOf("a2") to listOf("b1", "b2", "o")),
+            sharing(both1, both2, overlap).toSet(),
+        )
+        assertEquals(listOf(listOf("a1", "a2") to listOf("b1", "b2")), sharing(both1, both2))
     }
 
     private fun allocation(id: Long, deltaMinor: Long) = SavingsGoalAllocationEvent(
@@ -197,7 +224,7 @@ class SavingsGoalCalcTest {
         targetMinor: Long,
         progressMinor: Long,
         currency: Currency = Currency.EUR,
-        linkedAssetId: String? = null,
+        linkedAssetIds: Set<String> = emptySet(),
         linkedGroupId: String? = null,
         lifecycle: SavingsGoalLifecycle = SavingsGoalLifecycle.OPEN,
     ) = SavingsGoal(
@@ -205,7 +232,7 @@ class SavingsGoalCalcTest {
         name = "Goal $id",
         target = CurrencyAmount(Money(targetMinor), currency),
         targetDate = null,
-        linkedAssetId = linkedAssetId,
+        linkedAssetIds = linkedAssetIds,
         linkedGroupId = linkedGroupId,
         lifecycle = lifecycle,
         progress = Money(progressMinor),

@@ -80,7 +80,7 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun `a migrated database opens through the app database and accepts group links`() = runBlocking {
+    fun `a version 1 database opens through the app and keeps its asset link`() = runBlocking {
         helper.createDatabase(1).use { connection -> connection.seedVersion1() }
 
         val db = Room.databaseBuilder<AppDatabase>(context = context, name = databaseFile.absolutePath)
@@ -90,15 +90,14 @@ class AppDatabaseMigrationTest {
         try {
             val dao = db.savingsGoalDao()
             val goalId = dao.listAllGoals().first { it.name == "Viaje" }.id
-            val goal = dao.findGoal(goalId)
-            assertEquals("a1", goal?.linkedAssetId)
-            assertNull(goal?.linkedGroupId)
+            assertEquals(listOf("a1"), dao.listLinkedAssetIds(goalId))
+            assertNull(dao.findGoal(goalId)?.linkedGroupId)
             assertEquals(2, dao.listAllocationHistory(goalId).size)
             assertEquals(1, dao.listAllLinkEvents().size)
 
+            dao.deleteLinkedAssets(goalId, listOf("a1"))
             dao.updateLinkedGroup(goalId, "g1")
             assertEquals("g1", dao.findGoal(goalId)?.linkedGroupId)
-            assertNull(dao.findGoal(goalId)?.linkedAssetId)
             assertFails { dao.updateLinkedGroup(goalId, "missing") }
 
             // The group foreign key is live after migration: deleting the group unlinks the goal.
@@ -185,6 +184,60 @@ class AppDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun `migration 4 to 5 moves the asset link into the goal accounts table`() {
+        helper.createDatabase(4).use { connection ->
+            listOf(
+                "INSERT INTO assets (id, `group`, name, subtitle, amountMinor, currency) " +
+                    "VALUES ('a1', 'BANK', 'Cuenta', NULL, 150000, 'EUR')",
+                "INSERT INTO assets (id, `group`, name, subtitle, amountMinor, currency) " +
+                    "VALUES ('a2', 'BANK', 'Otra', NULL, 1000, 'USD')",
+                "INSERT INTO account_groups (id, name, showBalance, sortOrder) VALUES ('g1', 'Día a día', 1, 0)",
+                "INSERT INTO savings_goals ($GOAL_COLUMNS_V4) VALUES ('u1', 'Viaje', 300000, 'EUR', 20800, 'a1', " +
+                    "'OPEN', NULL, 7)",
+                "INSERT INTO savings_goals ($GOAL_COLUMNS_V4) VALUES ('u2', 'Coche', 900000, 'EUR', NULL, NULL, " +
+                    "'CANCELLED', 'g1', 12)",
+                "INSERT INTO savings_goal_allocation_events (id, goalId, deltaMinor, timestampEpochMs) " +
+                    "VALUES (3, 'u1', 50000, 1000)",
+                "INSERT INTO savings_goal_link_events (id, goalId, fromAssetId, toAssetId, kind, timestampEpochMs) " +
+                    "VALUES (5, 'u1', NULL, 'a1', 'LINK', 1000)",
+            ).forEach(connection::execSQL)
+        }
+
+        helper.runMigrationsAndValidate(5, listOf(MIGRATION_4_5)).use { connection ->
+            connection.prepare("SELECT id, name, linkedGroupId, createdAtEpochMs FROM savings_goals ORDER BY id")
+                .use { rows ->
+                    assertEquals(true, rows.step())
+                    assertEquals("u1", rows.getText(0))
+                    assertEquals(true, rows.isNull(2))
+                    assertEquals(7L, rows.getLong(3))
+                    assertEquals(true, rows.step())
+                    assertEquals("u2", rows.getText(0))
+                    assertEquals("g1", rows.getText(2))
+                    assertEquals(false, rows.step())
+                }
+            connection.prepare("SELECT goalId, assetId FROM savings_goal_assets").use { rows ->
+                assertEquals(true, rows.step())
+                assertEquals("u1", rows.getText(0))
+                assertEquals("a1", rows.getText(1))
+                assertEquals(false, rows.step())
+            }
+            assertEquals(1L, connection.count("savings_goal_allocation_events"))
+            assertEquals(1L, connection.count("savings_goal_link_events"))
+
+            // Both foreign keys of the new table are live: a goal follows a second account, deleting an asset
+            // drops only its row, deleting the goal drops the rest along with its history.
+            connection.execSQL("PRAGMA foreign_keys = ON")
+            connection.execSQL("INSERT INTO savings_goal_assets (goalId, assetId) VALUES ('u1', 'a2')")
+            assertFails { connection.execSQL("INSERT INTO savings_goal_assets (goalId, assetId) VALUES ('u1', 'x')") }
+            connection.execSQL("DELETE FROM assets WHERE id = 'a1'")
+            assertEquals(1L, connection.count("savings_goal_assets"))
+            connection.execSQL("DELETE FROM savings_goals WHERE id = 'u1'")
+            assertEquals(0L, connection.count("savings_goal_assets"))
+            assertEquals(0L, connection.count("savings_goal_link_events"))
+        }
+    }
+
     /** Version 1 data: an asset, two groups (one with a member), two goals (one linked to the asset),
      *  allocation events and one link event. */
     private fun SQLiteConnection.seedVersion1() {
@@ -220,6 +273,8 @@ class AppDatabaseMigrationTest {
 
     private companion object {
         const val DATABASE_NAME = "migration-test.db"
+        const val GOAL_COLUMNS_V4 = "id, name, targetMinor, currency, targetDateEpochDay, linkedAssetId, lifecycle, " +
+            "linkedGroupId, createdAtEpochMs"
         val UUID_V4 = Regex("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
     }
 }

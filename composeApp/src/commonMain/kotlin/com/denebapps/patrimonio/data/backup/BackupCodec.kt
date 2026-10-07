@@ -13,6 +13,7 @@ import com.denebapps.patrimonio.domain.repository.SavingsGoalArithmeticOverflowE
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -29,13 +30,14 @@ import kotlin.uuid.Uuid
  * hand-edited or corrupted file is rejected with a readable reason instead of failing half-way
  * through an import or crashing a later read.
  *
- * Writes [VERSION] (4). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
- * group-link fields, which default to null, v1/v2 files lack subscriptions, which default to empty, and
- * v1–v3 files have numeric goal ids, which [upgradeLegacyGoalIds] replaces before decoding.
+ * Writes [VERSION] (5). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
+ * group-link fields, which default to null, v1/v2 files lack subscriptions, which default to empty,
+ * v1–v3 files have numeric goal ids, which [upgradeLegacyGoalIds] replaces before decoding, and v1–v4
+ * files link a goal to one `linkedAssetId`, which [upgradeSingleLinkedAsset] turns into a list.
  */
 object BackupCodec {
     const val FORMAT = "patrimonio-backup"
-    const val VERSION = 4
+    const val VERSION = 5
 
     private val json = Json {
         prettyPrint = true
@@ -53,7 +55,8 @@ object BackupCodec {
             throw InvalidBackupException("El archivo no es un JSON válido.", error)
         }
         val version = checkEnvelope(root)
-        val upgraded = if (version < 4) upgradeLegacyGoalIds(root) else root
+        val withGoalIds = if (version < 4) upgradeLegacyGoalIds(root) else root
+        val upgraded = if (version < 5) upgradeSingleLinkedAsset(withGoalIds) else withGoalIds
         val document = try {
             json.decodeFromJsonElement(BackupDocument.serializer(), upgraded)
         } catch (error: IllegalArgumentException) {
@@ -106,6 +109,17 @@ private fun upgradeLegacyGoalIds(root: JsonObject): JsonObject {
                 JsonArray(root.arrayOrEmpty("savingsGoalLinkEvents").map { it.withNewGoalId() }),
         ),
     )
+}
+
+/** Up to version 4 a goal followed at most one account, `linkedAssetId`; now it is `linkedAssetIds`. */
+private fun upgradeSingleLinkedAsset(root: JsonObject): JsonObject {
+    val goals = root.arrayOrEmpty("savingsGoals").map { element ->
+        val goal = element as? JsonObject ?: return@map element
+        val assetId = goal["linkedAssetId"] as? JsonPrimitive
+        val assetIds = if (assetId == null || assetId is JsonNull) emptyList() else listOf(assetId)
+        JsonObject(goal - "linkedAssetId" + ("linkedAssetIds" to JsonArray(assetIds)))
+    }
+    return JsonObject(root + ("savingsGoals" to JsonArray(goals)))
 }
 
 private fun JsonObject.arrayOrEmpty(key: String): List<JsonElement> = (this[key] as? JsonArray).orEmpty()
@@ -171,13 +185,16 @@ private fun BackupDocument.validate() {
         if (goal.lifecycle !in LIFECYCLES) {
             invalid("La meta '${goal.name}' tiene un estado desconocido: ${goal.lifecycle}.")
         }
-        if (goal.linkedAssetId != null && goal.linkedAssetId !in assetIds) {
+        if (goal.linkedAssetIds.any { it !in assetIds }) {
             invalid("La meta '${goal.name}' está vinculada a un activo que no existe.")
+        }
+        if (goal.linkedAssetIds.size != goal.linkedAssetIds.toSet().size) {
+            invalid("La meta '${goal.name}' repite un activo vinculado.")
         }
         if (goal.linkedGroupId != null && goal.linkedGroupId !in groupIds) {
             invalid("La meta '${goal.name}' está vinculada a un grupo que no existe.")
         }
-        if (goal.linkedAssetId != null && goal.linkedGroupId != null) {
+        if (goal.linkedAssetIds.isNotEmpty() && goal.linkedGroupId != null) {
             invalid("La meta '${goal.name}' está vinculada a un activo y a un grupo a la vez.")
         }
     }

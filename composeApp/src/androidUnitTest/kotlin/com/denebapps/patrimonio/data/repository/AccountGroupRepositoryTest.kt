@@ -5,6 +5,7 @@ import com.denebapps.patrimonio.data.db.buildInMemoryTestDatabase
 import com.denebapps.patrimonio.data.db.dao.SavingsGoalDataSource
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 import com.denebapps.patrimonio.data.db.insertGoalReturningId
@@ -80,7 +81,8 @@ class AccountGroupRepositoryTest {
         val closed =
             db.savingsGoalDao().insertGoalReturningId(goal("Closed", lifecycle = "CLOSED", linkedGroupId = "g1"))
         val onOtherGroup = db.savingsGoalDao().insertGoalReturningId(goal("Elsewhere", linkedGroupId = "g2"))
-        val onAsset = db.savingsGoalDao().insertGoalReturningId(goal("OnAsset", linkedAssetId = "a1"))
+        val onAsset = db.savingsGoalDao().insertGoalReturningId(goal("OnAsset"))
+        db.savingsGoalDao().insertLinkedAssets(listOf(SavingsGoalAssetEntity(onAsset, "a1")))
         db.savingsGoalDao().insertAllocationEvent(SavingsGoalAllocationEventEntity(0, open, 12_000, 1_000))
         db.savingsGoalDao().insertLinkEvent(link(goalId = open, toGroupId = "g1", kind = SavingsGoalLinkEventKind.LINK))
 
@@ -92,7 +94,7 @@ class AccountGroupRepositoryTest {
         assertNull(goals.getValue(open).linkedGroupId)
         assertNull(goals.getValue(closed).linkedGroupId)
         assertEquals("g2", goals.getValue(onOtherGroup).linkedGroupId)
-        assertEquals("a1", goals.getValue(onAsset).linkedAssetId)
+        assertEquals(listOf("a1"), db.savingsGoalDao().listLinkedAssetIds(onAsset))
         assertEquals(listOf(12_000L), db.savingsGoalDao().listAllocationHistory(open).map { it.deltaMinor })
         listOf(open, closed).forEach { goalId ->
             val deleted = db.savingsGoalDao().observeLinkHistory(goalId).first().last()
@@ -213,18 +215,12 @@ class AccountGroupRepositoryTest {
             GroupFixedClock(Instant.parse(DELETION_TIME)),
         )
 
-    private fun goal(
-        name: String,
-        lifecycle: String = "OPEN",
-        linkedAssetId: String? = null,
-        linkedGroupId: String? = null,
-    ) = SavingsGoalEntity(
+    private fun goal(name: String, lifecycle: String = "OPEN", linkedGroupId: String? = null) = SavingsGoalEntity(
         id = "goal-$name",
         name = name,
         targetMinor = 100_000,
         currency = "EUR",
         targetDateEpochDay = null,
-        linkedAssetId = linkedAssetId,
         lifecycle = lifecycle,
         linkedGroupId = linkedGroupId,
         createdAtEpochMs = 0,

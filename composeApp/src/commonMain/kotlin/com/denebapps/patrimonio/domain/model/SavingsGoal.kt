@@ -3,7 +3,7 @@ package com.denebapps.patrimonio.domain.model
 import kotlinx.datetime.LocalDate
 
 /**
- * A goal is linked to at most ONE target: an asset ([linkedAssetId]) XOR a persisted account group
+ * A goal follows any number of accounts ([linkedAssetIds]) XOR one persisted account group
  * ([linkedGroupId]) XOR nothing. The builtin "all accounts" group is never linkable.
  */
 data class SavingsGoal(
@@ -11,14 +11,14 @@ data class SavingsGoal(
     val name: String,
     val target: CurrencyAmount,
     val targetDate: LocalDate?,
-    val linkedAssetId: String?,
+    val linkedAssetIds: Set<String>,
     val lifecycle: SavingsGoalLifecycle,
     val progress: Money,
     val linkedGroupId: String? = null,
 ) {
     init {
-        require(linkedAssetId == null || linkedGroupId == null) {
-            "Savings goal $id cannot be linked to an asset and a group at the same time"
+        require(linkedAssetIds.isEmpty() || linkedGroupId == null) {
+            "Savings goal $id cannot be linked to assets and a group at the same time"
         }
     }
 
@@ -37,7 +37,8 @@ data class SavingsGoalAllocationEvent(
 )
 
 /** One link change. `from*`/`to*` hold the previous/new target, each of them an asset id or a group
- *  id (at most one of the two per side) or neither. */
+ *  id (at most one of the two per side) or neither. A goal following several accounts records one
+ *  LINK/UNLINK per account added or removed. */
 data class SavingsGoalLinkEvent(
     val id: Long,
     val goalId: String,

@@ -22,12 +22,10 @@ import com.denebapps.patrimonio.domain.repository.CreateSavingsGoal
 import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalDeltaException
 import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalNameException
 import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalTargetException
-import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalTransitionException
 import com.denebapps.patrimonio.domain.repository.NegativeSavingsGoalProgressException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalArithmeticOverflowException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalAssetNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalBuiltinGroupException
-import com.denebapps.patrimonio.domain.repository.SavingsGoalCurrencyMismatchException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
@@ -78,29 +76,31 @@ private class FailingLifecycleSource(
 @RunWith(RobolectricTestRunner::class)
 class SavingsGoalRepositoryTest {
     @Test
-    fun `create persists valid linked and unlinked goals with one captured timestamp`() = runTest {
+    fun `create persists goals linked to several accounts of any currency with one captured timestamp`() = runTest {
         val fixture = fixture()
         fixture.seedAsset("asset-eur", "EUR", group = "CASH")
+        fixture.seedAsset("asset-usd", "USD")
 
-        val linkedId = fixture.repository.create(command("Emergency", linkedAssetId = "asset-eur"))
-        val unlinkedId = fixture.repository.create(command("Travel", linkedAssetId = null))
+        val linkedId = fixture.repository.create(command("Emergency", linkedAssetIds = setOf("asset-eur", "asset-usd")))
+        val unlinkedId = fixture.repository.create(command("Travel"))
 
         val goals = fixture.repository.observeAll().first().associateBy { it.id }
         assertEquals("Emergency", goals.getValue(linkedId).name)
-        assertEquals("asset-eur", goals.getValue(linkedId).linkedAssetId)
+        assertEquals(setOf("asset-eur", "asset-usd"), goals.getValue(linkedId).linkedAssetIds)
         assertEquals(LocalDate(2027, 1, 2), goals.getValue(linkedId).targetDate)
-        assertNull(goals.getValue(unlinkedId).linkedAssetId)
+        assertEquals(emptySet(), goals.getValue(unlinkedId).linkedAssetIds)
         val links = fixture.repository.observeLinkHistory(linkedId).first()
-        assertEquals(listOf(SavingsGoalLinkEventKind.LINK), links.map { it.kind })
-        assertEquals(listOf(NOW_MS), links.map { it.timestampEpochMs })
+        assertEquals(listOf(SavingsGoalLinkEventKind.LINK, SavingsGoalLinkEventKind.LINK), links.map { it.kind })
+        assertEquals(listOf("asset-eur", "asset-usd"), links.map { it.toAssetId })
+        assertEquals(listOf(NOW_MS, NOW_MS), links.map { it.timestampEpochMs })
         assertEquals(NOW_MS, fixture.db.savingsGoalDao().findGoal(linkedId)?.createdAtEpochMs)
-        // One read per create, shared by the goal's creation time and its LINK event.
+        // One read per create, shared by the goal's creation time and its LINK events.
         assertEquals(2, fixture.clock.calls)
         fixture.close()
     }
 
     @Test
-    fun `create rejects invalid name target missing asset and currency mismatch without rows`() = runTest {
+    fun `create rejects invalid name target and missing assets without rows`() = runTest {
         val fixture = fixture()
         fixture.seedAsset("asset-usd", "USD")
 
@@ -113,13 +113,11 @@ class SavingsGoalRepositoryTest {
             fixture.repository.create(command("Negative", targetMinor = -1))
         }
         assertFailsWith<SavingsGoalAssetNotFoundException> {
-            fixture.repository.create(command("Missing", linkedAssetId = "missing"))
-        }
-        assertFailsWith<SavingsGoalCurrencyMismatchException> {
-            fixture.repository.create(command("Mismatch", linkedAssetId = "asset-usd"))
+            fixture.repository.create(command("Missing", linkedAssetIds = setOf("asset-usd", "missing")))
         }
 
         assertEquals(emptyList(), fixture.repository.observeAll().first())
+        assertTrue(fixture.db.savingsGoalDao().listAllLinkedAssets().isEmpty())
         assertEquals(0, fixture.clock.calls)
         fixture.close()
     }
@@ -165,57 +163,33 @@ class SavingsGoalRepositoryTest {
     }
 
     @Test
-    fun `link relink and unlink append history without changing funded progress`() = runTest {
+    fun `update adds and removes accounts with one event each without changing funded progress`() = runTest {
         val fixture = fixture()
-        fixture.seedAsset("asset-1", "EUR")
-        fixture.seedAsset("asset-2", "EUR")
+        listOf("asset-1", "asset-2", "asset-3").forEach { fixture.seedAsset(it, "EUR") }
         val goalId = fixture.repository.create(command("Goal"))
         fixture.repository.allocate(goalId, Money(400))
 
-        fixture.repository.link(goalId, "asset-1")
-        fixture.repository.relink(goalId, "asset-2")
-        val relinked = fixture.repository.observeAll().first().single()
-        assertEquals("asset-2", relinked.linkedAssetId)
-        assertEquals(Money(400), relinked.progress)
-        fixture.repository.unlink(goalId)
+        fixture.repository.update(goalId, details(linkedAssetIds = setOf("asset-1", "asset-2")))
+        fixture.repository.update(goalId, details(linkedAssetIds = setOf("asset-2", "asset-3")))
+        val moved = fixture.repository.observeAll().first().single()
+        assertEquals(setOf("asset-2", "asset-3"), moved.linkedAssetIds)
+        assertEquals(Money(400), moved.progress)
+        fixture.repository.update(goalId, details())
 
         val goal = fixture.repository.observeAll().first().single()
         assertEquals(Money(400), goal.progress)
-        assertNull(goal.linkedAssetId)
+        assertEquals(emptySet(), goal.linkedAssetIds)
         assertEquals(
             listOf(400L),
             fixture.repository.observeAllocationHistory(goalId).first().map { it.delta.minorUnits },
         )
         val links = fixture.repository.observeLinkHistory(goalId).first()
-        assertEquals(
-            listOf(SavingsGoalLinkEventKind.LINK, SavingsGoalLinkEventKind.RELINK, SavingsGoalLinkEventKind.UNLINK),
-            links.map { it.kind },
-        )
-        assertEquals(listOf(null, "asset-1", "asset-2"), links.map { it.fromAssetId })
-        assertEquals(listOf("asset-1", "asset-2", null), links.map { it.toAssetId })
-        fixture.close()
-    }
-
-    @Test
-    fun `link transitions reject missing mismatched and invalid current links without history`() = runTest {
-        val fixture = fixture()
-        fixture.seedAsset("asset-eur", "EUR")
-        fixture.seedAsset("asset-usd", "USD")
-        val goalId = fixture.repository.create(command("Goal"))
-
-        assertFailsWith<SavingsGoalAssetNotFoundException> { fixture.repository.link(goalId, "missing") }
-        assertFailsWith<SavingsGoalCurrencyMismatchException> { fixture.repository.link(goalId, "asset-usd") }
-        assertFailsWith<InvalidSavingsGoalTransitionException> { fixture.repository.relink(goalId, "asset-eur") }
-        assertFailsWith<InvalidSavingsGoalTransitionException> { fixture.repository.unlink(goalId) }
-        fixture.repository.link(goalId, "asset-eur")
-        assertFailsWith<InvalidSavingsGoalTransitionException> { fixture.repository.link(goalId, "asset-eur") }
-        assertFailsWith<InvalidSavingsGoalTransitionException> { fixture.repository.relink(goalId, "asset-eur") }
-
-        assertEquals(
-            listOf(SavingsGoalLinkEventKind.LINK),
-            fixture.repository.observeLinkHistory(goalId).first().map { it.kind },
-        )
-        assertFailsWith<SavingsGoalNotFoundException> { fixture.repository.allocate("missing", Money(1)) }
+        val link = SavingsGoalLinkEventKind.LINK
+        val unlink = SavingsGoalLinkEventKind.UNLINK
+        assertEquals(listOf(link, link, unlink, link, unlink, unlink), links.map { it.kind })
+        assertEquals(listOf(null, null, "asset-1", null, "asset-2", "asset-3"), links.map { it.fromAssetId })
+        assertEquals(listOf("asset-1", "asset-2", null, "asset-3", null, null), links.map { it.toAssetId })
+        assertTrue(fixture.db.savingsGoalDao().listAllLinkedAssets().isEmpty())
         fixture.close()
     }
 
@@ -228,7 +202,7 @@ class SavingsGoalRepositoryTest {
 
         val goal = fixture.repository.observeAll().first().single()
         assertEquals("g1", goal.linkedGroupId)
-        assertNull(goal.linkedAssetId)
+        assertEquals(emptySet(), goal.linkedAssetIds)
         val link = fixture.repository.observeLinkHistory(goalId).first().single()
         assertEquals(SavingsGoalLinkEventKind.LINK, link.kind)
         assertEquals("g1", link.toGroupId)
@@ -251,7 +225,7 @@ class SavingsGoalRepositoryTest {
             fixture.repository.create(command("Builtin", linkedGroupId = AccountGroup.ALL_ACCOUNTS_ID))
         }
         assertFailsWith<IllegalArgumentException> {
-            command("Both", linkedAssetId = "asset-eur", linkedGroupId = "g1")
+            command("Both", linkedAssetIds = setOf("asset-eur"), linkedGroupId = "g1")
         }
 
         assertEquals(emptyList(), fixture.repository.observeAll().first())
@@ -260,7 +234,7 @@ class SavingsGoalRepositoryTest {
     }
 
     @Test
-    fun `links move between assets and groups keeping the link exclusive and auditing both sides`() = runTest {
+    fun `links move between accounts and groups keeping them exclusive and auditing both sides`() = runTest {
         val fixture = fixture()
         fixture.seedAsset("asset-1", "EUR")
         fixture.seedGroup("g1")
@@ -268,67 +242,34 @@ class SavingsGoalRepositoryTest {
         val goalId = fixture.repository.create(command("Goal"))
         fixture.repository.allocate(goalId, Money(400))
 
-        fixture.repository.linkToGroup(goalId, "g1")
+        fixture.repository.update(goalId, details(linkedGroupId = "g1"))
         assertEquals("g1", fixture.repository.observeAll().first().single().linkedGroupId)
-        fixture.repository.relinkToGroup(goalId, "g2")
-        fixture.repository.relink(goalId, "asset-1")
+        fixture.repository.update(goalId, details(linkedGroupId = "g2"))
+        fixture.repository.update(goalId, details(linkedAssetIds = setOf("asset-1")))
         val onAsset = fixture.repository.observeAll().first().single()
-        assertEquals("asset-1", onAsset.linkedAssetId)
+        assertEquals(setOf("asset-1"), onAsset.linkedAssetIds)
         assertNull(onAsset.linkedGroupId)
-        fixture.repository.relinkToGroup(goalId, "g1")
+        fixture.repository.update(goalId, details(linkedGroupId = "g1"))
         val onGroup = fixture.repository.observeAll().first().single()
         assertEquals("g1", onGroup.linkedGroupId)
-        assertNull(onGroup.linkedAssetId)
-        fixture.repository.unlink(goalId)
+        assertEquals(emptySet(), onGroup.linkedAssetIds)
+        fixture.repository.update(goalId, details())
 
         val goal = fixture.repository.observeAll().first().single()
         assertNull(goal.linkedGroupId)
-        assertNull(goal.linkedAssetId)
+        assertEquals(emptySet(), goal.linkedAssetIds)
         assertEquals(Money(400), goal.progress)
         val links = fixture.repository.observeLinkHistory(goalId).first()
+        val link = SavingsGoalLinkEventKind.LINK
+        val unlink = SavingsGoalLinkEventKind.UNLINK
         assertEquals(
-            listOf(
-                SavingsGoalLinkEventKind.LINK,
-                SavingsGoalLinkEventKind.RELINK,
-                SavingsGoalLinkEventKind.RELINK,
-                SavingsGoalLinkEventKind.RELINK,
-                SavingsGoalLinkEventKind.UNLINK,
-            ),
+            listOf(link, SavingsGoalLinkEventKind.RELINK, unlink, link, unlink, link, unlink),
             links.map { it.kind },
         )
-        assertEquals(listOf(null, "g1", "g2", null, "g1"), links.map { it.fromGroupId })
-        assertEquals(listOf("g1", "g2", null, "g1", null), links.map { it.toGroupId })
-        assertEquals(listOf(null, null, null, "asset-1", null), links.map { it.fromAssetId })
-        assertEquals(listOf(null, null, "asset-1", null, null), links.map { it.toAssetId })
-        fixture.close()
-    }
-
-    @Test
-    fun `group link transitions reject missing builtin and invalid current links without history`() = runTest {
-        val fixture = fixture()
-        fixture.seedAsset("asset-1", "EUR")
-        fixture.seedGroup("g1")
-        val goalId = fixture.repository.create(command("Goal"))
-
-        assertFailsWith<SavingsGoalGroupNotFoundException> { fixture.repository.linkToGroup(goalId, "missing") }
-        assertFailsWith<SavingsGoalBuiltinGroupException> {
-            fixture.repository.linkToGroup(goalId, AccountGroup.ALL_ACCOUNTS_ID)
-        }
-        assertFailsWith<InvalidSavingsGoalTransitionException> { fixture.repository.relinkToGroup(goalId, "g1") }
-        fixture.repository.linkToGroup(goalId, "g1")
-        assertFailsWith<InvalidSavingsGoalTransitionException> { fixture.repository.linkToGroup(goalId, "g1") }
-        assertFailsWith<InvalidSavingsGoalTransitionException> { fixture.repository.link(goalId, "asset-1") }
-        assertFailsWith<InvalidSavingsGoalTransitionException> { fixture.repository.relinkToGroup(goalId, "g1") }
-        assertFailsWith<SavingsGoalBuiltinGroupException> {
-            fixture.repository.relinkToGroup(goalId, AccountGroup.ALL_ACCOUNTS_ID)
-        }
-        assertFailsWith<SavingsGoalGroupNotFoundException> { fixture.repository.relinkToGroup(goalId, "missing") }
-
-        assertEquals(
-            listOf(SavingsGoalLinkEventKind.LINK),
-            fixture.repository.observeLinkHistory(goalId).first().map { it.kind },
-        )
-        assertEquals("g1", fixture.repository.observeAll().first().single().linkedGroupId)
+        assertEquals(listOf(null, "g1", "g2", null, null, null, "g1"), links.map { it.fromGroupId })
+        assertEquals(listOf("g1", "g2", null, null, null, "g1", null), links.map { it.toGroupId })
+        assertEquals(listOf(null, null, null, null, "asset-1", null, null), links.map { it.fromAssetId })
+        assertEquals(listOf(null, null, null, "asset-1", null, null, null), links.map { it.toAssetId })
         fixture.close()
     }
 
@@ -336,7 +277,7 @@ class SavingsGoalRepositoryTest {
     fun `target reached remains open and close preserves progress and reservation`() = runTest {
         val fixture = fixture()
         fixture.seedAsset("asset-1", "EUR")
-        val goalId = fixture.repository.create(command("Goal", targetMinor = 100, linkedAssetId = "asset-1"))
+        val goalId = fixture.repository.create(command("Goal", targetMinor = 100, linkedAssetIds = setOf("asset-1")))
         fixture.repository.allocate(goalId, Money(100))
 
         val reached = fixture.repository.observeAll().first().single()
@@ -347,16 +288,16 @@ class SavingsGoalRepositoryTest {
         val closed = fixture.repository.observeAll().first().single()
         assertEquals(SavingsGoalLifecycle.CLOSED, closed.lifecycle)
         assertEquals(Money(100), closed.progress)
-        assertEquals("asset-1", closed.linkedAssetId)
+        assertEquals(setOf("asset-1"), closed.linkedAssetIds)
         fixture.close()
     }
 
     @Test
-    fun `update edits the details and moves the link with an audit event`() = runTest {
+    fun `update edits the details and moves the link with audit events`() = runTest {
         val fixture = fixture()
         fixture.seedAsset("asset-1", "EUR")
         fixture.seedGroup("g1")
-        val goalId = fixture.repository.create(command("Viaje", targetMinor = 1_000, linkedAssetId = "asset-1"))
+        val goalId = fixture.repository.create(command("Viaje", targetMinor = 1_000, linkedAssetIds = setOf("asset-1")))
         fixture.repository.allocate(goalId, Money(300))
 
         fixture.repository.update(
@@ -365,7 +306,7 @@ class SavingsGoalRepositoryTest {
                 name = "Japón",
                 targetAmount = Money(5_000),
                 targetDate = LocalDate(2028, 3, 1),
-                linkedAssetId = null,
+                linkedAssetIds = emptySet(),
                 linkedGroupId = "g1",
             ),
         )
@@ -374,42 +315,53 @@ class SavingsGoalRepositoryTest {
         assertEquals("Japón", goal.name)
         assertEquals(CurrencyAmount(Money(5_000), Currency.EUR), goal.target)
         assertEquals(LocalDate(2028, 3, 1), goal.targetDate)
-        assertNull(goal.linkedAssetId)
+        assertEquals(emptySet(), goal.linkedAssetIds)
         assertEquals("g1", goal.linkedGroupId)
         assertEquals(Money(300), goal.progress)
-        val relink = fixture.repository.observeLinkHistory(goalId).first().last()
-        assertEquals(SavingsGoalLinkEventKind.RELINK, relink.kind)
-        assertEquals("asset-1", relink.fromAssetId)
-        assertEquals("g1", relink.toGroupId)
+        val (unlinked, linked) = fixture.repository.observeLinkHistory(goalId).first().takeLast(2)
+        assertEquals(SavingsGoalLinkEventKind.UNLINK, unlinked.kind)
+        assertEquals("asset-1", unlinked.fromAssetId)
+        assertEquals(SavingsGoalLinkEventKind.LINK, linked.kind)
+        assertEquals("g1", linked.toGroupId)
 
         // Unchanged link: no new event. Removing the link: UNLINK.
-        val unchanged = UpdateSavingsGoal("Japón", Money(6_000), null, linkedAssetId = null, linkedGroupId = "g1")
+        val unchanged = details(name = "Japón", targetMinor = 6_000, linkedGroupId = "g1")
         fixture.repository.update(goalId, unchanged)
-        assertEquals(2, fixture.repository.observeLinkHistory(goalId).first().size)
+        assertEquals(3, fixture.repository.observeLinkHistory(goalId).first().size)
         fixture.repository.update(goalId, unchanged.copy(linkedGroupId = null))
         assertEquals(SavingsGoalLinkEventKind.UNLINK, fixture.repository.observeLinkHistory(goalId).first().last().kind)
         fixture.close()
     }
 
     @Test
-    fun `update rejects invalid details, wrong links and closed goals without changes`() = runTest {
+    fun `update rejects invalid details, missing links and closed goals without changes`() = runTest {
         val fixture = fixture()
         fixture.seedAsset("asset-usd", "USD")
         val goalId = fixture.repository.create(command("Viaje", targetMinor = 1_000))
-        val valid = UpdateSavingsGoal("Viaje", Money(1_000), null, linkedAssetId = null, linkedGroupId = null)
+        val valid = details(name = "Viaje", targetMinor = 1_000)
 
         assertFailsWith<InvalidSavingsGoalNameException> { fixture.repository.update(goalId, valid.copy(name = " ")) }
         assertFailsWith<InvalidSavingsGoalTargetException> {
             fixture.repository.update(goalId, valid.copy(targetAmount = Money.ZERO))
         }
-        assertFailsWith<SavingsGoalCurrencyMismatchException> {
-            fixture.repository.update(goalId, valid.copy(name = "Otro", linkedAssetId = "asset-usd"))
+        assertFailsWith<SavingsGoalAssetNotFoundException> {
+            fixture.repository.update(goalId, valid.copy(name = "Otro", linkedAssetIds = setOf("asset-usd", "missing")))
         }
-        // The failed link rolled the whole update back, including the name.
-        assertEquals("Viaje", fixture.repository.observeAll().first().single().name)
+        assertFailsWith<SavingsGoalGroupNotFoundException> {
+            fixture.repository.update(goalId, valid.copy(name = "Otro", linkedGroupId = "missing"))
+        }
+        assertFailsWith<SavingsGoalBuiltinGroupException> {
+            fixture.repository.update(goalId, valid.copy(linkedGroupId = AccountGroup.ALL_ACCOUNTS_ID))
+        }
+        // A failed link rolls the whole update back, including the name.
+        val goal = fixture.repository.observeAll().first().single()
+        assertEquals("Viaje", goal.name)
+        assertEquals(emptySet(), goal.linkedAssetIds)
+        assertEquals(emptyList(), fixture.repository.observeLinkHistory(goalId).first())
 
         fixture.repository.cancel(goalId)
         assertFailsWith<TerminalSavingsGoalException> { fixture.repository.update(goalId, valid) }
+        assertFailsWith<SavingsGoalNotFoundException> { fixture.repository.update("missing", valid) }
         fixture.close()
     }
 
@@ -417,7 +369,7 @@ class SavingsGoalRepositoryTest {
     fun `delete removes an open or cancelled goal with its whole history`() = runTest {
         val fixture = fixture()
         fixture.seedAsset("asset-1", "EUR")
-        val openId = fixture.repository.create(command("Open", linkedAssetId = "asset-1"))
+        val openId = fixture.repository.create(command("Open", linkedAssetIds = setOf("asset-1")))
         val cancelledId = fixture.repository.create(command("Cancelled"))
         val keptId = fixture.repository.create(command("Kept"))
         fixture.repository.allocate(openId, Money(250))
@@ -430,6 +382,7 @@ class SavingsGoalRepositoryTest {
         assertEquals(listOf(keptId), fixture.repository.observeAll().first().map { it.id })
         assertTrue(fixture.db.savingsGoalDao().listAllAllocationEvents().isEmpty())
         assertTrue(fixture.db.savingsGoalDao().listAllLinkEvents().isEmpty())
+        assertTrue(fixture.db.savingsGoalDao().listAllLinkedAssets().isEmpty())
         // The linked asset stays: deleting a goal never touches what it pointed at.
         assertEquals("asset-1", fixture.db.assetDao().find("asset-1")?.id)
         assertFailsWith<SavingsGoalNotFoundException> { fixture.repository.delete(openId) }
@@ -463,8 +416,8 @@ class SavingsGoalRepositoryTest {
         val fixture = fixture()
         fixture.seedAsset("asset-1", "EUR")
         fixture.seedAsset("asset-2", "EUR")
-        val closedId = fixture.repository.create(command("Closed", linkedAssetId = "asset-1"))
-        val cancelledId = fixture.repository.create(command("Cancelled", linkedAssetId = "asset-1"))
+        val closedId = fixture.repository.create(command("Closed", linkedAssetIds = setOf("asset-1")))
+        val cancelledId = fixture.repository.create(command("Cancelled", linkedAssetIds = setOf("asset-1")))
         fixture.repository.close(closedId)
         fixture.repository.cancel(cancelledId)
 
@@ -487,10 +440,11 @@ class SavingsGoalRepositoryTest {
         assertEquals(emptyList(), emissions.receive())
 
         assertFailsWith<IllegalStateException> {
-            failingRepository.create(command("Goal", linkedAssetId = "asset-1"))
+            failingRepository.create(command("Goal", linkedAssetIds = setOf("asset-1")))
         }
 
         assertEquals(emptyList(), fixture.repository.observeAll().first())
+        assertTrue(fixture.db.savingsGoalDao().listAllLinkedAssets().isEmpty())
         assertNull(receiveOrNull(emissions))
         fixture.close()
     }
@@ -543,7 +497,7 @@ class SavingsGoalRepositoryTest {
         assertEquals(emptyList(), links.receive())
 
         fixture.repository.allocate(goalId, Money(75))
-        fixture.repository.link(goalId, "asset-1")
+        fixture.repository.update(goalId, details(name = "Goal", linkedAssetIds = setOf("asset-1")))
 
         assertEquals(listOf(75L), allocations.receive().map { it.delta.minorUnits })
         assertEquals(listOf(SavingsGoalLinkEventKind.LINK), links.receive().map { it.kind })
@@ -559,9 +513,9 @@ class SavingsGoalRepositoryTest {
         val assetsBefore = fixture.db.assetDao().list()
         val snapshotBefore = fixture.db.netWorthDao().find("2026-07")
 
-        val goalId = fixture.repository.create(command("Goal", linkedAssetId = "asset-1"))
+        val goalId = fixture.repository.create(command("Goal", linkedAssetIds = setOf("asset-1")))
         fixture.repository.allocate(goalId, Money(10_000))
-        fixture.repository.unlink(goalId)
+        fixture.repository.update(goalId, details(name = "Goal"))
 
         assertEquals(assetsBefore, fixture.db.assetDao().list())
         assertEquals(snapshotBefore, fixture.db.netWorthDao().find("2026-07"))
@@ -594,11 +548,8 @@ class SavingsGoalRepositoryTest {
         val commands: List<suspend () -> Unit> = listOf(
             { repository.allocate(goalId, Money(1)) },
             { repository.withdraw(goalId, Money(1)) },
-            { repository.link(goalId, "asset-2") },
-            { repository.relink(goalId, "asset-2") },
-            { repository.linkToGroup(goalId, "g1") },
-            { repository.relinkToGroup(goalId, "g1") },
-            { repository.unlink(goalId) },
+            { repository.update(goalId, details(linkedAssetIds = setOf("asset-2"))) },
+            { repository.update(goalId, details()) },
             { repository.close(goalId) },
             { repository.cancel(goalId) },
         )
@@ -615,15 +566,22 @@ class SavingsGoalRepositoryTest {
     private fun command(
         name: String,
         targetMinor: Long = 1_000,
-        linkedAssetId: String? = null,
+        linkedAssetIds: Set<String> = emptySet(),
         linkedGroupId: String? = null,
     ) = CreateSavingsGoal(
         name = name,
         target = CurrencyAmount(Money(targetMinor), Currency.EUR),
         targetDate = LocalDate(2027, 1, 2),
-        linkedAssetId = linkedAssetId,
+        linkedAssetIds = linkedAssetIds,
         linkedGroupId = linkedGroupId,
     )
+
+    private fun details(
+        name: String = "Goal",
+        targetMinor: Long = 1_000,
+        linkedAssetIds: Set<String> = emptySet(),
+        linkedGroupId: String? = null,
+    ) = UpdateSavingsGoal(name, Money(targetMinor), null, linkedAssetIds, linkedGroupId)
 
     private fun goalEntity(name: String) = SavingsGoalEntity(
         id = "goal-$name",
@@ -631,7 +589,6 @@ class SavingsGoalRepositoryTest {
         targetMinor = 1_000,
         currency = "EUR",
         targetDateEpochDay = null,
-        linkedAssetId = null,
         lifecycle = "OPEN",
         createdAtEpochMs = NOW_MS,
     )

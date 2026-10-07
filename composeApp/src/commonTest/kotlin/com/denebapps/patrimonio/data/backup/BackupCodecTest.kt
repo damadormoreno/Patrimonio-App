@@ -11,9 +11,10 @@ import kotlin.test.assertTrue
 class BackupCodecTest {
     private val asset = AssetBackup("a1", "BANK", "Cuenta", null, 150_000, "EUR")
     private val usdAsset = AssetBackup("a2", "INVEST", "Broker", "IBKR", 9_900, "USD")
-    private val goal = SavingsGoalBackup("goal-1", "Viaje", 300_000, "EUR", null, "a1", "OPEN", createdAtEpochMs = 1)
+    private val goal =
+        SavingsGoalBackup("goal-1", "Viaje", 300_000, "EUR", null, listOf("a1", "a2"), "OPEN", createdAtEpochMs = 1)
     private val groupGoal =
-        SavingsGoalBackup("goal-2", "Colchón", 100_000, "EUR", null, null, "OPEN", "g1", createdAtEpochMs = 2)
+        SavingsGoalBackup("goal-2", "Colchón", 100_000, "EUR", null, emptyList(), "OPEN", "g1", createdAtEpochMs = 2)
 
     private val full = BackupDocument(
         exportedAt = "2026-10-06T10:00:00Z",
@@ -62,7 +63,7 @@ class BackupCodecTest {
         val json = BackupCodec.encode(BackupDocument(exportedAt = "2026-10-06T10:00:00Z"))
 
         assertTrue(""""format": "patrimonio-backup"""" in json, json)
-        assertTrue(""""version": 4""" in json, json)
+        assertTrue(""""version": 5""" in json, json)
     }
 
     @Test
@@ -86,7 +87,7 @@ class BackupCodecTest {
         )
 
         assertEquals(1, document.version)
-        assertEquals("a1", document.savingsGoals.single().linkedAssetId)
+        assertEquals(listOf("a1"), document.savingsGoals.single().linkedAssetIds)
         assertNull(document.savingsGoals.single().linkedGroupId)
         assertNull(document.savingsGoalLinkEvents.single().fromGroupId)
         assertNull(document.savingsGoalLinkEvents.single().toGroupId)
@@ -181,10 +182,10 @@ class BackupCodecTest {
     @Test
     fun `newer format version is rejected with an update hint`() {
         val error = assertFailsWith<InvalidBackupException> {
-            BackupCodec.decode("""{"format":"patrimonio-backup","version":5,"exportedAt":"x"}""")
+            BackupCodec.decode("""{"format":"patrimonio-backup","version":6,"exportedAt":"x"}""")
         }
 
-        assertTrue("v5" in error.message.orEmpty())
+        assertTrue("v6" in error.message.orEmpty())
     }
 
     @Test
@@ -214,9 +215,38 @@ class BackupCodecTest {
     fun `dangling references are rejected`() {
         reasonFor(full.copy(accountGroupMembers = listOf(AccountGroupMemberBackup("g1", "missing"))))
         reasonFor(full.copy(accountGroupMembers = listOf(AccountGroupMemberBackup("missing", "a1"))))
-        reasonFor(full.copy(savingsGoals = listOf(goal.copy(linkedAssetId = "missing"))))
+        reasonFor(full.copy(savingsGoals = listOf(goal.copy(linkedAssetIds = listOf("a1", "missing")))))
         assertTrue("grupo" in reasonFor(full.copy(savingsGoals = listOf(groupGoal.copy(linkedGroupId = "missing")))))
         reasonFor(full.copy(savingsGoalAllocationEvents = listOf(SavingsGoalAllocationEventBackup(9, "missing", 1, 1))))
+    }
+
+    @Test
+    fun `a goal repeating a linked asset is rejected`() {
+        val repeated = goal.copy(linkedAssetIds = listOf("a1", "a1"))
+
+        assertTrue("repite" in reasonFor(full.copy(savingsGoals = listOf(repeated))))
+    }
+
+    @Test
+    fun `a version 4 backup turns its single linked asset into a list`() {
+        val document = BackupCodec.decode(
+            """
+            {
+              "format": "patrimonio-backup",
+              "version": 4,
+              "exportedAt": "2026-10-06T10:00:00Z",
+              "assets": [{"id": "a1", "group": "BANK", "name": "Cuenta", "amountMinor": 150000, "currency": "EUR"}],
+              "savingsGoals": [
+                {"id": "u1", "name": "Viaje", "targetMinor": 300000, "currency": "EUR",
+                 "linkedAssetId": "a1", "lifecycle": "OPEN", "createdAtEpochMs": 1},
+                {"id": "u2", "name": "Libre", "targetMinor": 100, "currency": "EUR",
+                 "linkedAssetId": null, "lifecycle": "OPEN", "createdAtEpochMs": 2}
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(listOf(listOf("a1"), emptyList()), document.savingsGoals.map { it.linkedAssetIds })
     }
 
     @Test
