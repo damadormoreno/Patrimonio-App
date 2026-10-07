@@ -19,12 +19,15 @@ import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.CreateSavingsGoal
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
+import com.denebapps.patrimonio.domain.repository.UpdateSavingsGoal
+import com.denebapps.patrimonio.ui.components.amountInputText
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -106,6 +109,8 @@ private data class NewGoalForm(
     val targetDate: LocalDate? = null,
     val linkedAssetId: String? = null,
     val linkedGroupId: String? = null,
+    /** Set once [SavingsGoalsViewModel.onStartEditing] has loaded an existing goal: saving updates it. */
+    val editingGoalId: String? = null,
 )
 
 /** GoalAllocate form field; [withdraw] toggles between the allocate/withdraw atomic command
@@ -211,10 +216,33 @@ class SavingsGoalsViewModel(
         newGoalForm.value = newGoalForm.value.copy(linkedAssetId = null, linkedGroupId = groupId)
     }
 
+    /** Fills the form with an existing open goal so saving edits it. Calling it again for the same goal
+     *  (e.g. after a configuration change) keeps what the user has typed. */
+    fun onStartEditing(goalId: String) {
+        if (newGoalForm.value.editingGoalId == goalId) return
+        viewModelScope.launch {
+            val goal = savingsGoalRepository.observeAll().first().firstOrNull { it.id == goalId } ?: return@launch
+            newGoalForm.value = NewGoalForm(
+                name = goal.name,
+                targetText = amountInputText(goal.target.amount, goal.target.currency),
+                currency = goal.target.currency,
+                targetDate = goal.targetDate,
+                linkedAssetId = goal.linkedAssetId,
+                linkedGroupId = goal.linkedGroupId,
+                editingGoalId = goal.id,
+            )
+        }
+    }
+
+    /** Creates the goal, or updates the one loaded by [onStartEditing]. */
     fun onSaveNewGoal() {
         val form = newGoalForm.value
         val targetMinor = parseAmountToMinor(form.targetText, form.currency) ?: return
         if (form.name.isBlank() || targetMinor <= 0) return
+        form.editingGoalId?.let { goalId ->
+            saveEdit(goalId, form, Money(targetMinor))
+            return
+        }
 
         viewModelScope.launch {
             try {
@@ -231,6 +259,27 @@ class SavingsGoalsViewModel(
                 navigateBackChannel.send(Unit)
             } catch (e: RuntimeException) {
                 errorMessage.value = "No se pudo crear la meta. Revisa el importe y la divisa."
+            }
+        }
+    }
+
+    private fun saveEdit(goalId: String, form: NewGoalForm, target: Money) {
+        viewModelScope.launch {
+            try {
+                savingsGoalRepository.update(
+                    goalId,
+                    UpdateSavingsGoal(
+                        name = form.name.trim(),
+                        targetAmount = target,
+                        targetDate = form.targetDate,
+                        linkedAssetId = form.linkedAssetId,
+                        linkedGroupId = form.linkedGroupId,
+                    ),
+                )
+                errorMessage.value = null
+                navigateBackChannel.send(Unit)
+            } catch (e: RuntimeException) {
+                errorMessage.value = "No se pudo guardar la meta."
             }
         }
     }

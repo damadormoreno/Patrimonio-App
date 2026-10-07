@@ -65,6 +65,8 @@ interface SavingsGoalDataSource {
 
     suspend fun updateLifecycle(goalId: String, lifecycle: String): Int
 
+    suspend fun updateDetails(goalId: String, name: String, targetMinor: Long, targetDateEpochDay: Long?): Int
+
     /** Deletes the goal; its allocation and link events go with it (ON DELETE CASCADE). */
     suspend fun deleteGoal(goalId: String): Int
 }
@@ -128,6 +130,17 @@ abstract class SavingsGoalDao : SavingsGoalDataSource {
 
     @Query("UPDATE savings_goals SET lifecycle = :lifecycle WHERE id = :goalId")
     abstract override suspend fun updateLifecycle(goalId: String, lifecycle: String): Int
+
+    @Query(
+        "UPDATE savings_goals SET name = :name, targetMinor = :targetMinor, " +
+            "targetDateEpochDay = :targetDateEpochDay WHERE id = :goalId",
+    )
+    abstract override suspend fun updateDetails(
+        goalId: String,
+        name: String,
+        targetMinor: Long,
+        targetDateEpochDay: Long?,
+    ): Int
 
     @Query("DELETE FROM savings_goals WHERE id = :goalId")
     abstract override suspend fun deleteGoal(goalId: String): Int

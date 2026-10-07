@@ -122,7 +122,7 @@ fun MainScaffold() {
                         )
                     },
                     onViewChange = { patrimonioIsLiability = it == PatrimonioView.PASIVOS },
-                    onNewGoal = { mainNavController.navigate(NewGoal) },
+                    onNewGoal = { mainNavController.navigate(NewGoal()) },
                     onGoalTap = { goalId -> mainNavController.navigate(GoalAllocate(goalId = goalId)) },
                 )
             }
@@ -153,8 +153,11 @@ fun MainScaffold() {
                     onNavigateBack = { mainNavController.popBackStack() },
                 )
             }
-            composable<NewGoal> {
-                NewGoalSheet(onNavigateBack = { mainNavController.popBackStack() })
+            composable<NewGoal> { backStackEntry ->
+                NewGoalSheet(
+                    goalId = backStackEntry.toRoute<NewGoal>().goalId,
+                    onNavigateBack = { mainNavController.popBackStack() },
+                )
             }
             composable<GoalAllocate> { backStackEntry ->
                 val route = backStackEntry.toRoute<GoalAllocate>()
@@ -162,6 +165,7 @@ fun MainScaffold() {
                     goalId = route.goalId,
                     withdraw = route.withdraw,
                     onNavigateBack = { mainNavController.popBackStack() },
+                    onEdit = { mainNavController.navigate(NewGoal(goalId = route.goalId)) },
                 )
             }
             composable<Subscriptions> {

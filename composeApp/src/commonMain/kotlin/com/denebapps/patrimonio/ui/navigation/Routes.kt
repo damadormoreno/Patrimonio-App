@@ -53,9 +53,10 @@ object Grupos
 @Serializable
 data class NuevoGrupo(val groupId: String? = null)
 
-/** Create-goal form (spec: `savings-goals-ui` — Create Goal Form). */
+/** Goal form (spec: `savings-goals-ui` — Create Goal Form): creates a goal, or edits the one with
+ *  [goalId]. */
 @Serializable
-object NewGoal
+data class NewGoal(val goalId: String? = null)
 
 /** Allocate/withdraw destination for one savings goal (spec: `savings-goals-ui` — Allocate and
  *  Withdraw Funds, Cancel and Closed-Goal Restrictions). [withdraw] seeds the sheet's
