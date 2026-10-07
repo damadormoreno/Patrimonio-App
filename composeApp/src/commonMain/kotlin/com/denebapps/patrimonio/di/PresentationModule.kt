@@ -2,6 +2,7 @@ package com.denebapps.patrimonio.di
 
 import com.denebapps.patrimonio.AppViewModel
 import com.denebapps.patrimonio.domain.time.currentMonthFlow
+import com.denebapps.patrimonio.ui.screens.history.NetWorthHistoryViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.AddPatrimonioSheetViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.GruposViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.PatrimonioViewModel
@@ -31,6 +32,15 @@ val presentationModule = module {
     viewModel { SettingsViewModel(get(), get()) }
     viewModel { BackupViewModel(get(), get(), get()) }
     viewModel { ProfileViewModel(get()) }
+    viewModel {
+        NetWorthHistoryViewModel(
+            assetRepository = get(),
+            liabilityRepository = get(),
+            netWorthRepository = get(),
+            fxRepository = get(),
+            monthFlow = currentMonthFlow(get<Clock>(), get<() -> TimeZone>()),
+        )
+    }
     viewModel {
         val clock = get<Clock>()
         val zoneProvider = get<() -> TimeZone>()

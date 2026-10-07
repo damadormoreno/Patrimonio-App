@@ -23,6 +23,7 @@ import com.denebapps.patrimonio.ui.components.HeaderIconBtn
 import com.denebapps.patrimonio.ui.components.TabBar
 import com.denebapps.patrimonio.ui.components.TabItem
 import com.denebapps.patrimonio.ui.icons.AppIcons
+import com.denebapps.patrimonio.ui.screens.history.NetWorthHistoryScreen
 import com.denebapps.patrimonio.ui.screens.patrimonio.AddPatrimonioSheet
 import com.denebapps.patrimonio.ui.screens.patrimonio.GruposSheet
 import com.denebapps.patrimonio.ui.screens.patrimonio.NuevoGrupoSheet
@@ -114,6 +115,7 @@ fun MainScaffold() {
             composable<Patrimonio> {
                 PatrimonioScreen(
                     onOpenGroups = { mainNavController.navigate(Grupos) },
+                    onOpenHistory = { mainNavController.navigate(NetWorthHistory) },
                     onAddItem = { view, groupId ->
                         mainNavController.navigate(
                             AddPatrimonio(isLiability = view == PatrimonioView.PASIVOS, groupId = groupId),
@@ -128,6 +130,7 @@ fun MainScaffold() {
                 SettingsScreen(onOpenProfile = { mainNavController.navigate(Profile) })
             }
             composable<Profile> { PerfilScreen(onBack = { mainNavController.popBackStack() }) }
+            composable<NetWorthHistory> { NetWorthHistoryScreen(onBack = { mainNavController.popBackStack() }) }
             composable<AddPatrimonio> { backStackEntry ->
                 val route = backStackEntry.toRoute<AddPatrimonio>()
                 AddPatrimonioSheet(

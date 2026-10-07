@@ -40,6 +40,10 @@ data class AppColors(
     val catSubs: Color,
     val catSalary: Color,
     val catOther: Color,
+    /** Diverging pair for gain/loss charts. Not [income]/[expense]: those two are too close for
+     *  colour-blind readers (checked with the dataviz palette validator); these pass in both modes. */
+    val chartGain: Color,
+    val chartLoss: Color,
 )
 
 /** Radii token set, ported from `tokens.css` `--r-*` variables. */
