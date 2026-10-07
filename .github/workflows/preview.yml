@@ -1,0 +1,118 @@
+name: Preview
+
+# Sends an installable Android build to Firebase App Distribution: every push to main, and every push
+# to a PR labelled "preview" (to try a change on the phone before merging). Setup: docs/preview-builds.md.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [labeled, synchronize]
+  workflow_dispatch:
+
+concurrency:
+  group: preview-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Until the secrets exist (docs/preview-builds.md) only this job runs and warns, so main stays green.
+  secrets:
+    name: Preview secrets
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'preview')
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        env:
+          PREVIEW_KEYSTORE_BASE64: ${{ secrets.PREVIEW_KEYSTORE_BASE64 }}
+          PREVIEW_KEYSTORE_PASSWORD: ${{ secrets.PREVIEW_KEYSTORE_PASSWORD }}
+          PREVIEW_KEY_ALIAS: ${{ secrets.PREVIEW_KEY_ALIAS }}
+          PREVIEW_KEY_PASSWORD: ${{ secrets.PREVIEW_KEY_PASSWORD }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_TESTERS: ${{ secrets.FIREBASE_TESTERS }}
+        run: |
+          missing=""
+          for name in PREVIEW_KEYSTORE_BASE64 PREVIEW_KEYSTORE_PASSWORD PREVIEW_KEY_ALIAS PREVIEW_KEY_PASSWORD \
+            FIREBASE_APP_ID FIREBASE_SERVICE_ACCOUNT FIREBASE_TESTERS; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::warning::Preview build skipped, missing repository secrets:$missing (see docs/preview-builds.md)"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  android:
+    name: Android · Firebase App Distribution
+    needs: secrets
+    if: needs.secrets.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PREVIEW_KEYSTORE_BASE64: ${{ secrets.PREVIEW_KEYSTORE_BASE64 }}
+      PREVIEW_KEYSTORE_PASSWORD: ${{ secrets.PREVIEW_KEYSTORE_PASSWORD }}
+      PREVIEW_KEY_ALIAS: ${{ secrets.PREVIEW_KEY_ALIAS }}
+      PREVIEW_KEY_PASSWORD: ${{ secrets.PREVIEW_KEY_PASSWORD }}
+      FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      FIREBASE_TESTERS: ${{ secrets.FIREBASE_TESTERS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Always the same key, so each build installs over the previous one and keeps its data.
+      - name: Signing key
+        run: |
+          echo "$PREVIEW_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/preview.jks"
+          echo "PREVIEW_KEYSTORE_PATH=$RUNNER_TEMP/preview.jks" >> "$GITHUB_ENV"
+
+      - name: Assemble preview APK
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+        run: ./gradlew :composeApp:assemblePreview
+
+      # PR titles and commit messages are user input: they reach the script only through env vars.
+      - name: Release notes
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            title="PR #$PR_NUMBER (sin mergear) · $PR_TITLE"
+            sha="$PR_SHA"
+          else
+            subject="$(git log -1 --pretty=%s)"
+            title="$subject"
+            # GitHub merge commits read "Merge pull request #N from …"; the PR title is the body.
+            if [[ "$subject" == "Merge pull request #"* ]]; then
+              pr="$(echo "$subject" | grep -o '#[0-9]*' | head -n1)"
+              title="$(git log -1 --pretty=%b | head -n1) ($pr)"
+            fi
+            sha="$(git rev-parse HEAD)"
+          fi
+          printf '%s\nBuild %s · %s\n' "$title" "$RUN_NUMBER" "${sha:0:7}" > "$RUNNER_TEMP/release-notes.txt"
+          cat "$RUNNER_TEMP/release-notes.txt"
+
+      - name: Upload to Firebase App Distribution
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
+          npx --yes firebase-tools appdistribution:distribute \
+            composeApp/build/outputs/apk/preview/composeApp-preview.apk \
+            --app "$FIREBASE_APP_ID" \
+            --testers "$FIREBASE_TESTERS" \
+            --release-notes-file "$RUNNER_TEMP/release-notes.txt"
