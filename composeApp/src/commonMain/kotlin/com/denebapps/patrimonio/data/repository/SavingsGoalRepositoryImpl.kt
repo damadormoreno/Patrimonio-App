@@ -37,6 +37,7 @@ import com.denebapps.patrimonio.domain.repository.SavingsGoalGroupNotFoundExcept
 import com.denebapps.patrimonio.domain.repository.SavingsGoalNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.domain.repository.TerminalSavingsGoalException
+import com.denebapps.patrimonio.domain.repository.UpdateSavingsGoal
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
@@ -76,7 +77,7 @@ class SavingsGoalRepositoryImpl(
 
     override suspend fun create(command: CreateSavingsGoal): String {
         seedingGate.await()
-        validateCreate(command)
+        validateDetails(command.name, command.target.amount)
         return database.writeTransaction {
             command.linkedAssetId?.let { assetId -> requireCompatibleAsset(command.target.currency, assetId) }
             command.linkedGroupId?.let { groupId -> requireLinkableGroup(groupId) }
@@ -204,6 +205,46 @@ class SavingsGoalRepositoryImpl(
         }
     }
 
+    override suspend fun update(goalId: String, command: UpdateSavingsGoal) {
+        seedingGate.await()
+        validateDetails(command.name, command.targetAmount)
+        database.writeTransaction {
+            val goal = requireOpenGoal(goalId)
+            dataSource.updateDetails(
+                goalId = goalId,
+                name = command.name,
+                targetMinor = command.targetAmount.minorUnits,
+                targetDateEpochDay = command.targetDate?.toEpochDays()?.toLong(),
+            )
+            val target = command.linkedAssetId?.let { LinkTarget.Asset(it) }
+                ?: command.linkedGroupId?.let { LinkTarget.Group(it) }
+            changeLink(goal, target)
+        }
+    }
+
+    /** Moves [goal]'s link to [target] (null unlinks) with its audit event; no-op when it is unchanged. */
+    private suspend fun changeLink(goal: SavingsGoalEntity, target: LinkTarget?) {
+        val previous = goal.currentLink()
+        if (target == previous) return
+        when (target) {
+            null -> dataSource.updateLinkedAsset(goal.id, null)
+            is LinkTarget.Asset -> {
+                requireCompatibleAsset(Currency.valueOf(goal.currency), target.id)
+                dataSource.updateLinkedAsset(goal.id, target.id)
+            }
+            is LinkTarget.Group -> {
+                requireLinkableGroup(target.id)
+                dataSource.updateLinkedGroup(goal.id, target.id)
+            }
+        }
+        val kind = when {
+            previous == null -> SavingsGoalLinkEventKind.LINK
+            target == null -> SavingsGoalLinkEventKind.UNLINK
+            else -> SavingsGoalLinkEventKind.RELINK
+        }
+        dataSource.insertLinkEvent(linkEvent(goal.id, previous, target, kind))
+    }
+
     override suspend fun delete(goalId: String) {
         seedingGate.await()
         if (dataSource.deleteGoal(goalId) == 0) throw SavingsGoalNotFoundException(goalId)
@@ -267,13 +308,9 @@ private fun SavingsGoalEntity.currentLink(): LinkTarget? =
 @OptIn(ExperimentalUuidApi::class)
 private fun randomGoalId(): String = Uuid.random().toString()
 
-private fun validateCreate(command: CreateSavingsGoal) {
-    if (command.name.isEmpty() || command.name != command.name.trim()) {
-        throw InvalidSavingsGoalNameException(command.name)
-    }
-    if (command.target.amount <= Money.ZERO) {
-        throw InvalidSavingsGoalTargetException(command.target.amount.minorUnits)
-    }
+private fun validateDetails(name: String, target: Money) {
+    if (name.isEmpty() || name != name.trim()) throw InvalidSavingsGoalNameException(name)
+    if (target <= Money.ZERO) throw InvalidSavingsGoalTargetException(target.minorUnits)
 }
 
 private fun requirePositiveDelta(amount: Money) {

@@ -44,6 +44,10 @@ interface SavingsGoalRepository {
 
     suspend fun cancel(goalId: String)
 
+    /** Edits an open goal: name, target amount (its currency stays), target date and link (asset, group
+     *  or none). A link change leaves the same LINK/RELINK/UNLINK event as [link]/[relink]/[unlink]. */
+    suspend fun update(goalId: String, command: UpdateSavingsGoal)
+
     /** Removes the goal and its whole history, whatever its lifecycle. Unlike [cancel] nothing is
      *  kept. @throws SavingsGoalNotFoundException when it does not exist. */
     suspend fun delete(goalId: String)
@@ -55,6 +59,20 @@ data class CreateSavingsGoal(
     val targetDate: LocalDate? = null,
     val linkedAssetId: String? = null,
     val linkedGroupId: String? = null,
+) {
+    init {
+        require(linkedAssetId == null || linkedGroupId == null) {
+            "A savings goal cannot be linked to an asset and a group at the same time"
+        }
+    }
+}
+
+data class UpdateSavingsGoal(
+    val name: String,
+    val targetAmount: Money,
+    val targetDate: LocalDate?,
+    val linkedAssetId: String?,
+    val linkedGroupId: String?,
 ) {
     init {
         require(linkedAssetId == null || linkedGroupId == null) {

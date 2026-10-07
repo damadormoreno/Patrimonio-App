@@ -45,6 +45,7 @@ import com.denebapps.patrimonio.domain.repository.SubscriptionNotFoundException
 import com.denebapps.patrimonio.domain.repository.SubscriptionRepository
 import com.denebapps.patrimonio.domain.repository.TerminalSavingsGoalException
 import com.denebapps.patrimonio.domain.repository.ThemeMode
+import com.denebapps.patrimonio.domain.repository.UpdateSavingsGoal
 import com.denebapps.patrimonio.notifications.LocalNotification
 import com.denebapps.patrimonio.notifications.ReminderScheduler
 import kotlinx.coroutines.CompletableDeferred
@@ -454,6 +455,47 @@ class FakeSavingsGoalRepository(
     override suspend fun close(goalId: String) {
         requireOpenGoal(goalId)
         setLifecycle(goalId, SavingsGoalLifecycle.CLOSED)
+    }
+
+    override suspend fun update(goalId: String, command: UpdateSavingsGoal) {
+        if (command.name.isEmpty() || command.name != command.name.trim()) {
+            throw InvalidSavingsGoalNameException(command.name)
+        }
+        if (command.targetAmount <= Money.ZERO) throw InvalidSavingsGoalTargetException(command.targetAmount.minorUnits)
+        val goal = requireOpenGoal(goalId)
+        command.linkedAssetId?.let { requireCompatibleAsset(goal.target.currency, it) }
+        command.linkedGroupId?.let { requireLinkableGroup(it) }
+
+        val linkChanged = goal.linkedAssetId != command.linkedAssetId || goal.linkedGroupId != command.linkedGroupId
+        backing.value = backing.value.map {
+            if (it.id != goalId) {
+                it
+            } else {
+                it.copy(
+                    name = command.name,
+                    target = it.target.copy(amount = command.targetAmount),
+                    targetDate = command.targetDate,
+                    linkedAssetId = command.linkedAssetId,
+                    linkedGroupId = command.linkedGroupId,
+                )
+            }
+        }
+        if (linkChanged) {
+            val hadLink = goal.linkedAssetId != null || goal.linkedGroupId != null
+            val hasLink = command.linkedAssetId != null || command.linkedGroupId != null
+            appendLinkEvent(
+                goalId,
+                kind = when {
+                    !hadLink -> SavingsGoalLinkEventKind.LINK
+                    !hasLink -> SavingsGoalLinkEventKind.UNLINK
+                    else -> SavingsGoalLinkEventKind.RELINK
+                },
+                fromAssetId = goal.linkedAssetId,
+                toAssetId = command.linkedAssetId,
+                fromGroupId = goal.linkedGroupId,
+                toGroupId = command.linkedGroupId,
+            )
+        }
     }
 
     override suspend fun delete(goalId: String) {

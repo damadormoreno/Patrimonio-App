@@ -59,7 +59,8 @@ import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
 
 /**
- * Create-goal form for the `NewGoal` destination (spec: Create Goal Form). Ports the same full-
+ * Goal form for the `NewGoal` destination (spec: Create Goal Form); with [goalId] it edits that goal
+ * (name, target, date and link; the currency stays). Ports the same full-
  * pushed-destination sheet chrome as [com.denebapps.patrimonio.ui.screens.patrimonio.AddPatrimonioSheet]
  * (design.md Decision: sheets as full pushed destinations). [SavingsGoalsUiState.linkableAssets] is
  * ALREADY filtered to [SavingsGoalsUiState.newGoalCurrency] by the ViewModel — this sheet never
@@ -70,6 +71,7 @@ import org.koin.core.parameter.parametersOf
 @Composable
 fun NewGoalSheet(
     modifier: Modifier = Modifier,
+    goalId: String? = null,
     onNavigateBack: () -> Unit = {},
     viewModel: SavingsGoalsViewModel = koinViewModel(),
 ) {
@@ -78,6 +80,9 @@ fun NewGoalSheet(
 
     LaunchedEffect(Unit) {
         viewModel.navigateBack.collect { onNavigateBack() }
+    }
+    LaunchedEffect(goalId) {
+        goalId?.let(viewModel::onStartEditing)
     }
 
     Column(
@@ -88,7 +93,7 @@ fun NewGoalSheet(
         SheetGrabber()
 
         SheetTopBar(
-            title = "Nueva meta",
+            title = if (goalId == null) "Nueva meta" else "Editar meta",
             canSave = state.canSaveNewGoal,
             onCancel = onNavigateBack,
             onSave = viewModel::onSaveNewGoal,
@@ -115,6 +120,8 @@ fun NewGoalSheet(
                 currency = state.newGoalCurrency,
                 onAmountChange = { viewModel.onNewGoalTargetChange(filterAmountInputSavings(it)) },
                 onCurrencyChange = viewModel::onNewGoalCurrencyChange,
+                // Existing allocations are in the goal's currency, so an edit keeps it.
+                currencyEditable = goalId == null,
             )
             Spacer(modifier = Modifier.height(22.dp))
 
@@ -158,6 +165,7 @@ fun GoalAllocateSheet(
     withdraw: Boolean,
     modifier: Modifier = Modifier,
     onNavigateBack: () -> Unit = {},
+    onEdit: () -> Unit = {},
     viewModel: SavingsGoalsViewModel = koinViewModel(parameters = { parametersOf(goalId, withdraw) }),
 ) {
     val state by viewModel.state.collectAsState()
@@ -202,7 +210,23 @@ fun GoalAllocateSheet(
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = (-0.01).sp,
             )
-            Spacer(modifier = Modifier.width(48.dp))
+            if (goal != null && !goal.closed) {
+                Text(
+                    text = "Editar",
+                    color = colors.brand,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onEdit,
+                        )
+                        .padding(6.dp),
+                )
+            } else {
+                Spacer(modifier = Modifier.width(48.dp))
+            }
         }
 
         if (goal == null) return@Column
@@ -551,6 +575,7 @@ private fun TargetAmountRow(
     currency: Currency,
     onAmountChange: (String) -> Unit,
     onCurrencyChange: (Currency) -> Unit,
+    currencyEditable: Boolean = true,
 ) {
     val colors = LocalAppColors.current
     Row(
@@ -581,7 +606,11 @@ private fun TargetAmountRow(
             cursorBrush = SolidColor(colors.ink),
             modifier = Modifier.weight(1f),
         )
-        SavingsCurrencyDropdown(value = currency, onChange = onCurrencyChange)
+        if (currencyEditable) {
+            SavingsCurrencyDropdown(value = currency, onChange = onCurrencyChange)
+        } else {
+            Text(text = currency.code, color = colors.muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
     }
 }
 

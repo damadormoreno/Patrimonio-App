@@ -32,6 +32,7 @@ import com.denebapps.patrimonio.domain.repository.SavingsGoalGroupNotFoundExcept
 import com.denebapps.patrimonio.domain.repository.SavingsGoalNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.domain.repository.TerminalSavingsGoalException
+import com.denebapps.patrimonio.domain.repository.UpdateSavingsGoal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.flow.first
@@ -347,6 +348,68 @@ class SavingsGoalRepositoryTest {
         assertEquals(SavingsGoalLifecycle.CLOSED, closed.lifecycle)
         assertEquals(Money(100), closed.progress)
         assertEquals("asset-1", closed.linkedAssetId)
+        fixture.close()
+    }
+
+    @Test
+    fun `update edits the details and moves the link with an audit event`() = runTest {
+        val fixture = fixture()
+        fixture.seedAsset("asset-1", "EUR")
+        fixture.seedGroup("g1")
+        val goalId = fixture.repository.create(command("Viaje", targetMinor = 1_000, linkedAssetId = "asset-1"))
+        fixture.repository.allocate(goalId, Money(300))
+
+        fixture.repository.update(
+            goalId,
+            UpdateSavingsGoal(
+                name = "Japón",
+                targetAmount = Money(5_000),
+                targetDate = LocalDate(2028, 3, 1),
+                linkedAssetId = null,
+                linkedGroupId = "g1",
+            ),
+        )
+
+        val goal = fixture.repository.observeAll().first().single()
+        assertEquals("Japón", goal.name)
+        assertEquals(CurrencyAmount(Money(5_000), Currency.EUR), goal.target)
+        assertEquals(LocalDate(2028, 3, 1), goal.targetDate)
+        assertNull(goal.linkedAssetId)
+        assertEquals("g1", goal.linkedGroupId)
+        assertEquals(Money(300), goal.progress)
+        val relink = fixture.repository.observeLinkHistory(goalId).first().last()
+        assertEquals(SavingsGoalLinkEventKind.RELINK, relink.kind)
+        assertEquals("asset-1", relink.fromAssetId)
+        assertEquals("g1", relink.toGroupId)
+
+        // Unchanged link: no new event. Removing the link: UNLINK.
+        val unchanged = UpdateSavingsGoal("Japón", Money(6_000), null, linkedAssetId = null, linkedGroupId = "g1")
+        fixture.repository.update(goalId, unchanged)
+        assertEquals(2, fixture.repository.observeLinkHistory(goalId).first().size)
+        fixture.repository.update(goalId, unchanged.copy(linkedGroupId = null))
+        assertEquals(SavingsGoalLinkEventKind.UNLINK, fixture.repository.observeLinkHistory(goalId).first().last().kind)
+        fixture.close()
+    }
+
+    @Test
+    fun `update rejects invalid details, wrong links and closed goals without changes`() = runTest {
+        val fixture = fixture()
+        fixture.seedAsset("asset-usd", "USD")
+        val goalId = fixture.repository.create(command("Viaje", targetMinor = 1_000))
+        val valid = UpdateSavingsGoal("Viaje", Money(1_000), null, linkedAssetId = null, linkedGroupId = null)
+
+        assertFailsWith<InvalidSavingsGoalNameException> { fixture.repository.update(goalId, valid.copy(name = " ")) }
+        assertFailsWith<InvalidSavingsGoalTargetException> {
+            fixture.repository.update(goalId, valid.copy(targetAmount = Money.ZERO))
+        }
+        assertFailsWith<SavingsGoalCurrencyMismatchException> {
+            fixture.repository.update(goalId, valid.copy(name = "Otro", linkedAssetId = "asset-usd"))
+        }
+        // The failed link rolled the whole update back, including the name.
+        assertEquals("Viaje", fixture.repository.observeAll().first().single().name)
+
+        fixture.repository.cancel(goalId)
+        assertFailsWith<TerminalSavingsGoalException> { fixture.repository.update(goalId, valid) }
         fixture.close()
     }
 

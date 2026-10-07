@@ -8,18 +8,21 @@ import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
+import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
 import com.denebapps.patrimonio.testing.FakeAccountGroupRepository
 import com.denebapps.patrimonio.testing.FakeAssetRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeSavingsGoalRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.datetime.LocalDate
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -353,6 +356,79 @@ class SavingsGoalsViewModelTest {
         val saved = vm.state.value.goals.single()
         assertEquals("g1", saved.linkedGroupId)
         assertNull(saved.linkedAssetId)
+        job.cancel()
+    }
+
+    @Test
+    fun `editing a linked goal loads it and saves name target date and a new group link`() = runTest(dispatcher) {
+        val goals = FakeSavingsGoalRepository(
+            listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 0, linkedAssetId = "a1")),
+            assetCurrencyById = mapOf("a1" to Currency.EUR),
+            persistedGroupIds = setOf("g1"),
+        )
+        val vm = viewModel(
+            goals = goals,
+            assets = FakeAssetRepository(listOf(asset("a1"))),
+            groups = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts(), group("g1", "a1"))),
+        )
+        val job = launch { vm.state.collect {} }
+        var events = 0
+        val eventsJob = launch { vm.navigateBack.collect { events++ } }
+        advanceUntilIdle()
+
+        vm.onStartEditing("goal-1")
+        advanceUntilIdle()
+        val loaded = vm.state.value
+        assertEquals("Goal goal-1", loaded.newGoalName)
+        assertEquals("100,00", loaded.newGoalTargetText)
+        assertEquals("a1", loaded.newGoalLinkedAssetId)
+        assertTrue(loaded.canSaveNewGoal)
+
+        vm.onNewGoalNameChange("Viaje a Japón")
+        vm.onNewGoalTargetChange("3000")
+        vm.onNewGoalDateChange(LocalDate(2027, 6, 1))
+        vm.onNewGoalGroupLinkChange("g1")
+        // Starting the edit again (e.g. after rotation) must not reset what was typed.
+        vm.onStartEditing("goal-1")
+        advanceUntilIdle()
+        vm.onSaveNewGoal()
+        advanceUntilIdle()
+
+        val saved = vm.state.value.goals.single()
+        assertEquals("goal-1", saved.id)
+        assertEquals("Viaje a Japón", saved.name)
+        assertEquals(Money(3_000_00), saved.target.amount)
+        assertEquals("g1", saved.linkedGroupId)
+        assertNull(saved.linkedAssetId)
+        assertEquals(
+            listOf(SavingsGoalLinkEventKind.RELINK),
+            goals.observeLinkHistory("goal-1").first().map { it.kind },
+        )
+        assertEquals(1, events)
+        job.cancel()
+        eventsJob.cancel()
+    }
+
+    @Test
+    fun `editing an unlinked goal can link it to an account`() = runTest(dispatcher) {
+        val goals = FakeSavingsGoalRepository(
+            listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 20_00)),
+            assetCurrencyById = mapOf("a1" to Currency.EUR),
+        )
+        val vm = viewModel(goals = goals, assets = FakeAssetRepository(listOf(asset("a1", minor = 80_00))))
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        vm.onStartEditing("goal-1")
+        advanceUntilIdle()
+        vm.onNewGoalLinkChange("a1")
+        vm.onSaveNewGoal()
+        advanceUntilIdle()
+
+        val saved = vm.state.value.goals.single()
+        assertEquals("a1", saved.linkedAssetId)
+        assertTrue(saved.tracksBalance)
+        assertEquals(Money(80_00), saved.progress)
         job.cancel()
     }
 
