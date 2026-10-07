@@ -560,4 +560,32 @@ class SavingsGoalsViewModelTest {
         assertEquals("«A», «B» y «C»", linkedTargetLabel(listOf("A", "B", "C")))
         assertEquals("4 cuentas", linkedTargetLabel(listOf("A", "B", "C", "D")))
     }
+
+    @Test
+    fun `the link picker tags accounts and groups with the other goals using them`() = runTest(dispatcher) {
+        val vm = viewModel(
+            goals = FakeSavingsGoalRepository(
+                listOf(
+                    goal(id = "goal-1", targetMinor = 100_00, progressMinor = 0, linkedAssetIds = setOf("a1")),
+                    goal(id = "goal-2", targetMinor = 100_00, progressMinor = 0, linkedAssetIds = setOf("a1")),
+                    goal(id = "goal-3", targetMinor = 100_00, progressMinor = 0, linkedGroupId = "g1"),
+                ),
+            ),
+            assets = FakeAssetRepository(listOf(asset("a1"), asset("a2"))),
+            groups = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts(), group("g1", "a1"))),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        vm.onStartEditing("goal-1")
+        advanceUntilIdle()
+
+        val assets = vm.state.value.linkableAssets.associateBy { it.id }
+        // The goal being edited does not tag its own account.
+        assertEquals(listOf("Goal goal-2"), assets.getValue("a1").goalNames)
+        assertEquals(listOf("Group g1"), assets.getValue("a1").groupNames)
+        assertEquals(emptyList(), assets.getValue("a2").goalNames)
+        assertEquals(listOf("Goal goal-3"), vm.state.value.linkableGroups.single().goalNames)
+        job.cancel()
+    }
 }

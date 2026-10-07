@@ -9,12 +9,15 @@ import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.NetWorthSnapshot
+import com.denebapps.patrimonio.domain.model.SavingsGoal
+import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
 import com.denebapps.patrimonio.domain.model.YearMonth
 import com.denebapps.patrimonio.testing.FakeAccountGroupRepository
 import com.denebapps.patrimonio.testing.FakeAssetRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeLiabilityRepository
 import com.denebapps.patrimonio.testing.FakeNetWorthRepository
+import com.denebapps.patrimonio.testing.FakeSavingsGoalRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -66,12 +69,14 @@ class PatrimonioViewModelTest {
         accountGroups: FakeAccountGroupRepository = FakeAccountGroupRepository(),
         fx: FakeFxRepository = FakeFxRepository(FxRates(emptyMap())),
         month: YearMonth = YearMonth(2026, 5),
+        goals: FakeSavingsGoalRepository = FakeSavingsGoalRepository(),
     ) = PatrimonioViewModel(
         assetRepository = assets,
         liabilityRepository = liabilities,
         netWorthRepository = netWorth,
         accountGroupRepository = accountGroups,
         fxRepository = fx,
+        savingsGoalRepository = goals,
         clock = fixedClock("2026-05-21T12:00:00Z"),
         zoneProvider = { TimeZone.UTC },
         monthFlow = flowOf(month),
@@ -263,6 +268,46 @@ class PatrimonioViewModelTest {
 
         assertFalse(vm.state.value.isEmpty)
         assertEquals(Money(250_000), vm.state.value.totalAssets)
+        job.cancel()
+    }
+
+    @Test
+    fun `account rows show whether a goal follows them and whether a group holds them`() = runTest(dispatcher) {
+        val vm = viewModel(
+            assets = FakeAssetRepository(
+                listOf(
+                    asset("a1", Asset.AssetGroup.BANK, "Nómina", 100_000),
+                    asset("a2", Asset.AssetGroup.BANK, "Hucha", 50_000),
+                    asset("a3", Asset.AssetGroup.BANK, "Libre", 10_000),
+                ),
+            ),
+            accountGroups = FakeAccountGroupRepository(
+                listOf(
+                    AccountGroup.allAccounts(),
+                    AccountGroup("g1", "Ahorro", showBalance = true, sortOrder = 1, memberAssetIds = setOf("a2")),
+                ),
+            ),
+            goals = FakeSavingsGoalRepository(
+                listOf(
+                    SavingsGoal(
+                        id = "goal-1",
+                        name = "Viaje",
+                        target = CurrencyAmount(Money(100_000), Currency.EUR),
+                        targetDate = null,
+                        linkedAssetIds = setOf("a1", "a2"),
+                        lifecycle = SavingsGoalLifecycle.OPEN,
+                        progress = Money.ZERO,
+                    ),
+                ),
+            ),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        val items = vm.state.value.groups.flatMap { it.items }.associateBy { it.id }
+        assertEquals(true to false, items.getValue("a1").let { it.inGoal to it.inGroup })
+        assertEquals(true to true, items.getValue("a2").let { it.inGoal to it.inGroup })
+        assertEquals(false to false, items.getValue("a3").let { it.inGoal to it.inGroup })
         job.cancel()
     }
 }

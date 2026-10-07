@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.ui.components.AccountUsageTags
 import com.denebapps.patrimonio.ui.components.Pill
 import com.denebapps.patrimonio.ui.components.PillTone
 import com.denebapps.patrimonio.ui.icons.AppIcons
@@ -796,6 +797,8 @@ private fun LinkTargetSection(
                     onClick = { onToggleAsset(option.id) },
                     kind = LinkOptionKind.Account,
                     currencyTag = option.currency.takeIf { it != goalCurrency }?.code,
+                    goalNames = option.goalNames,
+                    groupNames = option.groupNames,
                 )
             }
         }
@@ -807,6 +810,7 @@ private fun LinkTargetSection(
                     selected = option.id == selectedGroupId,
                     onClick = { onSelectGroup(option.id) },
                     kind = LinkOptionKind.Group,
+                    goalNames = option.goalNames,
                 )
             }
         }
@@ -829,7 +833,8 @@ private fun LinkSubheader(text: String) {
 private enum class LinkOptionKind { None, Account, Group }
 
 /** One row of the link picker. Account rows get a checkbox and, when it differs from the goal's, their
- *  currency; group rows a folder icon and a "Grupo" pill so they read apart from account rows. */
+ *  currency; group rows a folder icon and a "Grupo" pill so they read apart from account rows. Under
+ *  the name, the other goals and groups already using it ([AccountUsageTags]). */
 @Composable
 private fun LinkOptionRow(
     label: String,
@@ -837,6 +842,8 @@ private fun LinkOptionRow(
     onClick: () -> Unit,
     kind: LinkOptionKind = LinkOptionKind.None,
     currencyTag: String? = null,
+    goalNames: List<String> = emptyList(),
+    groupNames: List<String> = emptyList(),
 ) {
     val colors = LocalAppColors.current
     Row(
@@ -866,13 +873,16 @@ private fun LinkOptionRow(
                 Icon(AppIcons.folder, contentDescription = null, tint = colors.brand, modifier = Modifier.size(16.dp))
             LinkOptionKind.None -> Unit
         }
-        Text(
-            text = label,
-            color = colors.ink,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.weight(1f),
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = label, color = colors.ink, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            // Another goal on the same account counts its balance twice, hence the warning tone.
+            AccountUsageTags(
+                goalNames = goalNames,
+                groupNames = groupNames,
+                goalTone = PillTone.Alert,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
         currencyTag?.let { Pill(text = it, tone = PillTone.Neutral) }
         if (kind == LinkOptionKind.Group) {
             Pill(text = "Grupo", tone = PillTone.Brand)

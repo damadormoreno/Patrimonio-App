@@ -571,14 +571,19 @@ private fun PatrimonioItemRow(
     ) {
         Box(Modifier.size(6.dp).background(tone, CircleShape))
         Column(Modifier.weight(1f)) {
-            Text(
-                text = item.name,
-                color = colors.ink,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(
+                    text = item.name,
+                    color = colors.ink,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (item.inGoal) UsageIcon(AppIcons.spark, "En una meta")
+                if (item.inGroup) UsageIcon(AppIcons.folder, "En un grupo")
+            }
             item.subtitle?.let {
                 Text(
                     text = it,
@@ -612,6 +617,12 @@ private fun PatrimonioItemRow(
             }
         }
     }
+}
+
+/** Marks an account followed by a goal ([AppIcons.spark], the goals icon) or held by a group. */
+@Composable
+private fun UsageIcon(icon: ImageVector, description: String) {
+    Icon(icon, contentDescription = description, tint = LocalAppColors.current.muted, modifier = Modifier.size(13.dp))
 }
 
 @Composable
