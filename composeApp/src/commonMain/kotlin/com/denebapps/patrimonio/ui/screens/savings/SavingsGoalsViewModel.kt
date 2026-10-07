@@ -142,10 +142,10 @@ class SavingsGoalsViewModel(
 
     private val navigateBackChannel = Channel<Unit>(Channel.BUFFERED)
 
-    /** One-shot nav-back signal, emitted after a successful [onSaveNewGoal] (`AddPatrimonioSheetViewModel`
-     *  precedent). Allocate/withdraw/cancel do NOT navigate back — the sheet stays open so the updated
-     *  progress is visible in place (spec: Reactive Goals State — "the affected goal's progress
-     *  updates in place without reload"). */
+    /** One-shot nav-back signal, emitted after a successful [onSaveNewGoal] or [onDeleteGoal]
+     *  (`AddPatrimonioSheetViewModel` precedent). Allocate/withdraw/cancel do NOT navigate back — the
+     *  sheet stays open so the updated progress is visible in place (spec: Reactive Goals State — "the
+     *  affected goal's progress updates in place without reload"). */
     val navigateBack: Flow<Unit> = navigateBackChannel.receiveAsFlow()
 
     private val dataFlow = combine(
@@ -270,6 +270,20 @@ class SavingsGoalsViewModel(
                 errorMessage.value = null
             } catch (e: RuntimeException) {
                 errorMessage.value = "No se pudo cancelar la meta."
+            }
+        }
+    }
+
+    /** Deletes the selected goal and its history, then navigates back. Callers confirm first. */
+    fun onDeleteGoal() {
+        val goalId = selectedGoalId.value ?: return
+        viewModelScope.launch {
+            try {
+                savingsGoalRepository.delete(goalId)
+                errorMessage.value = null
+                navigateBackChannel.send(Unit)
+            } catch (e: RuntimeException) {
+                errorMessage.value = "No se pudo eliminar la meta."
             }
         }
     }

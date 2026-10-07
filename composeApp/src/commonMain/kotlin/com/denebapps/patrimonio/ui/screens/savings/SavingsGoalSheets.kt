@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
@@ -34,6 +35,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -146,7 +148,8 @@ fun NewGoalSheet(
  * Allocate/withdraw + cancel destination for one goal (spec: Allocate and Withdraw Funds, Cancel and
  * Closed-Goal Restrictions). A closed goal (cancelled or explicitly closed) hides every mutation
  * affordance and shows only its final preserved/read-only progress (spec: "Closed goal hides
- * mutation actions").
+ * mutation actions"). Any goal, open or closed, can be deleted after a confirmation; the sheet then
+ * closes.
  */
 @Composable
 fun GoalAllocateSheet(
@@ -159,6 +162,11 @@ fun GoalAllocateSheet(
     val state by viewModel.state.collectAsState()
     val colors = LocalAppColors.current
     val goal = state.selectedGoal
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        viewModel.navigateBack.collect { onNavigateBack() }
+    }
 
     Column(
         modifier = modifier
@@ -259,8 +267,56 @@ fun GoalAllocateSheet(
                 )
             }
 
+            if (goal.closed && state.errorMessage != null) {
+                Text(
+                    text = state.errorMessage.orEmpty(),
+                    color = colors.expense,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+
+            Text(
+                text = "Eliminar meta",
+                color = colors.muted,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = if (goal.closed) 20.dp else 4.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { confirmDelete = true },
+                    )
+                    .padding(vertical = 10.dp),
+            )
+
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    if (confirmDelete && goal != null) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Eliminar meta") },
+            text = {
+                Text(
+                    "Se borrará \"${goal.name}\" con todo su historial de aportaciones. " +
+                        "Esta acción no se puede deshacer.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    viewModel.onDeleteGoal()
+                }) { Text("Eliminar", color = colors.expense) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") }
+            },
+        )
     }
 }
 

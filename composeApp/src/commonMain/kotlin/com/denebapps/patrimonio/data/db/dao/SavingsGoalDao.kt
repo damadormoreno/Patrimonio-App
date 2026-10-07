@@ -64,6 +64,9 @@ interface SavingsGoalDataSource {
     suspend fun clearLinkedGroup(groupId: String): Int
 
     suspend fun updateLifecycle(goalId: String, lifecycle: String): Int
+
+    /** Deletes the goal; its allocation and link events go with it (ON DELETE CASCADE). */
+    suspend fun deleteGoal(goalId: String): Int
 }
 
 @Dao
@@ -125,6 +128,9 @@ abstract class SavingsGoalDao : SavingsGoalDataSource {
 
     @Query("UPDATE savings_goals SET lifecycle = :lifecycle WHERE id = :goalId")
     abstract override suspend fun updateLifecycle(goalId: String, lifecycle: String): Int
+
+    @Query("DELETE FROM savings_goals WHERE id = :goalId")
+    abstract override suspend fun deleteGoal(goalId: String): Int
 
     /** Whole-table reads for backup export. NOT part of [SavingsGoalDataSource]. */
     @Query("SELECT * FROM savings_goals ORDER BY createdAtEpochMs, id")

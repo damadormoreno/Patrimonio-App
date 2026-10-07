@@ -35,6 +35,11 @@ interface AccountGroupDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertGroup(group: AccountGroupEntity)
 
+    /** Edits a group in place. Never use [insertGroup] for edits: its REPLACE deletes the row first,
+     *  which cascades to the members and unlinks every savings goal pointing at the group. */
+    @Query("UPDATE account_groups SET name = :name, showBalance = :showBalance WHERE id = :id")
+    suspend fun updateGroup(id: String, name: String, showBalance: Boolean): Int
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertMember(member: AccountGroupMemberEntity)
 

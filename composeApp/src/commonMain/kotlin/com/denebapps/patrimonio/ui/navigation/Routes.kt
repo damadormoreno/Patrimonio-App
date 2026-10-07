@@ -45,9 +45,9 @@ data class AddPatrimonio(val isLiability: Boolean = false, val groupId: String? 
 @Serializable
 object Grupos
 
-/** Create-account-group form (spec: Create Account Group Form). */
+/** Account-group form: creates a group, or edits the one with [groupId]. */
 @Serializable
-object NuevoGrupo
+data class NuevoGrupo(val groupId: String? = null)
 
 /** Create-goal form (spec: `savings-goals-ui` — Create Goal Form). */
 @Serializable

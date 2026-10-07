@@ -76,11 +76,13 @@ class GruposViewModelTest {
         savingsGoals: FakeSavingsGoalRepository = FakeSavingsGoalRepository(),
         fx: FakeFxRepository = FakeFxRepository(FxRates(emptyMap())),
         idProvider: () -> String = { "generated-group-id" },
+        editingGroupId: String? = null,
     ) = GruposViewModel(
         assetRepository = assets,
         accountGroupRepository = accountGroups,
         savingsGoalRepository = savingsGoals,
         fxRepository = fx,
+        editingGroupId = editingGroupId,
         idProvider = idProvider,
     )
 
@@ -393,6 +395,65 @@ class GruposViewModelTest {
         assertEquals(setOf("a1"), newGroup.memberAssetIds)
         assertEquals(1, events)
         job.cancel()
+        eventsJob.cancel()
+    }
+
+    @Test
+    fun `editing a group starts from its values and saving replaces name visibility and members`() =
+        runTest(dispatcher) {
+            val accountGroups = FakeAccountGroupRepository(
+                listOf(
+                    AccountGroup.allAccounts(),
+                    AccountGroup("g1", "Personal", showBalance = true, sortOrder = 1, memberAssetIds = setOf("a1")),
+                ),
+            )
+            val vm = viewModel(
+                assets = FakeAssetRepository(
+                    listOf(asset("a1", "Cuenta 1", 100_000), asset("a2", "Cuenta 2", 200_000)),
+                ),
+                accountGroups = accountGroups,
+                editingGroupId = "g1",
+            )
+            val job = launch { vm.state.collect {} }
+            var events = 0
+            val eventsJob = launch { vm.navigateBack.collect { events++ } }
+            advanceUntilIdle()
+
+            val loaded = vm.state.value
+            assertTrue(loaded.isEditing)
+            assertEquals("Personal", loaded.title)
+            assertEquals(setOf("a1"), loaded.assetChecklist.filter { it.selected }.map { it.id }.toSet())
+            assertTrue(loaded.canSaveNewGroup)
+
+            vm.onTitleChange("Día a día")
+            vm.onShowBalanceToggle()
+            vm.onAssetToggle("a1")
+            vm.onAssetToggle("a2")
+            advanceUntilIdle()
+            vm.onSaveNewGroup()
+            advanceUntilIdle()
+
+            val edited = accountGroups.current.single { it.id == "g1" }
+            assertEquals("Día a día", edited.name)
+            assertFalse(edited.showBalance)
+            assertEquals(setOf("a2"), edited.memberAssetIds)
+            assertEquals(2, accountGroups.current.size)
+            assertEquals(1, events)
+            job.cancel()
+            eventsJob.cancel()
+        }
+
+    @Test
+    fun `editing a group that no longer exists navigates back without saving`() = runTest(dispatcher) {
+        val accountGroups = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts()))
+        val vm = viewModel(accountGroups = accountGroups, editingGroupId = "gone")
+        var events = 0
+        val eventsJob = launch { vm.navigateBack.collect { events++ } }
+        advanceUntilIdle()
+
+        assertEquals(1, events)
+        assertFalse(vm.state.value.canSaveNewGroup)
+        assertEquals(listOf(AccountGroup.ALL_ACCOUNTS_ID), accountGroups.current.map { it.id })
         eventsJob.cancel()
     }
 }

@@ -56,6 +56,7 @@ fun GruposSheet(
     modifier: Modifier = Modifier,
     onNavigateBack: () -> Unit = {},
     onNewGroup: () -> Unit = {},
+    onEditGroup: (String) -> Unit = {},
     onNewAsset: () -> Unit = {},
     viewModel: GruposViewModel = koinViewModel(),
 ) {
@@ -150,6 +151,7 @@ fun GruposSheet(
                             expanded = if (group.id in expanded) expanded - group.id else expanded + group.id
                         },
                         editing = editing,
+                        onEdit = { onEditGroup(group.id) },
                         onDelete = { viewModel.onDeleteGroup(group.id) },
                     )
                 }
@@ -261,6 +263,7 @@ private fun GrupoRow(
     expanded: Boolean,
     onToggle: () -> Unit,
     editing: Boolean,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -324,23 +327,18 @@ private fun GrupoRow(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     if (!group.builtin) {
-                        Box(
-                            modifier = Modifier
-                                .size(30.dp)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                    onClick = onDelete,
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = AppIcons.trash,
-                                contentDescription = "Eliminar ${group.name}",
-                                tint = colors.expense,
-                                modifier = Modifier.size(16.dp),
-                            )
-                        }
+                        RowActionButton(
+                            icon = AppIcons.pencil,
+                            contentDescription = "Editar ${group.name}",
+                            tint = colors.ink2,
+                            onClick = onEdit,
+                        )
+                        RowActionButton(
+                            icon = AppIcons.trash,
+                            contentDescription = "Eliminar ${group.name}",
+                            tint = colors.expense,
+                            onClick = onDelete,
+                        )
                     }
                     Icon(
                         imageVector = AppIcons.grip,
@@ -403,6 +401,22 @@ private fun GrupoRow(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun RowActionButton(icon: ImageVector, contentDescription: String, tint: Color, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(30.dp)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(imageVector = icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(16.dp))
     }
 }
 

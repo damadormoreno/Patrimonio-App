@@ -12,5 +12,12 @@ interface AccountGroupRepository {
 
     suspend fun setMembers(groupId: String, assetIds: Set<String>)
 
+    /** Renames [group], updates its balance visibility and replaces its members, keeping its id,
+     *  position and linked savings goals. The builtin "all accounts" group cannot be edited.
+     *  @throws AccountGroupNotFoundException when no persisted group has that id. */
+    suspend fun updateGroup(group: AccountGroup)
+
     suspend fun deleteGroup(id: String)
 }
+
+class AccountGroupNotFoundException(groupId: String) : NoSuchElementException("Account group '$groupId' was not found")

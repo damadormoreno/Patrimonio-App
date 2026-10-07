@@ -11,6 +11,7 @@ import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 import com.denebapps.patrimonio.data.db.writeTransaction
 import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
+import com.denebapps.patrimonio.domain.repository.AccountGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
@@ -53,6 +54,20 @@ class AccountGroupRepositoryImpl(
         seedingGate.await()
         accountGroupDao.deleteMembers(groupId)
         assetIds.forEach { assetId -> accountGroupDao.insertMember(AccountGroupMemberEntity(groupId, assetId)) }
+    }
+
+    override suspend fun updateGroup(group: AccountGroup) {
+        seedingGate.await()
+        require(group.id != AccountGroup.ALL_ACCOUNTS_ID) { "The builtin all-accounts group cannot be edited" }
+        appDatabase.writeTransaction {
+            if (accountGroupDao.updateGroup(group.id, group.name, group.showBalance) == 0) {
+                throw AccountGroupNotFoundException(group.id)
+            }
+            accountGroupDao.deleteMembers(group.id)
+            group.memberAssetIds.orEmpty().forEach { assetId ->
+                accountGroupDao.insertMember(AccountGroupMemberEntity(group.id, assetId))
+            }
+        }
     }
 
     /** `account_group_members` rows are removed via the CASCADE FK automatically — no explicit

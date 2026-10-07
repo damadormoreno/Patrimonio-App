@@ -244,6 +244,35 @@ class SavingsGoalsViewModelTest {
     }
 
     @Test
+    fun `deleting a goal in any lifecycle removes it and navigates back`() = runTest(dispatcher) {
+        val goals = FakeSavingsGoalRepository(
+            listOf(
+                goal(id = "goal-1", targetMinor = 100_00, progressMinor = 40_00),
+                goal(
+                    id = "goal-2",
+                    targetMinor = 100_00,
+                    progressMinor = 0,
+                    lifecycle = SavingsGoalLifecycle.CANCELLED,
+                ),
+            ),
+        )
+        val vm = viewModel(goals = goals, initialGoalId = "goal-2")
+        val job = launch { vm.state.collect {} }
+        var events = 0
+        val eventsJob = launch { vm.navigateBack.collect { events++ } }
+        advanceUntilIdle()
+
+        vm.onDeleteGoal()
+        advanceUntilIdle()
+
+        assertEquals(listOf("goal-1"), vm.state.value.goals.map { it.id })
+        assertNull(vm.state.value.selectedGoal)
+        assertEquals(1, events)
+        job.cancel()
+        eventsJob.cancel()
+    }
+
+    @Test
     fun `coverage renders as one shared warning, not one per linked goal`() = runTest(dispatcher) {
         val sharedAsset = asset("shared", Currency.EUR, minor = 100_00)
         val vm = viewModel(
