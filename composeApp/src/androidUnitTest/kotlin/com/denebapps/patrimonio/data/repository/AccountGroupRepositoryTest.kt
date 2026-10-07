@@ -159,6 +159,23 @@ class AccountGroupRepositoryTest {
     }
 
     @Test
+    fun `reordering persists the position of each group`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repo = groupRepository(db)
+        listOf("g1", "g2", "g3").forEach { id ->
+            repo.insertGroup(AccountGroup(id, id, true, 0, memberAssetIds = emptySet()))
+        }
+
+        repo.reorderGroups(listOf("g3", "g1", "g2"))
+
+        assertEquals(
+            listOf(AccountGroup.ALL_ACCOUNTS_ID, "g3", "g1", "g2"),
+            repo.observeAll().first().map { it.id },
+        )
+        db.close()
+    }
+
+    @Test
     fun `editing a missing or builtin group fails without changes`() = runTest {
         val db = buildInMemoryTestDatabase()
         val repo = groupRepository(db)

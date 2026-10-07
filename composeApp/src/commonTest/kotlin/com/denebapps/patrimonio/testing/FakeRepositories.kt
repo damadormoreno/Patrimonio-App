@@ -274,6 +274,14 @@ class FakeAccountGroupRepository(initial: List<AccountGroup> = emptyList()) : Ac
         }
     }
 
+    override suspend fun reorderGroups(groupIds: List<String>) {
+        val reordered = backing.value.map { group ->
+            val index = groupIds.indexOf(group.id)
+            if (index >= 0) group.copy(sortOrder = index) else group
+        }
+        backing.value = reordered.sortedBy { it.sortOrder }
+    }
+
     override suspend fun deleteGroup(id: String) {
         backing.value = backing.value.filterNot { it.id == id }
     }

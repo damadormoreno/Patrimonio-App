@@ -46,6 +46,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.denebapps.patrimonio.domain.model.Currency
+import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.ui.components.Pill
 import com.denebapps.patrimonio.ui.components.PillTone
 import com.denebapps.patrimonio.ui.icons.AppIcons
@@ -163,6 +164,7 @@ fun GoalAllocateSheet(
     val colors = LocalAppColors.current
     val goal = state.selectedGoal
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    var confirmCancel by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.navigateBack.collect { onNavigateBack() }
@@ -261,7 +263,7 @@ fun GoalAllocateSheet(
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
-                            onClick = viewModel::onCancelGoal,
+                            onClick = { confirmCancel = true },
                         )
                         .padding(vertical = 10.dp),
                 )
@@ -295,6 +297,33 @@ fun GoalAllocateSheet(
 
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    if (confirmCancel && goal != null) {
+        val released = if (goal.progress > Money.ZERO) {
+            "Se liberarán los ${formatSavingsAmount(goal.progress, goal.target.currency)} asignados y la"
+        } else {
+            "La"
+        }
+        AlertDialog(
+            onDismissRequest = { confirmCancel = false },
+            title = { Text("Cancelar meta") },
+            text = {
+                Text(
+                    "$released meta quedará cerrada: seguirás viéndola, pero ya no admitirá movimientos. " +
+                        "Esta acción no se puede deshacer.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmCancel = false
+                    viewModel.onCancelGoal()
+                }) { Text("Cancelar meta", color = colors.expense) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmCancel = false }) { Text("Volver") }
+            },
+        )
     }
 
     if (confirmDelete && goal != null) {
@@ -828,7 +857,7 @@ private fun currencySymbolSavings(currency: Currency): String = when (currency) 
 
 /** Formats [money] in its own [currency] (not EUR-converted) — duplicated per-file
  *  (`PatrimonioScreen.formatItemAmount` precedent). */
-private fun formatSavingsAmount(money: com.denebapps.patrimonio.domain.model.Money, currency: Currency): String {
+private fun formatSavingsAmount(money: Money, currency: Currency): String {
     val decimals = currency.decimals
     var factor = 1L
     repeat(decimals) { factor *= 10 }

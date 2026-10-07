@@ -153,6 +153,7 @@ fun GruposSheet(
                         editing = editing,
                         onEdit = { onEditGroup(group.id) },
                         onDelete = { viewModel.onDeleteGroup(group.id) },
+                        onMove = { up -> viewModel.onMoveGroup(group.id, up) },
                     )
                 }
             }
@@ -265,6 +266,7 @@ private fun GrupoRow(
     editing: Boolean,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onMove: (up: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAppColors.current
@@ -328,6 +330,20 @@ private fun GrupoRow(
                 ) {
                     if (!group.builtin) {
                         RowActionButton(
+                            icon = AppIcons.arrowUp,
+                            contentDescription = "Subir ${group.name}",
+                            tint = colors.ink2,
+                            enabled = group.canMoveUp,
+                            onClick = { onMove(true) },
+                        )
+                        RowActionButton(
+                            icon = AppIcons.arrowDown,
+                            contentDescription = "Bajar ${group.name}",
+                            tint = colors.ink2,
+                            enabled = group.canMoveDown,
+                            onClick = { onMove(false) },
+                        )
+                        RowActionButton(
                             icon = AppIcons.pencil,
                             contentDescription = "Editar ${group.name}",
                             tint = colors.ink2,
@@ -340,12 +356,6 @@ private fun GrupoRow(
                             onClick = onDelete,
                         )
                     }
-                    Icon(
-                        imageVector = AppIcons.grip,
-                        contentDescription = null,
-                        tint = colors.muted2,
-                        modifier = Modifier.size(17.dp),
-                    )
                 }
             }
         }
@@ -405,18 +415,30 @@ private fun GrupoRow(
 }
 
 @Composable
-private fun RowActionButton(icon: ImageVector, contentDescription: String, tint: Color, onClick: () -> Unit) {
+private fun RowActionButton(
+    icon: ImageVector,
+    contentDescription: String,
+    tint: Color,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+) {
     Box(
         modifier = Modifier
             .size(30.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
+                enabled = enabled,
                 onClick = onClick,
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(imageVector = icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(16.dp))
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = if (enabled) tint else LocalAppColors.current.line,
+            modifier = Modifier.size(16.dp),
+        )
     }
 }
 

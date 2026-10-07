@@ -17,6 +17,10 @@ interface AccountGroupRepository {
      *  @throws AccountGroupNotFoundException when no persisted group has that id. */
     suspend fun updateGroup(group: AccountGroup)
 
+    /** Persists the user's order: each id in [groupIds] gets its index as `sortOrder`. Unknown ids
+     *  (and the builtin group, which always stays first) are ignored. */
+    suspend fun reorderGroups(groupIds: List<String>)
+
     suspend fun deleteGroup(id: String)
 }
 

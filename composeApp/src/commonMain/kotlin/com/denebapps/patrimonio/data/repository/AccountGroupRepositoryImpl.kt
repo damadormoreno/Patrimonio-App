@@ -70,6 +70,13 @@ class AccountGroupRepositoryImpl(
         }
     }
 
+    override suspend fun reorderGroups(groupIds: List<String>) {
+        seedingGate.await()
+        appDatabase.writeTransaction {
+            groupIds.forEachIndexed { index, id -> accountGroupDao.updateSortOrder(id, index) }
+        }
+    }
+
     /** `account_group_members` rows are removed via the CASCADE FK automatically — no explicit
      *  [AccountGroupDao.deleteMembers] call needed here (spec: `account-groups-crud`). Goals linked to
      *  the group are unlinked first, each leaving a `GROUP_DELETED` link event, in the same

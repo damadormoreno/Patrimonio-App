@@ -40,6 +40,9 @@ interface AccountGroupDao {
     @Query("UPDATE account_groups SET name = :name, showBalance = :showBalance WHERE id = :id")
     suspend fun updateGroup(id: String, name: String, showBalance: Boolean): Int
 
+    @Query("UPDATE account_groups SET sortOrder = :sortOrder WHERE id = :id")
+    suspend fun updateSortOrder(id: String, sortOrder: Int): Int
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertMember(member: AccountGroupMemberEntity)
 

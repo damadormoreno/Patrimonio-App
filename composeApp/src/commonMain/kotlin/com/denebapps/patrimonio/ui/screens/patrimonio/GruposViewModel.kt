@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
@@ -43,6 +45,9 @@ data class AccountGroupRowUi(
     val showBalance: Boolean,
     val total: Money,
     val members: List<GruposMemberUi>,
+    /** Reordering arrows; the builtin group is always first and never moves. */
+    val canMoveUp: Boolean = false,
+    val canMoveDown: Boolean = false,
 )
 
 /** One checklist row in the NuevoGrupo form (spec: Create Account Group Form). */
@@ -108,6 +113,7 @@ class GruposViewModel(
 ) : ViewModel() {
     private val newGroupForm = MutableStateFlow(NewGroupForm(loaded = editingGroupId == null))
     private val pendingDeletion = MutableStateFlow<GroupDeletionConfirmationUi?>(null)
+    private val reorderMutex = Mutex()
 
     private val navigateBackChannel = Channel<Unit>(Channel.BUFFERED)
 
@@ -168,6 +174,22 @@ class GruposViewModel(
         }
     }
 
+    /** Moves a persisted group one place up or down and saves the whole order. Taps are serialized so
+     *  each move starts from the order the previous one saved. */
+    fun onMoveGroup(id: String, up: Boolean) {
+        viewModelScope.launch {
+            reorderMutex.withLock {
+                val ids = accountGroupRepository.observeAll().first()
+                    .map { it.id }
+                    .filter { it != AccountGroup.ALL_ACCOUNTS_ID }
+                val from = ids.indexOf(id)
+                val to = if (up) from - 1 else from + 1
+                if (from < 0 || to !in ids.indices) return@withLock
+                accountGroupRepository.reorderGroups(ids.toMutableList().apply { add(to, removeAt(from)) })
+            }
+        }
+    }
+
     fun onConfirmDeleteGroup() {
         val pending = pendingDeletion.value ?: return
         pendingDeletion.value = null
@@ -198,11 +220,15 @@ class GruposViewModel(
         if (!form.canSave()) return
 
         viewModelScope.launch {
+            // New groups go last; an edit keeps its position (updateGroup ignores sortOrder).
+            val nextSortOrder = accountGroupRepository.observeAll().first()
+                .filter { it.id != AccountGroup.ALL_ACCOUNTS_ID }
+                .maxOfOrNull { it.sortOrder + 1 } ?: 0
             val group = AccountGroup(
                 id = editingGroupId ?: idProvider(),
                 name = form.title.trim(),
                 showBalance = form.showBalance,
-                sortOrder = 0,
+                sortOrder = nextSortOrder,
                 memberAssetIds = form.selectedAssetIds,
             )
             if (editingGroupId == null) {
@@ -225,8 +251,10 @@ class GruposViewModel(
     ): GruposUiState {
         val (assets, accountGroups, rates) = data
 
+        val movableIds = accountGroups.map { it.id }.filter { it != AccountGroup.ALL_ACCOUNTS_ID }
         val groups = accountGroups.map { group ->
             val members = groupMembers(group, assets)
+            val position = movableIds.indexOf(group.id)
             AccountGroupRowUi(
                 id = group.id,
                 name = group.name,
@@ -234,6 +262,8 @@ class GruposViewModel(
                 showBalance = group.showBalance,
                 total = groupTotal(group, assets, rates),
                 members = members.map { GruposMemberUi(it.id, it.name, it.amount.toEur(rates), it.group) },
+                canMoveUp = position > 0,
+                canMoveDown = position in 0 until movableIds.lastIndex,
             )
         }
 
