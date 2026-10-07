@@ -273,41 +273,6 @@ class SavingsGoalsViewModelTest {
     }
 
     @Test
-    fun `coverage renders as one shared warning, not one per linked goal`() = runTest(dispatcher) {
-        val sharedAsset = asset("shared", Currency.EUR, minor = 100_00)
-        val vm = viewModel(
-            goals = FakeSavingsGoalRepository(
-                listOf(
-                    goal(id = "goal-1", targetMinor = 100_00, progressMinor = 70_00, linkedAssetId = "shared"),
-                    goal(id = "goal-2", targetMinor = 100_00, progressMinor = 50_00, linkedAssetId = "shared"),
-                ),
-            ),
-            assets = FakeAssetRepository(listOf(sharedAsset)),
-        )
-        val job = launch { vm.state.collect {} }
-        advanceUntilIdle()
-
-        assertEquals(PatrimonioCoverageUi.Warning, vm.state.value.coverageWarning)
-        job.cancel()
-    }
-
-    @Test
-    fun `coverage within balance shows no warning`() = runTest(dispatcher) {
-        val sharedAsset = asset("shared", Currency.EUR, minor = 100_00)
-        val vm = viewModel(
-            goals = FakeSavingsGoalRepository(
-                listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 40_00, linkedAssetId = "shared")),
-            ),
-            assets = FakeAssetRepository(listOf(sharedAsset)),
-        )
-        val job = launch { vm.state.collect {} }
-        advanceUntilIdle()
-
-        assertEquals(PatrimonioCoverageUi.None, vm.state.value.coverageWarning)
-        job.cancel()
-    }
-
-    @Test
     fun `create offers the persisted groups regardless of currency and never the builtin one`() = runTest(dispatcher) {
         val vm = viewModel(
             assets = FakeAssetRepository(listOf(asset("eur-1"), asset("usd-1", Currency.USD))),
@@ -392,56 +357,93 @@ class SavingsGoalsViewModelTest {
     }
 
     @Test
-    fun `group coverage shows one shared group warning when the reservations exceed the group balance`() = runTest(
-        dispatcher,
-    ) {
+    fun `a goal linked to an asset shows its balance as progress and takes no allocations`() = runTest(dispatcher) {
         val vm = viewModel(
             goals = FakeSavingsGoalRepository(
-                listOf(
-                    goal(id = "goal-1", targetMinor = 100_00, progressMinor = 70_00, linkedGroupId = "g1"),
-                    goal(id = "goal-2", targetMinor = 100_00, progressMinor = 50_00, linkedGroupId = "g1"),
-                ),
+                listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 0, linkedAssetId = "a1")),
             ),
-            assets = FakeAssetRepository(listOf(asset("a1", minor = 60_00), asset("a2", minor = 40_00))),
-            groups = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts(), group("g1", "a1", "a2"))),
+            assets = FakeAssetRepository(listOf(asset("a1", minor = 125_00))),
+            initialGoalId = "goal-1",
         )
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
-        assertEquals(
-            PatrimonioCoverageUi.GroupWarning(convertedAtCurrentRate = false),
-            vm.state.value.groupCoverageWarning,
-        )
-        assertEquals(PatrimonioCoverageUi.None, vm.state.value.coverageWarning)
+        val row = vm.state.value.goals.single()
+        assertEquals(Money(125_00), row.progress)
+        assertEquals(125, row.progressPct)
+        assertTrue(row.targetReached)
+        assertTrue(row.tracksBalance)
+        assertEquals("Asset a1", row.linkedTargetName)
+        assertEquals("Sigue el saldo de «Asset a1»", trackedBalanceCaption(row))
+
+        vm.onAllocateAmountChange("10")
+        advanceUntilIdle()
+        assertFalse(vm.state.value.canSubmitAllocate)
         job.cancel()
     }
 
     @Test
-    fun `group coverage flags the conversion when members use other currencies`() = runTest(dispatcher) {
+    fun `a goal linked to a group follows the converted group balance live`() = runTest(dispatcher) {
+        val assets = FakeAssetRepository(listOf(asset("a1", minor = 50_00), asset("a2", Currency.USD, minor = 50_00)))
         val vm = viewModel(
             goals = FakeSavingsGoalRepository(
-                listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 90_00, linkedGroupId = "g1")),
+                listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 0, linkedGroupId = "g1")),
             ),
-            assets = FakeAssetRepository(listOf(asset("a1", minor = 50_00), asset("a2", Currency.USD, minor = 50_00))),
+            assets = assets,
             groups = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts(), group("g1", "a1", "a2"))),
             // 1 USD = 0.5 EUR, so the group balance is 50.00 + 25.00 EUR
             fx = FakeFxRepository(FxRates(mapOf(Currency.USD to 500_000L))),
         )
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
+        assertEquals(Money(75_00), vm.state.value.goals.single().progress)
 
-        assertEquals(
-            PatrimonioCoverageUi.GroupWarning(convertedAtCurrentRate = true),
-            vm.state.value.groupCoverageWarning,
-        )
+        assets.update(asset("a1", minor = 80_00))
+        advanceUntilIdle()
+
+        assertEquals(Money(105_00), vm.state.value.goals.single().progress)
+        assertEquals("Group g1", vm.state.value.goals.single().linkedTargetName)
         job.cancel()
     }
 
     @Test
-    fun `group coverage within the group balance shows no warning`() = runTest(dispatcher) {
+    fun `unlinked and cancelled goals keep showing their own allocations`() = runTest(dispatcher) {
         val vm = viewModel(
             goals = FakeSavingsGoalRepository(
-                listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 40_00, linkedGroupId = "g1")),
+                listOf(
+                    goal(id = "goal-1", targetMinor = 100_00, progressMinor = 30_00),
+                    goal(
+                        id = "goal-2",
+                        targetMinor = 100_00,
+                        progressMinor = 0,
+                        linkedAssetId = "a1",
+                        lifecycle = SavingsGoalLifecycle.CANCELLED,
+                    ),
+                ),
+            ),
+            assets = FakeAssetRepository(listOf(asset("a1", minor = 500_00))),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        val rows = vm.state.value.goals.associateBy { it.id }
+        assertEquals(Money(30_00), rows.getValue("goal-1").progress)
+        assertFalse(rows.getValue("goal-1").tracksBalance)
+        assertEquals(Money.ZERO, rows.getValue("goal-2").progress)
+        assertFalse(rows.getValue("goal-2").tracksBalance)
+        assertNull(trackedBalanceCaption(rows.getValue("goal-2")))
+        job.cancel()
+    }
+
+    @Test
+    fun `goals following the same balance get one notice naming them`() = runTest(dispatcher) {
+        val vm = viewModel(
+            goals = FakeSavingsGoalRepository(
+                listOf(
+                    goal(id = "goal-1", targetMinor = 100_00, progressMinor = 0, linkedAssetId = "a1"),
+                    goal(id = "goal-2", targetMinor = 100_00, progressMinor = 0, linkedAssetId = "a1"),
+                    goal(id = "goal-3", targetMinor = 100_00, progressMinor = 0, linkedGroupId = "g1"),
+                ),
             ),
             assets = FakeAssetRepository(listOf(asset("a1", minor = 100_00))),
             groups = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts(), group("g1", "a1"))),
@@ -449,7 +451,10 @@ class SavingsGoalsViewModelTest {
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
-        assertEquals(PatrimonioCoverageUi.None, vm.state.value.groupCoverageWarning)
+        assertEquals(
+            listOf(SharedBalanceNoticeUi(targetName = "Asset a1", goalNames = listOf("Goal goal-1", "Goal goal-2"))),
+            vm.state.value.sharedBalanceNotices,
+        )
         job.cancel()
     }
 }

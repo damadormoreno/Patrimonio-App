@@ -225,6 +225,15 @@ fun GoalAllocateSheet(
                     lineHeight = 18.sp,
                     modifier = Modifier.padding(top = 16.dp),
                 )
+            } else if (goal.tracksBalance) {
+                Text(
+                    text = "${trackedBalanceCaption(goal)}. El progreso se actualiza solo cuando cambia ese " +
+                        "saldo, así que aquí no se asigna ni se retira dinero.",
+                    color = colors.muted,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                    modifier = Modifier.padding(top = 16.dp),
+                )
             } else {
                 AllocateModeSegmented(withdraw = state.withdraw, onModeChange = viewModel::onWithdrawModeChange)
 
@@ -250,7 +259,9 @@ fun GoalAllocateSheet(
                     onClick = viewModel::onSubmitAllocate,
                     modifier = Modifier.padding(top = 16.dp),
                 )
+            }
 
+            if (!goal.closed) {
                 Text(
                     text = "Cancelar meta",
                     color = colors.expense,
@@ -269,7 +280,7 @@ fun GoalAllocateSheet(
                 )
             }
 
-            if (goal.closed && state.errorMessage != null) {
+            if ((goal.closed || goal.tracksBalance) && state.errorMessage != null) {
                 Text(
                     text = state.errorMessage.orEmpty(),
                     color = colors.expense,
@@ -300,10 +311,11 @@ fun GoalAllocateSheet(
     }
 
     if (confirmCancel && goal != null) {
-        val released = if (goal.progress > Money.ZERO) {
-            "Se liberarán los ${formatSavingsAmount(goal.progress, goal.target.currency)} asignados y la"
-        } else {
-            "La"
+        val released = when {
+            goal.tracksBalance -> "El saldo de «${goal.linkedTargetName.orEmpty()}» no cambia y la"
+            goal.progress > Money.ZERO ->
+                "Se liberarán los ${formatSavingsAmount(goal.progress, goal.target.currency)} asignados y la"
+            else -> "La"
         }
         AlertDialog(
             onDismissRequest = { confirmCancel = false },

@@ -8,12 +8,10 @@ import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.model.SavingsGoalAllocationEvent
-import com.denebapps.patrimonio.domain.model.SavingsGoalCoverage
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
 import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalDeltaException
 import com.denebapps.patrimonio.domain.repository.NegativeSavingsGoalProgressException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalArithmeticOverflowException
-import com.denebapps.patrimonio.domain.repository.SavingsGoalCurrencyMismatchException
 
 fun checkedSavingsGoalProgress(events: Iterable<SavingsGoalAllocationEvent>): Money =
     events.fold(Money.ZERO) { progress, event ->
@@ -66,104 +64,42 @@ fun savingsGoalCancellationDelta(progress: Money): Money? {
     return if (progress == Money.ZERO) null else checkedSavingsGoalNegate(progress)
 }
 
+/** True when [goal]'s progress follows the balance of its linked asset or group instead of its own
+ *  allocations: only open goals do; closed and cancelled ones keep their ledger progress. */
+val SavingsGoal.tracksLinkedBalance: Boolean
+    get() = lifecycle == SavingsGoalLifecycle.OPEN && (linkedAssetId != null || linkedGroupId != null)
+
 /**
- * Coverage of [goal]'s link: [SavingsGoalCoverage.SharedAsset] for an asset link,
- * [SavingsGoalCoverage.SharedGroup] for a group link and [SavingsGoalCoverage.Unavailable] when the goal is
- * unlinked, the target no longer exists, or a conversion a group needs cannot be done.
- *
- * [groups] and [rates] only matter for group links. A group link converts every amount to the goal's
- * currency; [rates] `null` means "no rates available", which makes any needed conversion (a member or a
- * linked goal in another currency) [SavingsGoalCoverage.Unavailable]. Same-currency groups need no rates.
+ * The balance a goal that [tracksLinkedBalance] shows as its progress, in the goal's currency: the
+ * linked asset's amount, or the sum of the linked group's members converted at [rates] (same-currency
+ * amounts need no rates). Null when the goal does not track a balance, the asset or group no longer
+ * exists, or a needed conversion has no usable rate. Never negative.
  */
-fun savingsGoalCoverage(
-    goal: SavingsGoal,
-    assets: List<Asset>,
-    allGoals: List<SavingsGoal>,
-    groups: List<AccountGroup> = emptyList(),
-    rates: FxRates? = null,
-): SavingsGoalCoverage {
-    goal.linkedGroupId?.let { groupId -> return groupCoverage(goal, groupId, assets, allGoals, groups, rates) }
-    val assetId = goal.linkedAssetId ?: return SavingsGoalCoverage.Unavailable
-    val asset = assets.firstOrNull { it.id == assetId } ?: return SavingsGoalCoverage.Unavailable
-
-    val reserved =
-        allGoals
-            .asSequence()
-            .filter { it.linkedAssetId == assetId }
-            .distinctBy { it.id }
-            .fold(Money.ZERO) { total, linkedGoal ->
-                if (linkedGoal.target.currency != asset.amount.currency) {
-                    throw SavingsGoalCurrencyMismatchException(
-                        goalCurrency = linkedGoal.target.currency,
-                        assetCurrency = asset.amount.currency,
-                    )
-                }
-                val contribution =
-                    when (linkedGoal.lifecycle) {
-                        SavingsGoalLifecycle.CANCELLED -> Money.ZERO
-                        SavingsGoalLifecycle.OPEN,
-                        SavingsGoalLifecycle.CLOSED,
-                        -> linkedGoal.progress
-                    }
-                if (contribution < Money.ZERO) {
-                    throw NegativeSavingsGoalProgressException(contribution.minorUnits)
-                }
-                checkedSavingsGoalAdd(total, contribution)
-            }
-
-    return SavingsGoalCoverage.SharedAsset(
-        assetId = assetId,
-        balance = asset.amount,
-        reserved = CurrencyAmount(reserved, asset.amount.currency),
-    )
-}
-
-private fun groupCoverage(
-    goal: SavingsGoal,
-    groupId: String,
-    assets: List<Asset>,
-    allGoals: List<SavingsGoal>,
-    groups: List<AccountGroup>,
-    rates: FxRates?,
-): SavingsGoalCoverage {
-    if (groupId == AccountGroup.ALL_ACCOUNTS_ID) return SavingsGoalCoverage.Unavailable
-    val group = groups.firstOrNull { it.id == groupId } ?: return SavingsGoalCoverage.Unavailable
+fun trackedBalance(goal: SavingsGoal, assets: List<Asset>, groups: List<AccountGroup>, rates: FxRates?): Money? {
+    if (!goal.tracksLinkedBalance) return null
     val currency = goal.target.currency
-
-    val balance =
-        groupMembers(group, assets).fold(Money.ZERO) { total, member ->
-            val converted = convertOrNull(member.amount, currency, rates) ?: return SavingsGoalCoverage.Unavailable
-            checkedSavingsGoalAdd(total, converted)
-        }
-
-    val reserved =
-        allGoals
-            .asSequence()
-            .filter { it.linkedGroupId == groupId }
-            .distinctBy { it.id }
-            .fold(Money.ZERO) { total, linkedGoal ->
-                val contribution =
-                    when (linkedGoal.lifecycle) {
-                        SavingsGoalLifecycle.CANCELLED -> Money.ZERO
-                        SavingsGoalLifecycle.OPEN,
-                        SavingsGoalLifecycle.CLOSED,
-                        -> linkedGoal.progress
-                    }
-                if (contribution < Money.ZERO) {
-                    throw NegativeSavingsGoalProgressException(contribution.minorUnits)
-                }
-                val converted =
-                    convertOrNull(CurrencyAmount(contribution, linkedGoal.target.currency), currency, rates)
-                        ?: return SavingsGoalCoverage.Unavailable
-                checkedSavingsGoalAdd(total, converted)
-            }
-
-    return SavingsGoalCoverage.SharedGroup(
-        groupId = groupId,
-        balance = CurrencyAmount(balance, currency),
-        reserved = CurrencyAmount(reserved, currency),
-    )
+    val members = if (goal.linkedAssetId != null) {
+        listOf(assets.firstOrNull { it.id == goal.linkedAssetId } ?: return null)
+    } else {
+        val group = groups.firstOrNull { it.id == goal.linkedGroupId && it.id != AccountGroup.ALL_ACCOUNTS_ID }
+        groupMembers(group ?: return null, assets)
+    }
+    val balance = members.fold(Money.ZERO) { total, asset ->
+        checkedSavingsGoalAdd(total, convertOrNull(asset.amount, currency, rates) ?: return null)
+    }
+    return if (balance < Money.ZERO) Money.ZERO else balance
 }
+
+/**
+ * Open goals that track the same asset or the same group, one list per shared target (only targets with
+ * at least two goals). Each of those goals shows the whole balance, so their progress adds up to more
+ * than there is. An asset inside a linked group is not matched against a goal linked to that asset.
+ */
+fun goalsSharingLinkedBalance(goals: List<SavingsGoal>): List<List<SavingsGoal>> = goals
+    .filter { it.tracksLinkedBalance }
+    .groupBy { goal -> goal.linkedAssetId?.let { "asset:$it" } ?: "group:${goal.linkedGroupId}" }
+    .values
+    .filter { it.size > 1 }
 
 /** Same-currency amounts never need rates; otherwise null when [rates] are absent or unusable (<= 0). */
 private fun convertOrNull(amount: CurrencyAmount, target: Currency, rates: FxRates?): Money? {
