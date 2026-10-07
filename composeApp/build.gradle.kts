@@ -132,8 +132,36 @@ android {
         minSdk = libs.versions.androidMinSdk.get().toInt()
         targetSdk = libs.versions.androidTargetSdk.get().toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 1
+        // CI passes its run number so every preview build installs over the previous one.
+        versionCode = providers.environmentVariable("VERSION_CODE").orNull?.toIntOrNull() ?: 1
         versionName = "1.0"
+    }
+
+    // Preview builds go to the phone through Firebase App Distribution (.github/workflows/preview.yml).
+    // They need a stable key so each build updates the installed one; without the CI keystore (local
+    // builds) the preview build is signed with the debug key.
+    val previewKeystore = providers.environmentVariable("PREVIEW_KEYSTORE_PATH").orNull
+    signingConfigs {
+        if (previewKeystore != null) {
+            create("preview") {
+                storeFile = file(previewKeystore)
+                storePassword = providers.environmentVariable("PREVIEW_KEYSTORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("PREVIEW_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("PREVIEW_KEY_PASSWORD").get()
+            }
+        }
+    }
+
+    buildTypes {
+        // A debug build installed next to the Android Studio one: own id, data and name (the
+        // "Patrimonio β" label lives in src/androidPreview/res, the KMP folder for this build type).
+        create("preview") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-preview"
+            matchingFallbacks += "debug"
+            signingConfig = signingConfigs.findByName("preview") ?: signingConfigs.getByName("debug")
+        }
     }
 
     compileOptions {
