@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.ui.screens.patrimonio
 
+import com.denebapps.patrimonio.domain.calc.AccountAssignment
 import com.denebapps.patrimonio.domain.calc.fixedClock
 import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.Asset
@@ -308,6 +309,93 @@ class PatrimonioViewModelTest {
         assertEquals(true to false, items.getValue("a1").let { it.inGoal to it.inGroup })
         assertEquals(true to true, items.getValue("a2").let { it.inGoal to it.inGroup })
         assertEquals(false to false, items.getValue("a3").let { it.inGoal to it.inGroup })
+        job.cancel()
+    }
+
+    @Test
+    fun `the account filter narrows the asset list and summarises it`() = runTest(dispatcher) {
+        val vm = viewModel(
+            assets = FakeAssetRepository(
+                listOf(
+                    asset("a1", Asset.AssetGroup.BANK, "Nómina", 100_000),
+                    asset("a2", Asset.AssetGroup.BANK, "Hucha", 50_000),
+                    asset("a3", Asset.AssetGroup.INVEST, "Broker", 200_000),
+                ),
+            ),
+            accountGroups = FakeAccountGroupRepository(
+                listOf(
+                    AccountGroup.allAccounts(),
+                    AccountGroup("g1", "Ahorro", showBalance = true, sortOrder = 1, memberAssetIds = setOf("a3")),
+                ),
+            ),
+            goals = FakeSavingsGoalRepository(
+                listOf(
+                    SavingsGoal(
+                        id = "goal-1",
+                        name = "Viaje",
+                        target = CurrencyAmount(Money(100_000), Currency.EUR),
+                        targetDate = null,
+                        linkedAssetIds = setOf("a1"),
+                        lifecycle = SavingsGoalLifecycle.OPEN,
+                        progress = Money.ZERO,
+                    ),
+                ),
+            ),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        assertNull(vm.state.value.filterSummary)
+        assertEquals(listOf("Bancos", "Inversión"), vm.state.value.typeFilterOptions.map { it.label })
+
+        vm.onAssignmentFilterChange(AccountAssignment.UNASSIGNED)
+        advanceUntilIdle()
+        val bank = vm.state.value.groups.single()
+        assertEquals(listOf("a2"), bank.items.map { it.id })
+        assertEquals("1 de 2 elementos", bank.itemCountLabel)
+        assertEquals(Money(50_000), bank.total)
+        assertTrue(bank.filtered)
+        assertEquals(FilterSummaryUi(Money(50_000), 1), vm.state.value.filterSummary)
+        // The header totals stay global.
+        assertEquals(Money(350_000), vm.state.value.totalAssets)
+
+        vm.onAssignmentFilterChange(AccountAssignment.ALL)
+        vm.onTypeFilterToggle(Asset.AssetGroup.INVEST)
+        advanceUntilIdle()
+        val invest = vm.state.value.groups.single()
+        assertEquals("1 elemento", invest.itemCountLabel)
+        assertFalse(invest.filtered)
+        assertTrue(vm.state.value.typeFilterOptions.single { it.group == Asset.AssetGroup.INVEST }.selected)
+
+        vm.onAssignmentFilterChange(AccountAssignment.IN_GOALS)
+        advanceUntilIdle()
+        assertEquals(emptyList(), vm.state.value.groups)
+        assertEquals(FilterSummaryUi(Money.ZERO, 0), vm.state.value.filterSummary)
+
+        vm.onClearFilters()
+        advanceUntilIdle()
+        assertEquals(2, vm.state.value.groups.size)
+        assertNull(vm.state.value.filterSummary)
+        job.cancel()
+    }
+
+    @Test
+    fun `the account filter does not touch the liabilities view`() = runTest(dispatcher) {
+        val vm = viewModel(
+            assets = FakeAssetRepository(listOf(asset("a1", Asset.AssetGroup.BANK, "Cuenta", 100_000))),
+            liabilities = FakeLiabilityRepository(
+                listOf(liability("l1", Liability.LiabilityGroup.CARD, "Tarjeta", 20_000)),
+            ),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        vm.onAssignmentFilterChange(AccountAssignment.IN_GOALS)
+        vm.onViewSelect(PatrimonioView.PASIVOS)
+        advanceUntilIdle()
+
+        assertEquals(listOf("l1"), vm.state.value.groups.single().items.map { it.id })
+        assertNull(vm.state.value.filterSummary)
         job.cancel()
     }
 }
