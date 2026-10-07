@@ -214,7 +214,7 @@ class SavingsGoalRepositoryTest {
             listOf(SavingsGoalLinkEventKind.LINK),
             fixture.repository.observeLinkHistory(goalId).first().map { it.kind },
         )
-        assertFailsWith<SavingsGoalNotFoundException> { fixture.repository.allocate(Long.MAX_VALUE, Money(1)) }
+        assertFailsWith<SavingsGoalNotFoundException> { fixture.repository.allocate("missing", Money(1)) }
         fixture.close()
     }
 

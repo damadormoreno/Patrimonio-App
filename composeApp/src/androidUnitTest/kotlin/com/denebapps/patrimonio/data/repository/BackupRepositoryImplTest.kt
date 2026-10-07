@@ -133,7 +133,7 @@ class BackupRepositoryImplTest {
         assertEquals(BackupCodec.VERSION, document.version)
         assertEquals("2026-10-06T10:00:00Z", document.exportedAt)
         assertEquals(2, document.assets.size)
-        assertEquals(listOf(7L, 12L, 13L), document.savingsGoals.map { it.id })
+        assertEquals(listOf(VIAJE, COCHE, COLCHON), document.savingsGoals.map { it.id })
         assertEquals("g1", document.savingsGoals.last().linkedGroupId)
         db.close()
     }
