@@ -16,6 +16,3 @@ interface AssetRepository {
 }
 
 class AssetNotFoundException(assetId: String) : NoSuchElementException("Asset '$assetId' was not found")
-
-class LinkedAssetCurrencyChangeException(assetId: String) :
-    IllegalStateException("Asset '$assetId' currency cannot change while linked to a savings goal")

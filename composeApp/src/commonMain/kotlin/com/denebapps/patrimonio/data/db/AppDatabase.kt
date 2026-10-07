@@ -19,6 +19,7 @@ import com.denebapps.patrimonio.data.db.entity.FxRateEntity
 import com.denebapps.patrimonio.data.db.entity.LiabilityEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 import com.denebapps.patrimonio.data.db.entity.SubscriptionEntity
@@ -34,9 +35,10 @@ import com.denebapps.patrimonio.data.db.entity.SubscriptionEntity
         SavingsGoalEntity::class,
         SavingsGoalAllocationEventEntity::class,
         SavingsGoalLinkEventEntity::class,
+        SavingsGoalAssetEntity::class,
         SubscriptionEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
     autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )

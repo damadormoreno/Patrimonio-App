@@ -14,7 +14,6 @@ import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
 import com.denebapps.patrimonio.domain.repository.AssetNotFoundException
 import com.denebapps.patrimonio.domain.repository.AssetRepository
-import com.denebapps.patrimonio.domain.repository.LinkedAssetCurrencyChangeException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
@@ -54,7 +53,7 @@ class AssetRepositoryImpl(
         seedingGate.await()
         appDatabase.writeTransaction {
             val entity = toEntity(asset)
-            val updated = assetDao.updateGuarded(
+            val updated = assetDao.update(
                 id = entity.id,
                 group = entity.group,
                 name = entity.name,
@@ -62,11 +61,7 @@ class AssetRepositoryImpl(
                 amountMinor = entity.amountMinor,
                 currency = entity.currency,
             )
-            if (updated == 0) {
-                val existing = assetDao.find(entity.id) ?: throw AssetNotFoundException(entity.id)
-                if (existing.currency != entity.currency) throw LinkedAssetCurrencyChangeException(entity.id)
-                error("Guarded asset update did not modify '${entity.id}'")
-            }
+            if (updated == 0) throw AssetNotFoundException(entity.id)
             refreshSnapshot()
         }
     }

@@ -49,24 +49,24 @@ data class SavingsGoalRowUi(
     val progressPct: Int,
     val targetReached: Boolean,
     val closed: Boolean,
-    val linkedAssetId: String?,
+    val linkedAssetIds: Set<String>,
     val linkedGroupId: String?,
-    /** [progress] is the balance of the linked asset or group ([linkedTargetName]), not allocations:
+    /** [progress] is the balance of the linked assets or group ([linkedTargetLabel]), not allocations:
      *  allocate and withdraw do not apply. */
     val tracksBalance: Boolean = false,
-    val linkedTargetName: String? = null,
+    /** What the goal follows, ready to read after "de": «Cuenta», «A» y «B», or "4 cuentas". */
+    val linkedTargetLabel: String? = null,
     /** The tracked balance needs an exchange rate that is not available; [progress] shows zero. */
     val balanceUnavailable: Boolean = false,
 )
 
-/** Several open goals follow the balance of the same asset or group ([targetName]); each one counts it
- *  in full. */
-data class SharedBalanceNoticeUi(val targetName: String, val goalNames: List<String>)
+/** Several open goals follow the balance of the same assets or group ([targetLabel], as in
+ *  [SavingsGoalRowUi.linkedTargetLabel]); each one counts it in full. */
+data class SharedBalanceNoticeUi(val targetLabel: String, val goalNames: List<String>)
 
-/** One same-currency asset offered by the create form's optional link picker (spec: Create Goal
- *  Form — "an asset link MUST be optional and, when offered, restricted to assets sharing the
- *  entered currency"). */
-data class LinkableAssetUi(val id: String, val name: String)
+/** One asset offered by the goal form's link picker, of any currency: the tracked balance converts it
+ *  to the goal's currency. Several can be picked at once. */
+data class LinkableAssetUi(val id: String, val name: String, val currency: Currency)
 
 /** One persisted account group offered by the create form's optional link picker. Groups carry no
  *  currency restriction (their balance is converted at the current rate) and the builtin "all
@@ -81,7 +81,7 @@ data class SavingsGoalsUiState(
     val newGoalTargetText: String,
     val newGoalCurrency: Currency,
     val newGoalTargetDate: LocalDate?,
-    val newGoalLinkedAssetId: String?,
+    val newGoalLinkedAssetIds: Set<String>,
     val newGoalLinkedGroupId: String?,
     val linkableAssets: List<LinkableAssetUi>,
     val linkableGroups: List<LinkableGroupUi>,
@@ -107,7 +107,7 @@ private data class NewGoalForm(
     val targetText: String = "",
     val currency: Currency = Currency.EUR,
     val targetDate: LocalDate? = null,
-    val linkedAssetId: String? = null,
+    val linkedAssetIds: Set<String> = emptySet(),
     val linkedGroupId: String? = null,
     /** Set once [SavingsGoalsViewModel.onStartEditing] has loaded an existing goal: saving updates it. */
     val editingGoalId: String? = null,
@@ -137,8 +137,8 @@ private data class Forms(
  * [SavingsGoalsUiState.withdraw] for the `GoalAllocate` destination; both default to `null`/`false`
  * for the section and `NewGoal` instances, where they are unused.
  *
- * A new goal links to an asset XOR a persisted group XOR nothing ([onNewGoalLinkChange] and
- * [onNewGoalGroupLinkChange] replace each other).
+ * A goal follows any number of assets XOR one persisted group XOR nothing: [onNewGoalAssetToggle]
+ * drops a picked group and [onNewGoalGroupLinkChange] drops the picked assets.
  */
 class SavingsGoalsViewModel(
     private val savingsGoalRepository: SavingsGoalRepository,
@@ -195,25 +195,31 @@ class SavingsGoalsViewModel(
         newGoalForm.value = newGoalForm.value.copy(targetText = text)
     }
 
-    /** Switching currency invalidates an ASSET link picked for the previous currency — same-currency-only
-     *  invariant (`AddPatrimonioSheetViewModel.onModeChange` clearing `selectedGroupId` precedent). A
-     *  group link survives: groups have no currency restriction. */
+    /** Links survive a currency change: linked balances are converted to the goal's currency. */
     fun onNewGoalCurrencyChange(currency: Currency) {
-        newGoalForm.value = newGoalForm.value.copy(currency = currency, linkedAssetId = null)
+        newGoalForm.value = newGoalForm.value.copy(currency = currency)
     }
 
     fun onNewGoalDateChange(date: LocalDate?) {
         newGoalForm.value = newGoalForm.value.copy(targetDate = date)
     }
 
-    /** Picks an asset (or, with null, no link at all) — either way drops any picked group. */
-    fun onNewGoalLinkChange(assetId: String?) {
-        newGoalForm.value = newGoalForm.value.copy(linkedAssetId = assetId, linkedGroupId = null)
+    /** Adds or removes one asset from the picked ones, dropping any picked group. */
+    fun onNewGoalAssetToggle(assetId: String) {
+        val form = newGoalForm.value
+        val picked = assetId in form.linkedAssetIds
+        val assetIds = if (picked) form.linkedAssetIds - assetId else form.linkedAssetIds + assetId
+        newGoalForm.value = form.copy(linkedAssetIds = assetIds, linkedGroupId = null)
     }
 
-    /** Picks a group, dropping any picked asset: a goal links to an asset XOR a group. */
+    /** Picks a group, dropping any picked asset: a goal links to assets XOR a group. */
     fun onNewGoalGroupLinkChange(groupId: String) {
-        newGoalForm.value = newGoalForm.value.copy(linkedAssetId = null, linkedGroupId = groupId)
+        newGoalForm.value = newGoalForm.value.copy(linkedAssetIds = emptySet(), linkedGroupId = groupId)
+    }
+
+    /** Leaves the goal unlinked: it takes allocations instead of following a balance. */
+    fun onNewGoalUnlink() {
+        newGoalForm.value = newGoalForm.value.copy(linkedAssetIds = emptySet(), linkedGroupId = null)
     }
 
     /** Fills the form with an existing open goal so saving edits it. Calling it again for the same goal
@@ -227,7 +233,7 @@ class SavingsGoalsViewModel(
                 targetText = amountInputText(goal.target.amount, goal.target.currency),
                 currency = goal.target.currency,
                 targetDate = goal.targetDate,
-                linkedAssetId = goal.linkedAssetId,
+                linkedAssetIds = goal.linkedAssetIds,
                 linkedGroupId = goal.linkedGroupId,
                 editingGoalId = goal.id,
             )
@@ -251,7 +257,7 @@ class SavingsGoalsViewModel(
                         name = form.name.trim(),
                         target = CurrencyAmount(Money(targetMinor), form.currency),
                         targetDate = form.targetDate,
-                        linkedAssetId = form.linkedAssetId,
+                        linkedAssetIds = form.linkedAssetIds,
                         linkedGroupId = form.linkedGroupId,
                     ),
                 )
@@ -272,7 +278,7 @@ class SavingsGoalsViewModel(
                         name = form.name.trim(),
                         targetAmount = target,
                         targetDate = form.targetDate,
-                        linkedAssetId = form.linkedAssetId,
+                        linkedAssetIds = form.linkedAssetIds,
                         linkedGroupId = form.linkedGroupId,
                     ),
                 )
@@ -351,16 +357,13 @@ class SavingsGoalsViewModel(
         val targetNames = assets.associate { it.id to it.name } + groups.associate { it.id to it.name }
         val rows = goals.map { goal -> goal.toRowUi(assets, groups, rates, targetNames) }
         val sharedBalanceNotices = goalsSharingLinkedBalance(goals).map { sharing ->
-            val first = sharing.first()
             SharedBalanceNoticeUi(
-                targetName = targetNames[first.linkedAssetId ?: first.linkedGroupId].orEmpty(),
-                goalNames = sharing.map { it.name },
+                targetLabel = linkedTargetLabel(sharing.targetIds.mapNotNull(targetNames::get).sorted()).orEmpty(),
+                goalNames = sharing.goals.map { it.name },
             )
         }
 
-        val linkableAssets = assets
-            .filter { it.amount.currency == forms.newGoal.currency }
-            .map { LinkableAssetUi(it.id, it.name) }
+        val linkableAssets = assets.map { LinkableAssetUi(it.id, it.name, it.amount.currency) }
 
         val linkableGroups = groups
             .filter { it.id != AccountGroup.ALL_ACCOUNTS_ID }
@@ -381,7 +384,7 @@ class SavingsGoalsViewModel(
             newGoalTargetText = forms.newGoal.targetText,
             newGoalCurrency = forms.newGoal.currency,
             newGoalTargetDate = forms.newGoal.targetDate,
-            newGoalLinkedAssetId = forms.newGoal.linkedAssetId,
+            newGoalLinkedAssetIds = forms.newGoal.linkedAssetIds,
             newGoalLinkedGroupId = forms.newGoal.linkedGroupId,
             linkableAssets = linkableAssets,
             linkableGroups = linkableGroups,
@@ -408,6 +411,7 @@ private fun SavingsGoal.toRowUi(
     targetNames: Map<String, String>,
 ): SavingsGoalRowUi {
     val balance = trackedBalance(this, assets, groups, rates)
+    val linkedTargetIds = linkedAssetIds + listOfNotNull(linkedGroupId)
     val shown = if (tracksLinkedBalance) balance ?: Money.ZERO else progress
     return SavingsGoalRowUi(
         id = id,
@@ -417,10 +421,10 @@ private fun SavingsGoal.toRowUi(
         progressPct = progressPercentage(shown, target.amount),
         targetReached = shown >= target.amount,
         closed = lifecycle != SavingsGoalLifecycle.OPEN,
-        linkedAssetId = linkedAssetId,
+        linkedAssetIds = linkedAssetIds,
         linkedGroupId = linkedGroupId,
         tracksBalance = tracksLinkedBalance,
-        linkedTargetName = (linkedAssetId ?: linkedGroupId)?.let(targetNames::get),
+        linkedTargetLabel = linkedTargetLabel(linkedTargetIds.mapNotNull(targetNames::get).sorted()),
         balanceUnavailable = tracksLinkedBalance && balance == null,
     )
 }
@@ -430,9 +434,19 @@ private fun progressPercentage(progress: Money, target: Money): Int {
     return (progress.minorUnits.toDouble() * 100.0 / target.minorUnits.toDouble()).roundToInt()
 }
 
+/** «A»; «A» y «B»; «A», «B» y «C»; from [MAX_NAMED_TARGETS] + 1 names on, "N cuentas". Null when empty. */
+internal fun linkedTargetLabel(names: List<String>): String? {
+    if (names.isEmpty()) return null
+    if (names.size > MAX_NAMED_TARGETS) return "${names.size} cuentas"
+    val quoted = names.map { "«$it»" }
+    return if (quoted.size == 1) quoted.single() else quoted.dropLast(1).joinToString(", ") + " y " + quoted.last()
+}
+
+private const val MAX_NAMED_TARGETS = 3
+
 /** Where a linked goal's progress comes from, or null for goals that take allocations. */
 fun trackedBalanceCaption(goal: SavingsGoalRowUi): String? = when {
     !goal.tracksBalance -> null
-    goal.balanceUnavailable -> "Sin tipo de cambio para calcular el saldo de «${goal.linkedTargetName.orEmpty()}»"
-    else -> "Sigue el saldo de «${goal.linkedTargetName.orEmpty()}»"
+    goal.balanceUnavailable -> "Sin tipo de cambio para calcular el saldo de ${goal.linkedTargetLabel.orEmpty()}"
+    else -> "Sigue el saldo de ${goal.linkedTargetLabel.orEmpty()}"
 }

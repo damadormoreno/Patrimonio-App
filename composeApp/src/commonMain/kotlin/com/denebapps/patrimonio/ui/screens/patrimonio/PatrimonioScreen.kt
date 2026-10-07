@@ -679,7 +679,7 @@ private fun MetasSection(
 private fun sharedBalanceMessage(notice: SharedBalanceNoticeUi): String {
     val names = notice.goalNames.map { "«$it»" }
     val goals = names.dropLast(1).joinToString(", ") + " y " + names.last()
-    return "$goals siguen el saldo de «${notice.targetName}»: cada una lo cuenta entero."
+    return "$goals siguen el saldo de ${notice.targetLabel}: cada una lo cuenta entero."
 }
 
 @Composable

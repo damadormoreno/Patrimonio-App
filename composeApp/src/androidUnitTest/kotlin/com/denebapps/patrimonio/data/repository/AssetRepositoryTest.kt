@@ -19,7 +19,6 @@ import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
 import com.denebapps.patrimonio.domain.repository.AssetNotFoundException
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.CreateSavingsGoal
-import com.denebapps.patrimonio.domain.repository.LinkedAssetCurrencyChangeException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.ReceiveChannel
@@ -39,6 +38,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 private class AssetCountingClock(private val instant: Instant) : Clock {
     var calls: Int = 0
@@ -80,37 +80,22 @@ private enum class DeleteFailure { LINK_EVENT, CLEAR_LINKS, DELETE, AFTER_SNAPSH
 @RunWith(RobolectricTestRunner::class)
 class AssetRepositoryTest {
     @Test
-    fun `linked currency change is rejected atomically while non-currency updates remain allowed`() = runTest {
+    fun `a linked asset can change currency and stays linked`() = runTest {
         val fixture = fixture()
         fixture.assetRepository.insert(asset(name = "Original", amountMinor = 50_000))
-        val goalId = fixture.goalRepository.create(goal(linkedAssetId = ASSET_ID))
-        fixture.goalRepository.allocate(goalId, Money(12_000))
-        val assetBefore = fixture.db.assetDao().find(ASSET_ID)
-        val goalBefore = fixture.goalRepository.observeAll().first().single()
+        val goalId = fixture.goalRepository.create(goal(ASSET_ID))
         val linksBefore = fixture.goalRepository.observeLinkHistory(goalId).first()
-        val snapshotBefore = fixture.db.netWorthDao().find(CURRENT_MONTH)
-        val assets = fixture.assetRepository.observeAll().produceIn(backgroundScope)
-        assertEquals("Original", assets.receive().single().name)
 
-        assertFailsWith<LinkedAssetCurrencyChangeException> {
-            fixture.assetRepository.update(asset(name = "Rejected", amountMinor = 60_000, currency = Currency.USD))
-        }
+        fixture.assetRepository.update(asset(name = "Dollars", amountMinor = 60_000, currency = Currency.USD))
 
-        assertEquals(assetBefore, fixture.db.assetDao().find(ASSET_ID))
-        assertEquals(goalBefore, fixture.goalRepository.observeAll().first().single())
+        assertEquals("USD", fixture.db.assetDao().find(ASSET_ID)?.currency)
+        assertEquals(setOf(ASSET_ID), fixture.goalRepository.observeAll().first().single().linkedAssetIds)
         assertEquals(linksBefore, fixture.goalRepository.observeLinkHistory(goalId).first())
-        assertEquals(snapshotBefore, fixture.db.netWorthDao().find(CURRENT_MONTH))
-        assertNull(receiveOrNull(assets))
-
-        fixture.assetRepository.update(asset(name = "Renamed", amountMinor = 60_000))
-        assertEquals("Renamed", assets.receive().single().name)
-        assertEquals(60_000, fixture.db.netWorthDao().find(CURRENT_MONTH)?.assetsMinor)
-        assertEquals(goalBefore.progress, fixture.goalRepository.observeAll().first().single().progress)
         fixture.close()
     }
 
     @Test
-    fun `unlinked currency change succeeds and missing asset has a distinct typed failure`() = runTest {
+    fun `currency change succeeds and missing asset has a distinct typed failure`() = runTest {
         val fixture = fixture()
         fixture.assetRepository.insert(asset())
 
@@ -134,8 +119,8 @@ class AssetRepositoryTest {
 
             assertNull(fixture.db.assetDao().find(ASSET_ID))
             val goals = fixture.goalRepository.observeAll().first().associateBy { it.name }
-            assertNull(goals.getValue("Open").linkedAssetId)
-            assertNull(goals.getValue("Closed").linkedAssetId)
+            assertEquals(setOf(SURVIVOR_ID), goals.getValue("Open").linkedAssetIds)
+            assertEquals(emptySet(), goals.getValue("Closed").linkedAssetIds)
             assertEquals(Money(12_000), goals.getValue("Open").progress)
             assertEquals(Money(8_000), goals.getValue("Closed").progress)
             assertEquals(SavingsGoalLifecycle.CLOSED, goals.getValue("Closed").lifecycle)
@@ -149,13 +134,13 @@ class AssetRepositoryTest {
                 fixture.goalRepository.observeAllocationHistory(goals.getValue("Closed").id).first()
                     .map { it.delta.minorUnits },
             )
+            val link = SavingsGoalLinkEventKind.LINK
+            val deleted = SavingsGoalLinkEventKind.ASSET_DELETED
+            val expectedKinds = mapOf("Open" to listOf(link, link, deleted), "Closed" to listOf(link, deleted))
             goals.values.forEach { goal ->
                 val links = fixture.goalRepository.observeLinkHistory(goal.id).first()
-                assertEquals(
-                    listOf(SavingsGoalLinkEventKind.LINK, SavingsGoalLinkEventKind.ASSET_DELETED),
-                    links.map { it.kind },
-                )
-                assertEquals(listOf(ASSET_ID, ASSET_ID), links.map { it.fromAssetId ?: it.toAssetId })
+                assertEquals(expectedKinds.getValue(goal.name), links.map { it.kind })
+                assertEquals(ASSET_ID, links.last().fromAssetId)
                 assertEquals(DELETION_MS, links.last().timestampEpochMs)
             }
             val group = fixture.db.accountGroupDao().observeAll().first().single()
@@ -186,9 +171,9 @@ class AssetRepositoryTest {
         fixture.seedDeletionScenario()
         val goals = fixture.goalRepository.observeAll().produceIn(backgroundScope)
         val initial = goals.receive()
-        val firstGoalId = initial.first().id
-        val links = fixture.goalRepository.observeLinkHistory(firstGoalId).produceIn(backgroundScope)
-        assertEquals(setOf(ASSET_ID), initial.map { it.linkedAssetId }.toSet())
+        val closedGoalId = initial.single { it.name == "Closed" }.id
+        val links = fixture.goalRepository.observeLinkHistory(closedGoalId).produceIn(backgroundScope)
+        assertTrue(initial.all { ASSET_ID in it.linkedAssetIds })
         assertEquals(listOf(SavingsGoalLinkEventKind.LINK), links.receive().map { it.kind })
 
         assertFails { fixture.assetRepository(DeleteFailure.CLEAR_LINKS).deleteById(ASSET_ID) }
@@ -197,7 +182,7 @@ class AssetRepositoryTest {
 
         fixture.assetRepository.deleteById(ASSET_ID)
         val committed = goals.receive()
-        assertEquals(setOf(null), committed.map { it.linkedAssetId }.toSet())
+        assertTrue(committed.none { ASSET_ID in it.linkedAssetIds })
         assertEquals(listOf(12_000L, 8_000L), committed.map { it.progress.minorUnits }.sortedDescending())
         assertEquals(
             listOf(SavingsGoalLinkEventKind.LINK, SavingsGoalLinkEventKind.ASSET_DELETED),
@@ -207,15 +192,15 @@ class AssetRepositoryTest {
     }
 
     @Test
-    fun `duplicate insert cannot bypass guarded update or audited deletion`() = runTest {
+    fun `duplicate insert cannot bypass audited deletion`() = runTest {
         val fixture = fixture()
         fixture.assetRepository.insert(asset())
-        val goalId = fixture.goalRepository.create(goal(linkedAssetId = ASSET_ID))
+        val goalId = fixture.goalRepository.create(goal(ASSET_ID))
 
         assertFails { fixture.assetRepository.insert(asset(currency = Currency.USD)) }
 
         assertEquals("EUR", fixture.db.assetDao().find(ASSET_ID)?.currency)
-        assertEquals(ASSET_ID, fixture.goalRepository.observeAll().first().single().linkedAssetId)
+        assertEquals(setOf(ASSET_ID), fixture.goalRepository.observeAll().first().single().linkedAssetIds)
         assertEquals(
             listOf(SavingsGoalLinkEventKind.LINK),
             fixture.goalRepository.observeLinkHistory(goalId).first().map { it.kind },
@@ -297,7 +282,7 @@ class AssetRepositoryTest {
             db.accountGroupDao().insertGroup(AccountGroupEntity(GROUP_ID, "Primary", true, 0))
             db.accountGroupDao().insertMember(AccountGroupMemberEntity(GROUP_ID, ASSET_ID))
             db.accountGroupDao().insertMember(AccountGroupMemberEntity(GROUP_ID, SURVIVOR_ID))
-            val openId = goalRepository.create(goal(ASSET_ID).copy(name = "Open"))
+            val openId = goalRepository.create(goal(ASSET_ID, SURVIVOR_ID).copy(name = "Open"))
             val closedId = goalRepository.create(goal(ASSET_ID).copy(name = "Closed"))
             goalRepository.allocate(openId, Money(12_000))
             goalRepository.allocate(closedId, Money(8_000))
@@ -329,10 +314,10 @@ class AssetRepositoryTest {
             currency: Currency = Currency.EUR,
         ) = Asset(id, Asset.AssetGroup.BANK, name, null, CurrencyAmount(Money(amountMinor), currency))
 
-        private fun goal(linkedAssetId: String) = CreateSavingsGoal(
+        private fun goal(vararg linkedAssetIds: String) = CreateSavingsGoal(
             name = "Goal",
             target = CurrencyAmount(Money(100_000), Currency.EUR),
-            linkedAssetId = linkedAssetId,
+            linkedAssetIds = linkedAssetIds.toSet(),
         )
 
         private const val ASSET_ID = "asset-main"

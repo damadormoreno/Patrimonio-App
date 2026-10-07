@@ -6,6 +6,7 @@ import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.LiabilityEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 import com.denebapps.patrimonio.data.db.entity.SubscriptionEntity
@@ -33,13 +34,13 @@ internal fun NetWorthSnapshotEntity.toBackup() = NetWorthSnapshotBackup(yearMont
 
 internal fun NetWorthSnapshotBackup.toEntity() = NetWorthSnapshotEntity(yearMonth, assetsMinor, liabsMinor)
 
-internal fun SavingsGoalEntity.toBackup() = SavingsGoalBackup(
+internal fun SavingsGoalEntity.toBackup(linkedAssetIds: List<String>) = SavingsGoalBackup(
     id,
     name,
     targetMinor,
     currency,
     targetDateEpochDay,
-    linkedAssetId,
+    linkedAssetIds,
     lifecycle,
     linkedGroupId,
     createdAtEpochMs,
@@ -51,11 +52,12 @@ internal fun SavingsGoalBackup.toEntity() = SavingsGoalEntity(
     targetMinor,
     currency,
     targetDateEpochDay,
-    linkedAssetId,
     lifecycle,
     linkedGroupId,
     createdAtEpochMs,
 )
+
+internal fun SavingsGoalBackup.toLinkedAssetEntities() = linkedAssetIds.map { SavingsGoalAssetEntity(id, it) }
 
 internal fun SavingsGoalAllocationEventEntity.toBackup() =
     SavingsGoalAllocationEventBackup(id, goalId, deltaMinor, timestampEpochMs)

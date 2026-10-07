@@ -9,7 +9,8 @@ import kotlinx.serialization.Serializable
  * the savings-goal group link (`linkedGroupId`, `fromGroupId`/`toGroupId`); every such field
  * defaults to null so a version 1 file still decodes. Version 3 added [subscriptions], which defaults
  * to empty for older files. Version 4 turned savings goal ids into UUID strings and added
- * [SavingsGoalBackup.createdAtEpochMs]; [BackupCodec] upgrades older files on read.
+ * [SavingsGoalBackup.createdAtEpochMs]; version 5 replaced the single `linkedAssetId` with
+ * [SavingsGoalBackup.linkedAssetIds]. [BackupCodec] upgrades older files on read.
  *
  * Enum-like fields hold the domain enum `name`s and currencies their ISO code; amounts are minor
  * units, dates epoch days, timestamps epoch milliseconds.
@@ -78,7 +79,7 @@ data class SavingsGoalBackup(
     val targetMinor: Long,
     val currency: String,
     val targetDateEpochDay: Long? = null,
-    val linkedAssetId: String? = null,
+    val linkedAssetIds: List<String> = emptyList(),
     val lifecycle: String,
     val linkedGroupId: String? = null,
     val createdAtEpochMs: Long,

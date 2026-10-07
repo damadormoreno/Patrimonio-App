@@ -73,3 +73,39 @@ private val MIGRATION_3_4_STATEMENTS = listOf(
     "CREATE INDEX IF NOT EXISTS `index_savings_goal_link_events_goalId_timestampEpochMs_id` " +
         "ON `savings_goal_link_events` (`goalId`, `timestampEpochMs`, `id`)",
 )
+
+/**
+ * 4 -> 5: a goal can follow several accounts. `savings_goals.linkedAssetId` moves into the new
+ * `savings_goal_assets` junction (an existing link becomes a one-row list) and the column is dropped by
+ * rebuilding the table, which also drops its asset foreign key and index. Same rebuild pattern and
+ * final check as [MIGRATION_3_4].
+ */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(connection: SQLiteConnection) {
+        MIGRATION_4_5_STATEMENTS.forEach(connection::execSQL)
+        connection.prepare("PRAGMA foreign_key_check").use { violations ->
+            check(!violations.step()) { "Migration 4 -> 5 left foreign key violations" }
+        }
+    }
+}
+
+private val MIGRATION_4_5_STATEMENTS = listOf(
+    "CREATE TABLE IF NOT EXISTS `savings_goal_assets` (`goalId` TEXT NOT NULL, `assetId` TEXT NOT NULL, " +
+        "PRIMARY KEY(`goalId`, `assetId`), " +
+        "FOREIGN KEY(`goalId`) REFERENCES `savings_goals`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
+        "FOREIGN KEY(`assetId`) REFERENCES `assets`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+    "INSERT INTO `savings_goal_assets` (`goalId`, `assetId`) " +
+        "SELECT g.`id`, g.`linkedAssetId` FROM `savings_goals` g JOIN `assets` a ON a.`id` = g.`linkedAssetId`",
+    "CREATE TABLE `_new_savings_goals` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, " +
+        "`targetMinor` INTEGER NOT NULL, `currency` TEXT NOT NULL, `targetDateEpochDay` INTEGER, " +
+        "`lifecycle` TEXT NOT NULL, `linkedGroupId` TEXT, `createdAtEpochMs` INTEGER NOT NULL, PRIMARY KEY(`id`), " +
+        "FOREIGN KEY(`linkedGroupId`) REFERENCES `account_groups`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+    "INSERT INTO `_new_savings_goals` (`id`, `name`, `targetMinor`, `currency`, `targetDateEpochDay`, " +
+        "`lifecycle`, `linkedGroupId`, `createdAtEpochMs`) " +
+        "SELECT `id`, `name`, `targetMinor`, `currency`, `targetDateEpochDay`, `lifecycle`, `linkedGroupId`, " +
+        "`createdAtEpochMs` FROM `savings_goals`",
+    "DROP TABLE `savings_goals`",
+    "ALTER TABLE `_new_savings_goals` RENAME TO `savings_goals`",
+    "CREATE INDEX IF NOT EXISTS `index_savings_goals_linkedGroupId` ON `savings_goals` (`linkedGroupId`)",
+    "CREATE INDEX IF NOT EXISTS `index_savings_goal_assets_assetId` ON `savings_goal_assets` (`assetId`)",
+)

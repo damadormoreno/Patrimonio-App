@@ -11,4 +11,4 @@ expect fun createAppDatabaseBuilder(context: PlatformContext): RoomDatabase.Buil
  *  1 -> 2 and 2 -> 3 are `AutoMigration`s declared on [AppDatabase], which Room applies by itself;
  *  hand-written ones go here (see `AppDatabaseMigrationTest`). */
 fun RoomDatabase.Builder<AppDatabase>.configureAppDatabase(): RoomDatabase.Builder<AppDatabase> =
-    addMigrations(MIGRATION_3_4)
+    addMigrations(MIGRATION_3_4, MIGRATION_4_5)

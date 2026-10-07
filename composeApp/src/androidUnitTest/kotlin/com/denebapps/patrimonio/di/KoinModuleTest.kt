@@ -226,7 +226,7 @@ class KoinModuleTest {
                 CreateSavingsGoal(
                     name = "DI goal",
                     target = CurrencyAmount(Money(25_000), Currency.EUR),
-                    linkedAssetId = "asset-di",
+                    linkedAssetIds = setOf("asset-di"),
                 ),
             )
 
@@ -257,7 +257,6 @@ class KoinModuleTest {
                     targetMinor = 1,
                     currency = "EUR",
                     targetDateEpochDay = null,
-                    linkedAssetId = null,
                     lifecycle = "OPEN",
                     createdAtEpochMs = 1,
                 ),

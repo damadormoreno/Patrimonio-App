@@ -4,6 +4,7 @@ import com.denebapps.patrimonio.data.db.buildInMemoryTestDatabase
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 import com.denebapps.patrimonio.data.db.insertGoalReturningId
@@ -29,8 +30,10 @@ class SavingsGoalDaoTest {
 
         assertEquals(emptyList(), emissions.receive())
 
-        val goalId = dao.insertGoalReturningId(goal(linkedAssetId = "asset-1"))
-        assertEquals("asset-1", emissions.receive().single().currentAsset?.id)
+        val goalId = dao.insertGoalReturningId(goal())
+        emissions.receive()
+        dao.insertLinkedAssets(listOf(SavingsGoalAssetEntity(goalId, "asset-1")))
+        assertEquals(setOf("asset-1"), emissions.receive().single().linkedAssetIds)
 
         dao.insertAllocationEvent(allocation(id = 20, goalId = goalId, deltaMinor = 200, timestamp = 1_000))
         emissions.receive()
@@ -73,56 +76,65 @@ class SavingsGoalDaoTest {
     }
 
     @Test
-    fun `snapshot exposes current asset then emits missing asset after explicit unlink and deletion`() = runTest {
-        val db = buildInMemoryTestDatabase()
-        val dao = db.savingsGoalDao()
-        db.assetDao().insert(asset("asset-1"))
-        val goalId = dao.insertGoalReturningId(goal(linkedAssetId = "asset-1"))
-        val emissions = dao.observeAll().produceIn(backgroundScope)
-
-        val linked = emissions.receive().single()
-        assertEquals(goalId, linked.goal.id)
-        assertEquals("asset-1", linked.currentAsset?.id)
-
-        assertEquals(1, dao.clearLinkedAsset("asset-1"))
-        assertEquals(1, db.assetDao().deleteIfUnlinked("asset-1"))
-
-        val unlinked = emissions.receive().single()
-        assertNull(unlinked.goal.linkedAssetId)
-        assertNull(unlinked.currentAsset)
-        db.close()
-    }
-
-    @Test
-    fun `goal metadata primitives update only current link and lifecycle`() = runTest {
+    fun `snapshot lists the linked assets and drops one after it is unlinked and deleted`() = runTest {
         val db = buildInMemoryTestDatabase()
         val dao = db.savingsGoalDao()
         db.assetDao().insert(asset("asset-1"))
         db.assetDao().insert(asset("asset-2"))
-        val goalId = dao.insertGoalReturningId(goal(linkedAssetId = "asset-1"))
+        val goalId = dao.insertGoalReturningId(goal())
+        dao.insertLinkedAssets(listOf("asset-1", "asset-2").map { SavingsGoalAssetEntity(goalId, it) })
+        val emissions = dao.observeAll().produceIn(backgroundScope)
 
-        assertEquals(1, dao.updateLinkedAsset(goalId, "asset-2"))
-        assertEquals("asset-2", dao.findGoal(goalId)?.linkedAssetId)
-        assertEquals(1, dao.updateLifecycle(goalId, "CLOSED"))
-        assertEquals("CLOSED", dao.findGoal(goalId)?.lifecycle)
+        val linked = emissions.receive().single()
+        assertEquals(goalId, linked.goal.id)
+        assertEquals(setOf("asset-1", "asset-2"), linked.linkedAssetIds)
+        assertEquals(listOf(goalId), dao.listGoalsLinkedToAsset("asset-1").map { it.id })
+        assertEquals(0, db.assetDao().deleteIfUnlinked("asset-1"))
+
+        assertEquals(1, dao.clearLinkedAsset("asset-1"))
+        assertEquals(1, db.assetDao().deleteIfUnlinked("asset-1"))
+
+        assertEquals(setOf("asset-2"), emissions.receive().single().linkedAssetIds)
+        assertEquals(emptyList(), dao.listGoalsLinkedToAsset("asset-1"))
+        assertEquals(listOf("asset-2"), dao.listLinkedAssetIds(goalId))
         db.close()
     }
 
     @Test
-    fun `group link primitives keep the link exclusive with the asset link`() = runTest {
+    fun `linked asset primitives add and remove rows and reject unknown assets`() = runTest {
         val db = buildInMemoryTestDatabase()
         val dao = db.savingsGoalDao()
-        db.assetDao().insert(asset("asset-1"))
+        listOf("asset-1", "asset-2", "asset-3").forEach { db.assetDao().insert(asset(it)) }
+        val goalId = dao.insertGoalReturningId(goal())
+
+        dao.insertLinkedAssets(listOf("asset-3", "asset-1", "asset-2").map { SavingsGoalAssetEntity(goalId, it) })
+        assertEquals(listOf("asset-1", "asset-2", "asset-3"), dao.listLinkedAssetIds(goalId))
+        assertEquals(2, dao.deleteLinkedAssets(goalId, listOf("asset-1", "asset-3", "elsewhere")))
+        assertEquals(listOf("asset-2"), dao.listLinkedAssetIds(goalId))
+        assertFails { dao.insertLinkedAssets(listOf(SavingsGoalAssetEntity(goalId, "missing"))) }
+        assertFails { dao.insertLinkedAssets(listOf(SavingsGoalAssetEntity(goalId, "asset-2"))) }
+
+        assertEquals(1, dao.updateLifecycle(goalId, "CLOSED"))
+        assertEquals("CLOSED", dao.findGoal(goalId)?.lifecycle)
+        // Deleting the goal takes its linked-asset rows with it, never the assets.
+        assertEquals(1, dao.deleteGoal(goalId))
+        assertEquals(emptyList(), dao.listAllLinkedAssets())
+        assertEquals(3, db.assetDao().list().size)
+        db.close()
+    }
+
+    @Test
+    fun `group link primitives set and clear the group`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val dao = db.savingsGoalDao()
         db.accountGroupDao().insertGroup(AccountGroupEntity("g1", "Group", true, 0))
-        val goalId = dao.insertGoalReturningId(goal(linkedAssetId = "asset-1"))
+        val goalId = dao.insertGoalReturningId(goal())
 
         assertEquals(1, dao.updateLinkedGroup(goalId, "g1"))
-        assertNull(dao.findGoal(goalId)?.linkedAssetId)
         assertEquals("g1", dao.findGoal(goalId)?.linkedGroupId)
         assertEquals(listOf(goalId), dao.listGoalsLinkedToGroup("g1").map { it.id })
 
-        assertEquals(1, dao.updateLinkedAsset(goalId, "asset-1"))
-        assertEquals("asset-1", dao.findGoal(goalId)?.linkedAssetId)
+        assertEquals(1, dao.updateLinkedGroup(goalId, null))
         assertNull(dao.findGoal(goalId)?.linkedGroupId)
         assertEquals(emptyList(), dao.listGoalsLinkedToGroup("g1"))
 
@@ -187,7 +199,6 @@ class SavingsGoalDaoTest {
     private var goalCount = 0L
 
     private fun goal(
-        linkedAssetId: String? = null,
         linkedGroupId: String? = null,
         id: String = "goal-${++goalCount}",
         createdAtEpochMs: Long = goalCount,
@@ -197,7 +208,6 @@ class SavingsGoalDaoTest {
         targetMinor = 10_000,
         currency = "EUR",
         targetDateEpochDay = null,
-        linkedAssetId = linkedAssetId,
         lifecycle = "OPEN",
         linkedGroupId = linkedGroupId,
         createdAtEpochMs = createdAtEpochMs,

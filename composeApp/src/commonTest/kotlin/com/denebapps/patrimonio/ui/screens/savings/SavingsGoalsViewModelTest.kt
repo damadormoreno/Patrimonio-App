@@ -55,7 +55,7 @@ class SavingsGoalsViewModelTest {
         targetMinor: Long,
         progressMinor: Long,
         currency: Currency = Currency.EUR,
-        linkedAssetId: String? = null,
+        linkedAssetIds: Set<String> = emptySet(),
         linkedGroupId: String? = null,
         lifecycle: SavingsGoalLifecycle = SavingsGoalLifecycle.OPEN,
     ) = SavingsGoal(
@@ -63,7 +63,7 @@ class SavingsGoalsViewModelTest {
         name = "Goal $id",
         target = CurrencyAmount(Money(targetMinor), currency),
         targetDate = null,
-        linkedAssetId = linkedAssetId,
+        linkedAssetIds = linkedAssetIds,
         lifecycle = lifecycle,
         progress = Money(progressMinor),
         linkedGroupId = linkedGroupId,
@@ -127,7 +127,7 @@ class SavingsGoalsViewModelTest {
     }
 
     @Test
-    fun `create pre-filters linkable assets to the entered currency`() = runTest(dispatcher) {
+    fun `every asset is linkable whatever the goal currency`() = runTest(dispatcher) {
         val vm = viewModel(
             assets = FakeAssetRepository(
                 listOf(asset("eur-1", Currency.EUR), asset("usd-1", Currency.USD)),
@@ -136,27 +136,31 @@ class SavingsGoalsViewModelTest {
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
-        assertEquals(listOf("eur-1"), vm.state.value.linkableAssets.map { it.id })
-
-        vm.onNewGoalCurrencyChange(Currency.USD)
-        advanceUntilIdle()
-        assertEquals(listOf("usd-1"), vm.state.value.linkableAssets.map { it.id })
+        assertEquals(
+            listOf(
+                LinkableAssetUi("eur-1", "Asset eur-1", Currency.EUR),
+                LinkableAssetUi("usd-1", "Asset usd-1", Currency.USD),
+            ),
+            vm.state.value.linkableAssets,
+        )
         job.cancel()
     }
 
     @Test
-    fun `switching currency clears a previously selected link`() = runTest(dispatcher) {
-        val vm = viewModel(assets = FakeAssetRepository(listOf(asset("eur-1", Currency.EUR))))
+    fun `several accounts can be picked and switching currency keeps them`() = runTest(dispatcher) {
+        val vm = viewModel(assets = FakeAssetRepository(listOf(asset("eur-1"), asset("usd-1", Currency.USD))))
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
-        vm.onNewGoalLinkChange("eur-1")
-        advanceUntilIdle()
-        assertEquals("eur-1", vm.state.value.newGoalLinkedAssetId)
-
+        vm.onNewGoalAssetToggle("eur-1")
+        vm.onNewGoalAssetToggle("usd-1")
         vm.onNewGoalCurrencyChange(Currency.USD)
         advanceUntilIdle()
-        assertNull(vm.state.value.newGoalLinkedAssetId)
+        assertEquals(setOf("eur-1", "usd-1"), vm.state.value.newGoalLinkedAssetIds)
+
+        vm.onNewGoalAssetToggle("eur-1")
+        advanceUntilIdle()
+        assertEquals(setOf("usd-1"), vm.state.value.newGoalLinkedAssetIds)
         job.cancel()
     }
 
@@ -296,28 +300,29 @@ class SavingsGoalsViewModelTest {
     }
 
     @Test
-    fun `picking a group replaces the asset link and vice versa`() = runTest(dispatcher) {
+    fun `picking a group replaces the picked accounts and vice versa`() = runTest(dispatcher) {
         val vm = viewModel(
-            assets = FakeAssetRepository(listOf(asset("eur-1"))),
+            assets = FakeAssetRepository(listOf(asset("eur-1"), asset("eur-2"))),
             groups = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts(), group("g1", "eur-1"))),
         )
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
-        vm.onNewGoalLinkChange("eur-1")
+        vm.onNewGoalAssetToggle("eur-1")
+        vm.onNewGoalAssetToggle("eur-2")
         vm.onNewGoalGroupLinkChange("g1")
         advanceUntilIdle()
-        assertNull(vm.state.value.newGoalLinkedAssetId)
+        assertEquals(emptySet(), vm.state.value.newGoalLinkedAssetIds)
         assertEquals("g1", vm.state.value.newGoalLinkedGroupId)
 
-        vm.onNewGoalLinkChange("eur-1")
+        vm.onNewGoalAssetToggle("eur-1")
         advanceUntilIdle()
-        assertEquals("eur-1", vm.state.value.newGoalLinkedAssetId)
+        assertEquals(setOf("eur-1"), vm.state.value.newGoalLinkedAssetIds)
         assertNull(vm.state.value.newGoalLinkedGroupId)
 
-        vm.onNewGoalLinkChange(null)
+        vm.onNewGoalUnlink()
         advanceUntilIdle()
-        assertNull(vm.state.value.newGoalLinkedAssetId)
+        assertEquals(emptySet(), vm.state.value.newGoalLinkedAssetIds)
         assertNull(vm.state.value.newGoalLinkedGroupId)
         job.cancel()
     }
@@ -355,15 +360,15 @@ class SavingsGoalsViewModelTest {
 
         val saved = vm.state.value.goals.single()
         assertEquals("g1", saved.linkedGroupId)
-        assertNull(saved.linkedAssetId)
+        assertEquals(emptySet(), saved.linkedAssetIds)
         job.cancel()
     }
 
     @Test
     fun `editing a linked goal loads it and saves name target date and a new group link`() = runTest(dispatcher) {
         val goals = FakeSavingsGoalRepository(
-            listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 0, linkedAssetId = "a1")),
-            assetCurrencyById = mapOf("a1" to Currency.EUR),
+            listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 0, linkedAssetIds = setOf("a1"))),
+            knownAssetIds = setOf("a1"),
             persistedGroupIds = setOf("g1"),
         )
         val vm = viewModel(
@@ -381,7 +386,7 @@ class SavingsGoalsViewModelTest {
         val loaded = vm.state.value
         assertEquals("Goal goal-1", loaded.newGoalName)
         assertEquals("100,00", loaded.newGoalTargetText)
-        assertEquals("a1", loaded.newGoalLinkedAssetId)
+        assertEquals(setOf("a1"), loaded.newGoalLinkedAssetIds)
         assertTrue(loaded.canSaveNewGoal)
 
         vm.onNewGoalNameChange("Viaje a Japón")
@@ -399,9 +404,9 @@ class SavingsGoalsViewModelTest {
         assertEquals("Viaje a Japón", saved.name)
         assertEquals(Money(3_000_00), saved.target.amount)
         assertEquals("g1", saved.linkedGroupId)
-        assertNull(saved.linkedAssetId)
+        assertEquals(emptySet(), saved.linkedAssetIds)
         assertEquals(
-            listOf(SavingsGoalLinkEventKind.RELINK),
+            listOf(SavingsGoalLinkEventKind.UNLINK, SavingsGoalLinkEventKind.LINK),
             goals.observeLinkHistory("goal-1").first().map { it.kind },
         )
         assertEquals(1, events)
@@ -410,25 +415,36 @@ class SavingsGoalsViewModelTest {
     }
 
     @Test
-    fun `editing an unlinked goal can link it to an account`() = runTest(dispatcher) {
+    fun `editing an unlinked goal can link it to several accounts of any currency`() = runTest(dispatcher) {
         val goals = FakeSavingsGoalRepository(
             listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 20_00)),
-            assetCurrencyById = mapOf("a1" to Currency.EUR),
+            knownAssetIds = setOf("a1", "a2"),
         )
-        val vm = viewModel(goals = goals, assets = FakeAssetRepository(listOf(asset("a1", minor = 80_00))))
+        val vm = viewModel(
+            goals = goals,
+            assets = FakeAssetRepository(listOf(asset("a1", minor = 80_00), asset("a2", Currency.USD, minor = 40_00))),
+            // 1 USD = 0.5 EUR
+            fx = FakeFxRepository(FxRates(mapOf(Currency.USD to 500_000L))),
+        )
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
         vm.onStartEditing("goal-1")
         advanceUntilIdle()
-        vm.onNewGoalLinkChange("a1")
+        vm.onNewGoalAssetToggle("a1")
+        vm.onNewGoalAssetToggle("a2")
         vm.onSaveNewGoal()
         advanceUntilIdle()
 
         val saved = vm.state.value.goals.single()
-        assertEquals("a1", saved.linkedAssetId)
+        assertEquals(setOf("a1", "a2"), saved.linkedAssetIds)
         assertTrue(saved.tracksBalance)
-        assertEquals(Money(80_00), saved.progress)
+        assertEquals(Money(100_00), saved.progress)
+        assertEquals("«Asset a1» y «Asset a2»", saved.linkedTargetLabel)
+        assertEquals(
+            listOf(SavingsGoalLinkEventKind.LINK, SavingsGoalLinkEventKind.LINK),
+            goals.observeLinkHistory("goal-1").first().map { it.kind },
+        )
         job.cancel()
     }
 
@@ -436,7 +452,7 @@ class SavingsGoalsViewModelTest {
     fun `a goal linked to an asset shows its balance as progress and takes no allocations`() = runTest(dispatcher) {
         val vm = viewModel(
             goals = FakeSavingsGoalRepository(
-                listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 0, linkedAssetId = "a1")),
+                listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 0, linkedAssetIds = setOf("a1"))),
             ),
             assets = FakeAssetRepository(listOf(asset("a1", minor = 125_00))),
             initialGoalId = "goal-1",
@@ -449,7 +465,7 @@ class SavingsGoalsViewModelTest {
         assertEquals(125, row.progressPct)
         assertTrue(row.targetReached)
         assertTrue(row.tracksBalance)
-        assertEquals("Asset a1", row.linkedTargetName)
+        assertEquals("«Asset a1»", row.linkedTargetLabel)
         assertEquals("Sigue el saldo de «Asset a1»", trackedBalanceCaption(row))
 
         vm.onAllocateAmountChange("10")
@@ -478,7 +494,7 @@ class SavingsGoalsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(Money(105_00), vm.state.value.goals.single().progress)
-        assertEquals("Group g1", vm.state.value.goals.single().linkedTargetName)
+        assertEquals("«Group g1»", vm.state.value.goals.single().linkedTargetLabel)
         job.cancel()
     }
 
@@ -492,7 +508,7 @@ class SavingsGoalsViewModelTest {
                         id = "goal-2",
                         targetMinor = 100_00,
                         progressMinor = 0,
-                        linkedAssetId = "a1",
+                        linkedAssetIds = setOf("a1"),
                         lifecycle = SavingsGoalLifecycle.CANCELLED,
                     ),
                 ),
@@ -516,8 +532,8 @@ class SavingsGoalsViewModelTest {
         val vm = viewModel(
             goals = FakeSavingsGoalRepository(
                 listOf(
-                    goal(id = "goal-1", targetMinor = 100_00, progressMinor = 0, linkedAssetId = "a1"),
-                    goal(id = "goal-2", targetMinor = 100_00, progressMinor = 0, linkedAssetId = "a1"),
+                    goal(id = "goal-1", targetMinor = 100_00, progressMinor = 0, linkedAssetIds = setOf("a1")),
+                    goal(id = "goal-2", targetMinor = 100_00, progressMinor = 0, linkedAssetIds = setOf("a1")),
                     goal(id = "goal-3", targetMinor = 100_00, progressMinor = 0, linkedGroupId = "g1"),
                 ),
             ),
@@ -528,9 +544,20 @@ class SavingsGoalsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(
-            listOf(SharedBalanceNoticeUi(targetName = "Asset a1", goalNames = listOf("Goal goal-1", "Goal goal-2"))),
+            listOf(
+                SharedBalanceNoticeUi(targetLabel = "«Asset a1»", goalNames = listOf("Goal goal-1", "Goal goal-2")),
+            ),
             vm.state.value.sharedBalanceNotices,
         )
         job.cancel()
+    }
+
+    @Test
+    fun `linked target labels name up to three targets and count the rest`() {
+        assertNull(linkedTargetLabel(emptyList()))
+        assertEquals("«A»", linkedTargetLabel(listOf("A")))
+        assertEquals("«A» y «B»", linkedTargetLabel(listOf("A", "B")))
+        assertEquals("«A», «B» y «C»", linkedTargetLabel(listOf("A", "B", "C")))
+        assertEquals("4 cuentas", linkedTargetLabel(listOf("A", "B", "C", "D")))
     }
 }

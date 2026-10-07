@@ -50,14 +50,14 @@ class GruposViewModelTest {
         id: String,
         name: String,
         linkedGroupId: String? = null,
-        linkedAssetId: String? = null,
+        linkedAssetIds: Set<String> = emptySet(),
         lifecycle: SavingsGoalLifecycle = SavingsGoalLifecycle.OPEN,
     ) = SavingsGoal(
         id = id,
         name = name,
         target = CurrencyAmount(Money(100_000), Currency.EUR),
         targetDate = null,
-        linkedAssetId = linkedAssetId,
+        linkedAssetIds = linkedAssetIds,
         lifecycle = lifecycle,
         progress = Money.ZERO,
         linkedGroupId = linkedGroupId,
@@ -278,7 +278,7 @@ class GruposViewModelTest {
             savingsGoals = FakeSavingsGoalRepository(
                 listOf(
                     goal("goal-1", "Otro grupo", linkedGroupId = "g2"),
-                    goal("goal-2", "Una cuenta", linkedAssetId = "a1"),
+                    goal("goal-2", "Una cuenta", linkedAssetIds = setOf("a1")),
                     goal("goal-3", "Sin vincular"),
                 ),
             ),

@@ -67,19 +67,21 @@ fun savingsGoalCancellationDelta(progress: Money): Money? {
 /** True when [goal]'s progress follows the balance of its linked asset or group instead of its own
  *  allocations: only open goals do; closed and cancelled ones keep their ledger progress. */
 val SavingsGoal.tracksLinkedBalance: Boolean
-    get() = lifecycle == SavingsGoalLifecycle.OPEN && (linkedAssetId != null || linkedGroupId != null)
+    get() = lifecycle == SavingsGoalLifecycle.OPEN && (linkedAssetIds.isNotEmpty() || linkedGroupId != null)
 
 /**
- * The balance a goal that [tracksLinkedBalance] shows as its progress, in the goal's currency: the
- * linked asset's amount, or the sum of the linked group's members converted at [rates] (same-currency
- * amounts need no rates). Null when the goal does not track a balance, the asset or group no longer
- * exists, or a needed conversion has no usable rate. Never negative.
+ * The balance a goal that [tracksLinkedBalance] shows as its progress, in the goal's currency: the sum
+ * of its linked assets, or of the linked group's members, converted at [rates] (same-currency amounts
+ * need no rates). Null when the goal does not track a balance, a linked asset or the group is not in
+ * [assets]/[groups], or a needed conversion has no usable rate. Never negative.
  */
 fun trackedBalance(goal: SavingsGoal, assets: List<Asset>, groups: List<AccountGroup>, rates: FxRates?): Money? {
     if (!goal.tracksLinkedBalance) return null
     val currency = goal.target.currency
-    val members = if (goal.linkedAssetId != null) {
-        listOf(assets.firstOrNull { it.id == goal.linkedAssetId } ?: return null)
+    val members = if (goal.linkedAssetIds.isNotEmpty()) {
+        val linked = assets.filter { it.id in goal.linkedAssetIds }
+        if (linked.size != goal.linkedAssetIds.size) return null
+        linked
     } else {
         val group = groups.firstOrNull { it.id == goal.linkedGroupId && it.id != AccountGroup.ALL_ACCOUNTS_ID }
         groupMembers(group ?: return null, assets)
@@ -90,16 +92,23 @@ fun trackedBalance(goal: SavingsGoal, assets: List<Asset>, groups: List<AccountG
     return if (balance < Money.ZERO) Money.ZERO else balance
 }
 
+/** Two or more open goals ([goals]) that all count the same linked assets or group ([targetIds]). */
+data class SharedLinkedBalance(val targetIds: List<String>, val goals: List<SavingsGoal>)
+
 /**
- * Open goals that track the same asset or the same group, one list per shared target (only targets with
- * at least two goals). Each of those goals shows the whole balance, so their progress adds up to more
- * than there is. An asset inside a linked group is not matched against a goal linked to that asset.
+ * Open goals that track the same asset or the same group. Each of those goals counts the whole balance,
+ * so their progress adds up to more than there is. Targets shared by exactly the same goals come back
+ * as one entry (two goals following the same two accounts give one entry with both ids). An asset
+ * inside a linked group is not matched against a goal linked to that asset.
  */
-fun goalsSharingLinkedBalance(goals: List<SavingsGoal>): List<List<SavingsGoal>> = goals
+fun goalsSharingLinkedBalance(goals: List<SavingsGoal>): List<SharedLinkedBalance> = goals
     .filter { it.tracksLinkedBalance }
-    .groupBy { goal -> goal.linkedAssetId?.let { "asset:$it" } ?: "group:${goal.linkedGroupId}" }
-    .values
-    .filter { it.size > 1 }
+    .flatMap { goal -> (goal.linkedAssetIds + listOfNotNull(goal.linkedGroupId)).map { it to goal } }
+    .groupBy({ (targetId, _) -> targetId }, { (_, goal) -> goal })
+    .filterValues { it.size > 1 }
+    .entries
+    .groupBy({ it.value }, { it.key })
+    .map { (sharing, targetIds) -> SharedLinkedBalance(targetIds, sharing) }
 
 /** Same-currency amounts never need rates; otherwise null when [rates] are absent or unusable (<= 0). */
 private fun convertOrNull(amount: CurrencyAmount, target: Currency, rates: FxRates?): Money? {

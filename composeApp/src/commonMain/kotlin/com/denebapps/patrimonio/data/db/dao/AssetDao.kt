@@ -30,15 +30,9 @@ interface AssetDao {
             amountMinor = :amountMinor,
             currency = :currency
         WHERE id = :id
-          AND (
-              currency = :currency
-              OR NOT EXISTS (
-                  SELECT 1 FROM savings_goals WHERE linkedAssetId = :id
-              )
-          )
         """,
     )
-    suspend fun updateGuarded(
+    suspend fun update(
         id: String,
         group: String,
         name: String,
@@ -52,7 +46,7 @@ interface AssetDao {
         DELETE FROM assets
         WHERE id = :id
           AND NOT EXISTS (
-              SELECT 1 FROM savings_goals WHERE linkedAssetId = :id
+              SELECT 1 FROM savings_goal_assets WHERE assetId = :id
           )
         """,
     )
