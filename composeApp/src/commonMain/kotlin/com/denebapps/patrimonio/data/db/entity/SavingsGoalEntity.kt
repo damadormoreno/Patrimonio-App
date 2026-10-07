@@ -5,6 +5,11 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+/**
+ * [id] is a UUID string, like every other entity, so goals created on different devices never collide.
+ * [createdAtEpochMs] keeps the creation order the old autoincrement id used to give; goals migrated from
+ * schema 3 carry their old numeric id there instead of a real instant (see `MIGRATION_3_4`).
+ */
 @Entity(
     tableName = "savings_goals",
     foreignKeys = [
@@ -24,7 +29,7 @@ import androidx.room.PrimaryKey
     indices = [Index("linkedAssetId"), Index("linkedGroupId")],
 )
 data class SavingsGoalEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @PrimaryKey val id: String,
     val name: String,
     val targetMinor: Long,
     val currency: String,
@@ -33,4 +38,5 @@ data class SavingsGoalEntity(
     val lifecycle: String,
     /** Exclusive with [linkedAssetId]: a goal links to an asset XOR a persisted group XOR nothing. */
     val linkedGroupId: String? = null,
+    val createdAtEpochMs: Long,
 )

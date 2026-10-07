@@ -150,7 +150,7 @@ fun NewGoalSheet(
  */
 @Composable
 fun GoalAllocateSheet(
-    goalId: Long,
+    goalId: String,
     withdraw: Boolean,
     modifier: Modifier = Modifier,
     onNavigateBack: () -> Unit = {},

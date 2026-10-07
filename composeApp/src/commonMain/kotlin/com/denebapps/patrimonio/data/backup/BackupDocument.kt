@@ -8,7 +8,8 @@ import kotlinx.serialization.Serializable
  * format change bumps [version] and [BackupCodec] decides what it can still read. Version 2 added
  * the savings-goal group link (`linkedGroupId`, `fromGroupId`/`toGroupId`); every such field
  * defaults to null so a version 1 file still decodes. Version 3 added [subscriptions], which defaults
- * to empty for older files.
+ * to empty for older files. Version 4 turned savings goal ids into UUID strings and added
+ * [SavingsGoalBackup.createdAtEpochMs]; [BackupCodec] upgrades older files on read.
  *
  * Enum-like fields hold the domain enum `name`s and currencies their ISO code; amounts are minor
  * units, dates epoch days, timestamps epoch milliseconds.
@@ -72,7 +73,7 @@ data class NetWorthSnapshotBackup(
 
 @Serializable
 data class SavingsGoalBackup(
-    val id: Long,
+    val id: String,
     val name: String,
     val targetMinor: Long,
     val currency: String,
@@ -80,12 +81,13 @@ data class SavingsGoalBackup(
     val linkedAssetId: String? = null,
     val lifecycle: String,
     val linkedGroupId: String? = null,
+    val createdAtEpochMs: Long,
 )
 
 @Serializable
 data class SavingsGoalAllocationEventBackup(
     val id: Long,
-    val goalId: Long,
+    val goalId: String,
     val deltaMinor: Long,
     val timestampEpochMs: Long,
 )
@@ -93,7 +95,7 @@ data class SavingsGoalAllocationEventBackup(
 @Serializable
 data class SavingsGoalLinkEventBackup(
     val id: Long,
-    val goalId: Long,
+    val goalId: String,
     val fromAssetId: String? = null,
     val toAssetId: String? = null,
     val kind: String,

@@ -32,6 +32,10 @@ private class BackupFixedClock(private val instant: Instant) : Clock {
     override fun now(): Instant = instant
 }
 
+private const val VIAJE = "goal-viaje"
+private const val COCHE = "goal-coche"
+private const val COLCHON = "goal-colchon"
+
 /** Every financial table, read back for whole-state comparisons. */
 private data class TablesState(
     val assets: List<AssetEntity>,
@@ -78,16 +82,20 @@ class BackupRepositoryImplTest {
         db.accountGroupDao().insertGroup(AccountGroupEntity("g1", "Día a día", showBalance = true, sortOrder = 0))
         db.accountGroupDao().insertMember(AccountGroupMemberEntity("g1", "a1"))
         db.netWorthDao().upsert(NetWorthSnapshotEntity("2026-09", 140_000, 10_100_000))
-        db.savingsGoalDao().insertGoal(SavingsGoalEntity(7, "Viaje", 300_000, "EUR", 20_800, "a1", "OPEN"))
-        db.savingsGoalDao().insertGoal(SavingsGoalEntity(12, "Coche", 900_000, "EUR", null, null, "CANCELLED"))
         db.savingsGoalDao().insertGoal(
-            SavingsGoalEntity(13, "Colchón", 100_000, "EUR", null, null, "OPEN", linkedGroupId = "g1"),
+            SavingsGoalEntity(VIAJE, "Viaje", 300_000, "EUR", 20_800, "a1", "OPEN", createdAtEpochMs = 7),
         )
-        db.savingsGoalDao().insertAllocationEvent(SavingsGoalAllocationEventEntity(3, 7, 50_000, 1_000))
-        db.savingsGoalDao().insertAllocationEvent(SavingsGoalAllocationEventEntity(4, 7, -20_000, 2_000))
-        db.savingsGoalDao().insertLinkEvent(SavingsGoalLinkEventEntity(5, 7, null, "a1", "LINK", 1_000))
+        db.savingsGoalDao().insertGoal(
+            SavingsGoalEntity(COCHE, "Coche", 900_000, "EUR", null, null, "CANCELLED", createdAtEpochMs = 12),
+        )
+        db.savingsGoalDao().insertGoal(
+            SavingsGoalEntity(COLCHON, "Colchón", 100_000, "EUR", null, null, "OPEN", "g1", createdAtEpochMs = 13),
+        )
+        db.savingsGoalDao().insertAllocationEvent(SavingsGoalAllocationEventEntity(3, VIAJE, 50_000, 1_000))
+        db.savingsGoalDao().insertAllocationEvent(SavingsGoalAllocationEventEntity(4, VIAJE, -20_000, 2_000))
+        db.savingsGoalDao().insertLinkEvent(SavingsGoalLinkEventEntity(5, VIAJE, null, "a1", "LINK", 1_000))
         db.savingsGoalDao().insertLinkEvent(
-            SavingsGoalLinkEventEntity(6, 13, null, null, "LINK", 1_000, toGroupId = "g1"),
+            SavingsGoalLinkEventEntity(6, COLCHON, null, null, "LINK", 1_000, toGroupId = "g1"),
         )
         db.subscriptionDao().insert(
             SubscriptionEntity("s1", "Netflix", 1_299, "EUR", "MONTHLY", 20_484, "a1", active = true),
@@ -190,13 +198,14 @@ class BackupRepositoryImplTest {
         assertEquals("a1", goal.linkedAssetId)
         assertNull(goal.linkedGroupId)
         val link = db.savingsGoalDao().listAllLinkEvents().single()
+        assertEquals(goal.id, link.goalId)
         assertNull(link.fromGroupId)
         assertNull(link.toGroupId)
         db.close()
     }
 
     @Test
-    fun `goals created after an import get fresh ids above the imported ones`() = runTest {
+    fun `events appended after an import get fresh ids above the imported ones`() = runTest {
         val source = buildInMemoryTestDatabase()
         testSeedingGate(source).await()
         populate(source)
@@ -205,19 +214,12 @@ class BackupRepositoryImplTest {
         val target = buildInMemoryTestDatabase()
         repositoryFor(target).importJson(json)
 
-        val newId = target.savingsGoalDao().insertGoal(
-            SavingsGoalEntity(
-                name = "Nueva",
-                targetMinor = 1,
-                currency = "EUR",
-                targetDateEpochDay = null,
-                linkedAssetId = null,
-                lifecycle = "OPEN",
-            ),
+        val newId = target.savingsGoalDao().insertAllocationEvent(
+            SavingsGoalAllocationEventEntity(goalId = VIAJE, deltaMinor = 1, timestampEpochMs = 3_000),
         )
 
-        assertTrue(newId > 13, "new goal id $newId collides with imported ids")
-        assertNotNull(target.savingsGoalDao().findGoal(7))
+        assertTrue(newId > 4, "new event id $newId collides with imported ids")
+        assertNotNull(target.savingsGoalDao().findGoal(VIAJE))
         target.close()
     }
 }

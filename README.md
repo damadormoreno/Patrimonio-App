@@ -52,11 +52,12 @@ composeApp/src/commonMain/kotlin/com/denebapps/patrimonio/
 
 Ajustes → Datos → *Exportar copia* / *Importar copia* (selector nativo vía
 [FileKit](https://github.com/vinceglb/FileKit)). El archivo es JSON legible
-(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 2}`:
+(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 4}`:
 
 - Incluye activos, pasivos, grupos y miembros, histórico mensual y metas con sus aportaciones y
-  vínculos (una meta se vincula a una cuenta **o** a un grupo). No incluye tipos de cambio (caché)
-  ni preferencias. Las copias de la versión 1 (sin vínculo a grupo) se siguen importando.
+  vínculos (una meta se vincula a una cuenta **o** a un grupo) y suscripciones. No incluye tipos de
+  cambio (caché) ni preferencias. Las copias de versiones anteriores se siguen importando; en las de
+  la 1 a la 3 las metas tenían id numérico y reciben un UUID nuevo al importarlas.
 - Importar **reemplaza** todos los datos en una sola transacción. El archivo se valida entero antes
   (divisas, tipos, ids únicos, referencias, reglas del ledger de metas), así que uno inválido no
   toca nada.
@@ -79,6 +80,7 @@ dispositivo.
    - Un aviso cuya hora ya ha pasado al planificar no se envía. Si activas los avisos el mismo día de
      un cargo después de las 9:00, ese cargo se queda sin aviso.
    - En iOS no se muestran con la app en primer plano (falta un `UNUserNotificationCenterDelegate`).
-4. **Login + sync** (opcional): Google / Apple / email junto con sincronización. Los ids de
-   activos, pasivos y grupos ya son `String` (UUID); las metas de ahorro usan `Long`
-   autogenerado y habría que migrarlas antes de sincronizar.
+4. **Login + sync** (opcional): Google / Apple / email junto con sincronización. Activos, pasivos,
+   grupos, suscripciones y metas ya tienen id `String` (UUID); la migración 3 → 4 (`MIGRATION_3_4`)
+   dio un UUID nuevo a las metas existentes. Las aportaciones y cambios de vínculo de cada meta
+   siguen con id local autoincremental: cómo sincronizarlas se decide con el diseño del sync.

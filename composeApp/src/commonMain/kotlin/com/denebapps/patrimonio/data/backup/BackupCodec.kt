@@ -11,11 +11,16 @@ import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
 import com.denebapps.patrimonio.domain.repository.InvalidBackupException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalArithmeticOverflowException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.longOrNull
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * Pure JSON <-> [BackupDocument] codec. [decode] checks the envelope (format + version) before
@@ -24,12 +29,13 @@ import kotlinx.serialization.json.jsonObject
  * hand-edited or corrupted file is rejected with a readable reason instead of failing half-way
  * through an import or crashing a later read.
  *
- * Writes [VERSION] (3). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
- * group-link fields, which default to null, and v1/v2 files lack subscriptions, which default to empty.
+ * Writes [VERSION] (4). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
+ * group-link fields, which default to null, v1/v2 files lack subscriptions, which default to empty, and
+ * v1–v3 files have numeric goal ids, which [upgradeLegacyGoalIds] replaces before decoding.
  */
 object BackupCodec {
     const val FORMAT = "patrimonio-backup"
-    const val VERSION = 3
+    const val VERSION = 4
 
     private val json = Json {
         prettyPrint = true
@@ -46,9 +52,10 @@ object BackupCodec {
         } catch (error: IllegalArgumentException) {
             throw InvalidBackupException("El archivo no es un JSON válido.", error)
         }
-        checkEnvelope(root)
+        val version = checkEnvelope(root)
+        val upgraded = if (version < 4) upgradeLegacyGoalIds(root) else root
         val document = try {
-            json.decodeFromJsonElement(BackupDocument.serializer(), root)
+            json.decodeFromJsonElement(BackupDocument.serializer(), upgraded)
         } catch (error: IllegalArgumentException) {
             throw InvalidBackupException("Al archivo le faltan campos o alguno tiene un tipo incorrecto.", error)
         }
@@ -56,7 +63,8 @@ object BackupCodec {
         return document
     }
 
-    private fun checkEnvelope(root: JsonObject) {
+    /** @return the file's version. */
+    private fun checkEnvelope(root: JsonObject): Int {
         val format = (root["format"] as? JsonPrimitive)?.contentOrNull
         if (format != FORMAT) invalid("El archivo no es una copia de Patrimonio.")
         val version = (root["version"] as? JsonPrimitive)?.intOrNull
@@ -65,8 +73,45 @@ object BackupCodec {
             invalid("La copia es de una versión más nueva de la app (v$version). Actualiza la app.")
         }
         if (version < 1) invalid("Versión de copia desconocida (v$version).")
+        return version
     }
 }
+
+/**
+ * Up to version 3 goal ids were autoincrement numbers. Like the 3 -> 4 database migration, each goal
+ * gets a fresh UUID and keeps its old id as `createdAtEpochMs`, so the order survives, and both event
+ * lists follow the new ids. An event pointing at a goal that is not in the file keeps its old id as
+ * text, which [validate] then rejects like any other dangling reference.
+ */
+private fun upgradeLegacyGoalIds(root: JsonObject): JsonObject {
+    val newIds = mutableMapOf<String, String>()
+    val goals = root.arrayOrEmpty("savingsGoals").map { element ->
+        val goal = element as? JsonObject ?: return@map element
+        val oldId = goal["id"] as? JsonPrimitive
+        val createdAt = oldId?.longOrNull ?: return@map goal
+        val newId = randomGoalId().also { newIds[oldId.content] = it }
+        JsonObject(goal + mapOf("id" to JsonPrimitive(newId), "createdAtEpochMs" to JsonPrimitive(createdAt)))
+    }
+    fun JsonElement.withNewGoalId(): JsonElement {
+        val event = this as? JsonObject ?: return this
+        val oldId = (event["goalId"] as? JsonPrimitive)?.content ?: return this
+        return JsonObject(event + ("goalId" to JsonPrimitive(newIds[oldId] ?: oldId)))
+    }
+    return JsonObject(
+        root + mapOf(
+            "savingsGoals" to JsonArray(goals),
+            "savingsGoalAllocationEvents" to
+                JsonArray(root.arrayOrEmpty("savingsGoalAllocationEvents").map { it.withNewGoalId() }),
+            "savingsGoalLinkEvents" to
+                JsonArray(root.arrayOrEmpty("savingsGoalLinkEvents").map { it.withNewGoalId() }),
+        ),
+    )
+}
+
+private fun JsonObject.arrayOrEmpty(key: String): List<JsonElement> = (this[key] as? JsonArray).orEmpty()
+
+@OptIn(ExperimentalUuidApi::class)
+private fun randomGoalId(): String = Uuid.random().toString()
 
 private fun invalid(reason: String): Nothing = throw InvalidBackupException(reason)
 
@@ -115,9 +160,9 @@ private fun BackupDocument.validate() {
         if (!YEAR_MONTH.matches(snapshot.yearMonth)) invalid("Mes del histórico mal formado: ${snapshot.yearMonth}.")
     }
 
-    requireUnique("meta", savingsGoals.map { it.id.toString() })
+    requireUnique("meta", savingsGoals.map { it.id })
     savingsGoals.forEach { goal ->
-        if (goal.id <= 0) invalid("La meta '${goal.name}' tiene un id no válido.")
+        if (goal.id.isBlank()) invalid("La meta '${goal.name}' no tiene id.")
         if (goal.name.isEmpty() || goal.name != goal.name.trim()) invalid("Hay una meta con un nombre no válido.")
         if (goal.targetMinor <= 0) invalid("La meta '${goal.name}' tiene un objetivo no positivo.")
         if (goal.currency !in CURRENCIES) {
@@ -143,9 +188,10 @@ private fun BackupDocument.validate() {
         if (event.id <= 0) invalid("Hay una aportación con un id no válido.")
         if (event.goalId !in goalIds) invalid("Una aportación apunta a una meta que no existe: ${event.goalId}.")
     }
+    val goalNames = savingsGoals.associate { it.id to it.name }
     savingsGoalAllocationEvents
         .groupBy { it.goalId }
-        .forEach { (goalId, events) -> validateLedger(goalId, events) }
+        .forEach { (goalId, events) -> validateLedger(goalNames.getValue(goalId), events) }
 
     requireUnique("cambio de vínculo", savingsGoalLinkEvents.map { it.id.toString() })
     savingsGoalLinkEvents.forEach { event ->
@@ -177,17 +223,17 @@ private fun BackupDocument.validate() {
 
 /** Mirrors `checkedSavingsGoalProgress`: replayed in the DAO's (timestamp, id) order, no delta
  *  may be zero and the running progress may never go negative or overflow. */
-private fun validateLedger(goalId: Long, events: List<SavingsGoalAllocationEventBackup>) {
+private fun validateLedger(goalName: String, events: List<SavingsGoalAllocationEventBackup>) {
     events
         .sortedWith(compareBy({ it.timestampEpochMs }, { it.id }))
         .fold(Money.ZERO) { progress, event ->
-            if (event.deltaMinor == 0L) invalid("La meta $goalId tiene una aportación de importe cero.")
+            if (event.deltaMinor == 0L) invalid("La meta '$goalName' tiene una aportación de importe cero.")
             val updated = try {
                 checkedSavingsGoalAdd(progress, Money(event.deltaMinor))
             } catch (_: SavingsGoalArithmeticOverflowException) {
-                invalid("Las aportaciones de la meta $goalId desbordan el importe máximo.")
+                invalid("Las aportaciones de la meta '$goalName' desbordan el importe máximo.")
             }
-            if (updated < Money.ZERO) invalid("El progreso de la meta $goalId queda negativo.")
+            if (updated < Money.ZERO) invalid("El progreso de la meta '$goalName' queda negativo.")
             updated
         }
 }

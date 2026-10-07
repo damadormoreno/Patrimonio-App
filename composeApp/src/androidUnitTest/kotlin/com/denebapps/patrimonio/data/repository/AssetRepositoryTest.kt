@@ -252,7 +252,7 @@ class AssetRepositoryTest {
     private data class DeletionState(
         val assets: List<AssetEntity>,
         val goals: List<com.denebapps.patrimonio.domain.model.SavingsGoal>,
-        val linkEvents: Map<Long, List<SavingsGoalLinkEventKind>>,
+        val linkEvents: Map<String, List<SavingsGoalLinkEventKind>>,
         val groupMembers: List<String>,
         val snapshotAssetsMinor: Long?,
     )

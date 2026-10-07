@@ -292,10 +292,10 @@ class FakeSavingsGoalRepository(
     // [SavingsGoal.progress] — without this, the first allocate/withdraw/cancel on a fixture goal
     // would silently ignore its pre-existing progress.
     private val eventsBacking = MutableStateFlow(
-        initial.filter { it.progress != Money.ZERO }.associate { goal ->
+        initial.filter { it.progress != Money.ZERO }.withIndex().associate { (index, goal) ->
             goal.id to listOf(
                 SavingsGoalAllocationEvent(
-                    id = -goal.id,
+                    id = -(index + 1L),
                     goalId = goal.id,
                     delta = goal.progress,
                     timestampEpochMs = 0L,
@@ -303,19 +303,20 @@ class FakeSavingsGoalRepository(
             )
         },
     )
-    private val linkEventsBacking = MutableStateFlow<Map<Long, List<SavingsGoalLinkEvent>>>(emptyMap())
-    private var nextGoalId = (initial.maxOfOrNull { it.id } ?: 0L) + 1
+    private val linkEventsBacking = MutableStateFlow<Map<String, List<SavingsGoalLinkEvent>>>(emptyMap())
+    private var createdGoals = 0
     private var nextEventId = 1L
 
     override fun observeAll(): Flow<List<SavingsGoal>> = backing
 
-    override fun observeAllocationHistory(goalId: Long): Flow<List<SavingsGoalAllocationEvent>> =
+    override fun observeAllocationHistory(goalId: String): Flow<List<SavingsGoalAllocationEvent>> =
         eventsBacking.map { it[goalId].orEmpty() }
 
-    override fun observeLinkHistory(goalId: Long): Flow<List<SavingsGoalLinkEvent>> =
+    override fun observeLinkHistory(goalId: String): Flow<List<SavingsGoalLinkEvent>> =
         linkEventsBacking.map { it[goalId].orEmpty() }
 
-    override suspend fun create(command: CreateSavingsGoal): Long {
+    /** New ids are `new-goal-1`, `new-goal-2`… so tests can predict them. */
+    override suspend fun create(command: CreateSavingsGoal): String {
         if (command.name.isEmpty() || command.name != command.name.trim()) {
             throw InvalidSavingsGoalNameException(command.name)
         }
@@ -325,7 +326,7 @@ class FakeSavingsGoalRepository(
         command.linkedAssetId?.let { requireCompatibleAsset(command.target.currency, it) }
         command.linkedGroupId?.let { requireLinkableGroup(it) }
 
-        val goalId = nextGoalId++
+        val goalId = "new-goal-${++createdGoals}"
         backing.value = backing.value + SavingsGoal(
             id = goalId,
             name = command.name,
@@ -345,14 +346,14 @@ class FakeSavingsGoalRepository(
         return goalId
     }
 
-    override suspend fun allocate(goalId: Long, amount: Money) {
+    override suspend fun allocate(goalId: String, amount: Money) {
         requirePositiveDelta(amount)
         requireOpenGoal(goalId)
         checkedSavingsGoalAdd(progressOf(goalId), amount)
         appendAllocationEvent(goalId, amount)
     }
 
-    override suspend fun withdraw(goalId: Long, amount: Money) {
+    override suspend fun withdraw(goalId: String, amount: Money) {
         requirePositiveDelta(amount)
         requireOpenGoal(goalId)
         val updated = checkedSavingsGoalSubtract(progressOf(goalId), amount)
@@ -360,7 +361,7 @@ class FakeSavingsGoalRepository(
         appendAllocationEvent(goalId, checkedSavingsGoalNegate(amount))
     }
 
-    override suspend fun link(goalId: Long, assetId: String) {
+    override suspend fun link(goalId: String, assetId: String) {
         val goal = requireOpenGoal(goalId)
         if (goal.linkedAssetId != null || goal.linkedGroupId != null) {
             throw InvalidSavingsGoalTransitionException(goalId, "link")
@@ -370,7 +371,7 @@ class FakeSavingsGoalRepository(
         appendLinkEvent(goalId, toAssetId = assetId, kind = SavingsGoalLinkEventKind.LINK)
     }
 
-    override suspend fun linkToGroup(goalId: Long, groupId: String) {
+    override suspend fun linkToGroup(goalId: String, groupId: String) {
         val goal = requireOpenGoal(goalId)
         if (goal.linkedAssetId != null || goal.linkedGroupId != null) {
             throw InvalidSavingsGoalTransitionException(goalId, "link")
@@ -380,7 +381,7 @@ class FakeSavingsGoalRepository(
         appendLinkEvent(goalId, toGroupId = groupId, kind = SavingsGoalLinkEventKind.LINK)
     }
 
-    override suspend fun relink(goalId: Long, assetId: String) {
+    override suspend fun relink(goalId: String, assetId: String) {
         val goal = requireOpenGoal(goalId)
         if (goal.linkedAssetId == null && goal.linkedGroupId == null) {
             throw InvalidSavingsGoalTransitionException(goalId, "relink")
@@ -397,7 +398,7 @@ class FakeSavingsGoalRepository(
         )
     }
 
-    override suspend fun relinkToGroup(goalId: Long, groupId: String) {
+    override suspend fun relinkToGroup(goalId: String, groupId: String) {
         val goal = requireOpenGoal(goalId)
         if (goal.linkedAssetId == null && goal.linkedGroupId == null) {
             throw InvalidSavingsGoalTransitionException(goalId, "relink")
@@ -414,7 +415,7 @@ class FakeSavingsGoalRepository(
         )
     }
 
-    override suspend fun unlink(goalId: Long) {
+    override suspend fun unlink(goalId: String) {
         val goal = requireOpenGoal(goalId)
         if (goal.linkedAssetId == null && goal.linkedGroupId == null) {
             throw InvalidSavingsGoalTransitionException(goalId, "unlink")
@@ -428,12 +429,12 @@ class FakeSavingsGoalRepository(
         )
     }
 
-    override suspend fun close(goalId: Long) {
+    override suspend fun close(goalId: String) {
         requireOpenGoal(goalId)
         setLifecycle(goalId, SavingsGoalLifecycle.CLOSED)
     }
 
-    override suspend fun cancel(goalId: Long) {
+    override suspend fun cancel(goalId: String) {
         requireOpenGoal(goalId)
         savingsGoalCancellationDelta(progressOf(goalId))?.let { delta -> appendAllocationEvent(goalId, delta) }
         setLifecycle(goalId, SavingsGoalLifecycle.CANCELLED)
@@ -444,9 +445,9 @@ class FakeSavingsGoalRepository(
         backing.value = goals
     }
 
-    private fun progressOf(goalId: Long): Money = checkedSavingsGoalProgress(eventsBacking.value[goalId].orEmpty())
+    private fun progressOf(goalId: String): Money = checkedSavingsGoalProgress(eventsBacking.value[goalId].orEmpty())
 
-    private fun requireOpenGoal(goalId: Long): SavingsGoal {
+    private fun requireOpenGoal(goalId: String): SavingsGoal {
         val goal = backing.value.firstOrNull { it.id == goalId } ?: throw SavingsGoalNotFoundException(goalId)
         if (goal.lifecycle != SavingsGoalLifecycle.OPEN) throw TerminalSavingsGoalException(goalId, goal.lifecycle)
         return goal
@@ -466,7 +467,7 @@ class FakeSavingsGoalRepository(
         if (amount <= Money.ZERO) throw InvalidSavingsGoalDeltaException(amount.minorUnits)
     }
 
-    private fun appendAllocationEvent(goalId: Long, delta: Money) {
+    private fun appendAllocationEvent(goalId: String, delta: Money) {
         val event = SavingsGoalAllocationEvent(
             id = nextEventId++,
             goalId = goalId,
@@ -479,7 +480,7 @@ class FakeSavingsGoalRepository(
     }
 
     private fun appendLinkEvent(
-        goalId: Long,
+        goalId: String,
         kind: SavingsGoalLinkEventKind,
         fromAssetId: String? = null,
         toAssetId: String? = null,
@@ -500,13 +501,13 @@ class FakeSavingsGoalRepository(
         linkEventsBacking.value = linkEventsBacking.value + (goalId to goalEvents)
     }
 
-    private fun setLink(goalId: Long, assetId: String? = null, groupId: String? = null) {
+    private fun setLink(goalId: String, assetId: String? = null, groupId: String? = null) {
         backing.value = backing.value.map {
             if (it.id == goalId) it.copy(linkedAssetId = assetId, linkedGroupId = groupId) else it
         }
     }
 
-    private fun setLifecycle(goalId: Long, lifecycle: SavingsGoalLifecycle) {
+    private fun setLifecycle(goalId: String, lifecycle: SavingsGoalLifecycle) {
         backing.value = backing.value.map { if (it.id == goalId) it.copy(lifecycle = lifecycle) else it }
     }
 }

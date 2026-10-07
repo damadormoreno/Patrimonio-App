@@ -61,8 +61,7 @@ private data class FormFields(
  * enums. [initialGroupId] prefills selection when opened from a per-group add affordance
  * (design.md Data Flow: `group "+" -> AddPatrimonio(groupId=…)`). Save creates the asset or
  * liability via the matching repository using [idProvider] for the new String id (Room primary
- * keys for both entities are caller-supplied, unlike the `Long`-autogenerate `SavingsGoal` ids),
- * then emits one [navigateBack] event.
+ * keys for both entities are caller-supplied), then emits one [navigateBack] event.
  */
 class AddPatrimonioSheetViewModel(
     private val assetRepository: AssetRepository,

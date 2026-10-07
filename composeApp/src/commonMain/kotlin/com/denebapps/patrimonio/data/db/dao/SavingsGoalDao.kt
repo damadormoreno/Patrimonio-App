@@ -34,19 +34,19 @@ data class SavingsGoalRelations(
 interface SavingsGoalDataSource {
     fun observeAll(): Flow<List<SavingsGoalRelations>>
 
-    fun observeAllocationHistory(goalId: Long): Flow<List<SavingsGoalAllocationEventEntity>>
+    fun observeAllocationHistory(goalId: String): Flow<List<SavingsGoalAllocationEventEntity>>
 
-    fun observeLinkHistory(goalId: Long): Flow<List<SavingsGoalLinkEventEntity>>
+    fun observeLinkHistory(goalId: String): Flow<List<SavingsGoalLinkEventEntity>>
 
-    suspend fun listAllocationHistory(goalId: Long): List<SavingsGoalAllocationEventEntity>
+    suspend fun listAllocationHistory(goalId: String): List<SavingsGoalAllocationEventEntity>
 
-    suspend fun findGoal(goalId: Long): SavingsGoalEntity?
+    suspend fun findGoal(goalId: String): SavingsGoalEntity?
 
     suspend fun listGoalsLinkedToAsset(assetId: String): List<SavingsGoalEntity>
 
     suspend fun listGoalsLinkedToGroup(groupId: String): List<SavingsGoalEntity>
 
-    suspend fun insertGoal(goal: SavingsGoalEntity): Long
+    suspend fun insertGoal(goal: SavingsGoalEntity)
 
     suspend fun insertAllocationEvent(event: SavingsGoalAllocationEventEntity): Long
 
@@ -54,22 +54,22 @@ interface SavingsGoalDataSource {
 
     /** Sets (or, with null, clears) the asset link. Always clears the group link: a goal links to an
      *  asset XOR a group. */
-    suspend fun updateLinkedAsset(goalId: Long, linkedAssetId: String?): Int
+    suspend fun updateLinkedAsset(goalId: String, linkedAssetId: String?): Int
 
     /** Sets the group link. Always clears the asset link: a goal links to an asset XOR a group. */
-    suspend fun updateLinkedGroup(goalId: Long, linkedGroupId: String): Int
+    suspend fun updateLinkedGroup(goalId: String, linkedGroupId: String): Int
 
     suspend fun clearLinkedAsset(assetId: String): Int
 
     suspend fun clearLinkedGroup(groupId: String): Int
 
-    suspend fun updateLifecycle(goalId: Long, lifecycle: String): Int
+    suspend fun updateLifecycle(goalId: String, lifecycle: String): Int
 }
 
 @Dao
 abstract class SavingsGoalDao : SavingsGoalDataSource {
     @Transaction
-    @Query("SELECT * FROM savings_goals ORDER BY id")
+    @Query("SELECT * FROM savings_goals ORDER BY createdAtEpochMs, id")
     protected abstract fun observeRelationRows(): Flow<List<SavingsGoalRelationRow>>
 
     override fun observeAll(): Flow<List<SavingsGoalRelations>> =
@@ -79,31 +79,31 @@ abstract class SavingsGoalDao : SavingsGoalDataSource {
         "SELECT * FROM savings_goal_allocation_events " +
             "WHERE goalId = :goalId ORDER BY timestampEpochMs, id",
     )
-    abstract override fun observeAllocationHistory(goalId: Long): Flow<List<SavingsGoalAllocationEventEntity>>
+    abstract override fun observeAllocationHistory(goalId: String): Flow<List<SavingsGoalAllocationEventEntity>>
 
     @Query(
         "SELECT * FROM savings_goal_allocation_events " +
             "WHERE goalId = :goalId ORDER BY timestampEpochMs, id",
     )
-    abstract override suspend fun listAllocationHistory(goalId: Long): List<SavingsGoalAllocationEventEntity>
+    abstract override suspend fun listAllocationHistory(goalId: String): List<SavingsGoalAllocationEventEntity>
 
     @Query(
         "SELECT * FROM savings_goal_link_events " +
             "WHERE goalId = :goalId ORDER BY timestampEpochMs, id",
     )
-    abstract override fun observeLinkHistory(goalId: Long): Flow<List<SavingsGoalLinkEventEntity>>
+    abstract override fun observeLinkHistory(goalId: String): Flow<List<SavingsGoalLinkEventEntity>>
 
     @Query("SELECT * FROM savings_goals WHERE id = :goalId")
-    abstract override suspend fun findGoal(goalId: Long): SavingsGoalEntity?
+    abstract override suspend fun findGoal(goalId: String): SavingsGoalEntity?
 
-    @Query("SELECT * FROM savings_goals WHERE linkedAssetId = :assetId ORDER BY id")
+    @Query("SELECT * FROM savings_goals WHERE linkedAssetId = :assetId ORDER BY createdAtEpochMs, id")
     abstract override suspend fun listGoalsLinkedToAsset(assetId: String): List<SavingsGoalEntity>
 
-    @Query("SELECT * FROM savings_goals WHERE linkedGroupId = :groupId ORDER BY id")
+    @Query("SELECT * FROM savings_goals WHERE linkedGroupId = :groupId ORDER BY createdAtEpochMs, id")
     abstract override suspend fun listGoalsLinkedToGroup(groupId: String): List<SavingsGoalEntity>
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
-    abstract override suspend fun insertGoal(goal: SavingsGoalEntity): Long
+    abstract override suspend fun insertGoal(goal: SavingsGoalEntity)
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     abstract override suspend fun insertAllocationEvent(event: SavingsGoalAllocationEventEntity): Long
@@ -112,10 +112,10 @@ abstract class SavingsGoalDao : SavingsGoalDataSource {
     abstract override suspend fun insertLinkEvent(event: SavingsGoalLinkEventEntity): Long
 
     @Query("UPDATE savings_goals SET linkedAssetId = :linkedAssetId, linkedGroupId = NULL WHERE id = :goalId")
-    abstract override suspend fun updateLinkedAsset(goalId: Long, linkedAssetId: String?): Int
+    abstract override suspend fun updateLinkedAsset(goalId: String, linkedAssetId: String?): Int
 
     @Query("UPDATE savings_goals SET linkedGroupId = :linkedGroupId, linkedAssetId = NULL WHERE id = :goalId")
-    abstract override suspend fun updateLinkedGroup(goalId: Long, linkedGroupId: String): Int
+    abstract override suspend fun updateLinkedGroup(goalId: String, linkedGroupId: String): Int
 
     @Query("UPDATE savings_goals SET linkedAssetId = NULL WHERE linkedAssetId = :assetId")
     abstract override suspend fun clearLinkedAsset(assetId: String): Int
@@ -124,10 +124,10 @@ abstract class SavingsGoalDao : SavingsGoalDataSource {
     abstract override suspend fun clearLinkedGroup(groupId: String): Int
 
     @Query("UPDATE savings_goals SET lifecycle = :lifecycle WHERE id = :goalId")
-    abstract override suspend fun updateLifecycle(goalId: Long, lifecycle: String): Int
+    abstract override suspend fun updateLifecycle(goalId: String, lifecycle: String): Int
 
     /** Whole-table reads for backup export. NOT part of [SavingsGoalDataSource]. */
-    @Query("SELECT * FROM savings_goals ORDER BY id")
+    @Query("SELECT * FROM savings_goals ORDER BY createdAtEpochMs, id")
     abstract suspend fun listAllGoals(): List<SavingsGoalEntity>
 
     @Query("SELECT * FROM savings_goal_allocation_events ORDER BY goalId, timestampEpochMs, id")

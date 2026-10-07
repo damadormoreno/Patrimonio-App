@@ -7,7 +7,7 @@ import kotlinx.datetime.LocalDate
  * ([linkedGroupId]) XOR nothing. The builtin "all accounts" group is never linkable.
  */
 data class SavingsGoal(
-    val id: Long,
+    val id: String,
     val name: String,
     val target: CurrencyAmount,
     val targetDate: LocalDate?,
@@ -31,7 +31,7 @@ enum class SavingsGoalLifecycle { OPEN, CLOSED, CANCELLED }
 
 data class SavingsGoalAllocationEvent(
     val id: Long,
-    val goalId: Long,
+    val goalId: String,
     val delta: Money,
     val timestampEpochMs: Long,
 )
@@ -40,7 +40,7 @@ data class SavingsGoalAllocationEvent(
  *  id (at most one of the two per side) or neither. */
 data class SavingsGoalLinkEvent(
     val id: Long,
-    val goalId: Long,
+    val goalId: String,
     val fromAssetId: String?,
     val toAssetId: String?,
     val kind: SavingsGoalLinkEventKind,

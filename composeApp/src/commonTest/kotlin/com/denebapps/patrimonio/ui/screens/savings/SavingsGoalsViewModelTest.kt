@@ -48,7 +48,7 @@ class SavingsGoalsViewModelTest {
     )
 
     private fun goal(
-        id: Long,
+        id: String,
         targetMinor: Long,
         progressMinor: Long,
         currency: Currency = Currency.EUR,
@@ -79,7 +79,7 @@ class SavingsGoalsViewModelTest {
         assets: FakeAssetRepository = FakeAssetRepository(),
         groups: FakeAccountGroupRepository = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts())),
         fx: FakeFxRepository = FakeFxRepository(),
-        initialGoalId: Long? = null,
+        initialGoalId: String? = null,
         initialWithdraw: Boolean = false,
     ) = SavingsGoalsViewModel(
         savingsGoalRepository = goals,
@@ -93,13 +93,13 @@ class SavingsGoalsViewModelTest {
     @Test
     fun `list shows name target and progress percentage`() = runTest(dispatcher) {
         val vm = viewModel(
-            goals = FakeSavingsGoalRepository(listOf(goal(id = 1, targetMinor = 200_00, progressMinor = 50_00))),
+            goals = FakeSavingsGoalRepository(listOf(goal(id = "goal-1", targetMinor = 200_00, progressMinor = 50_00))),
         )
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
         val row = vm.state.value.goals.single()
-        assertEquals("Goal 1", row.name)
+        assertEquals("Goal goal-1", row.name)
         assertEquals(CurrencyAmount(Money(200_00), Currency.EUR), row.target)
         assertEquals(Money(50_00), row.progress)
         assertEquals(25, row.progressPct)
@@ -109,7 +109,9 @@ class SavingsGoalsViewModelTest {
     @Test
     fun `progress beyond target shows meta alcanzada while the goal stays open and listed`() = runTest(dispatcher) {
         val vm = viewModel(
-            goals = FakeSavingsGoalRepository(listOf(goal(id = 1, targetMinor = 100_00, progressMinor = 130_00))),
+            goals = FakeSavingsGoalRepository(
+                listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 130_00)),
+            ),
         )
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
@@ -185,8 +187,8 @@ class SavingsGoalsViewModelTest {
 
     @Test
     fun `allocating calls the repository atomic command and updates progress live`() = runTest(dispatcher) {
-        val goals = FakeSavingsGoalRepository(listOf(goal(id = 1, targetMinor = 100_00, progressMinor = 20_00)))
-        val vm = viewModel(goals = goals, initialGoalId = 1)
+        val goals = FakeSavingsGoalRepository(listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 20_00)))
+        val vm = viewModel(goals = goals, initialGoalId = "goal-1")
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
@@ -205,8 +207,8 @@ class SavingsGoalsViewModelTest {
     fun `over-withdrawal is rejected atomically and surfaces an error without changing progress`() = runTest(
         dispatcher,
     ) {
-        val goals = FakeSavingsGoalRepository(listOf(goal(id = 1, targetMinor = 100_00, progressMinor = 20_00)))
-        val vm = viewModel(goals = goals, initialGoalId = 1, initialWithdraw = true)
+        val goals = FakeSavingsGoalRepository(listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 20_00)))
+        val vm = viewModel(goals = goals, initialGoalId = "goal-1", initialWithdraw = true)
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
@@ -226,8 +228,8 @@ class SavingsGoalsViewModelTest {
         // progress becomes ZERO after cancel (confirmed by SavingsGoalRepositoryTest's
         // `cancel funded appends exact release...` — `assertEquals(Money.ZERO, ...progress)`). "Preserved
         // progress" in the UI spec applies to explicit `close()` (no event appended), not `cancel()`.
-        val goals = FakeSavingsGoalRepository(listOf(goal(id = 1, targetMinor = 100_00, progressMinor = 40_00)))
-        val vm = viewModel(goals = goals, initialGoalId = 1)
+        val goals = FakeSavingsGoalRepository(listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 40_00)))
+        val vm = viewModel(goals = goals, initialGoalId = "goal-1")
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
@@ -247,8 +249,8 @@ class SavingsGoalsViewModelTest {
         val vm = viewModel(
             goals = FakeSavingsGoalRepository(
                 listOf(
-                    goal(id = 1, targetMinor = 100_00, progressMinor = 70_00, linkedAssetId = "shared"),
-                    goal(id = 2, targetMinor = 100_00, progressMinor = 50_00, linkedAssetId = "shared"),
+                    goal(id = "goal-1", targetMinor = 100_00, progressMinor = 70_00, linkedAssetId = "shared"),
+                    goal(id = "goal-2", targetMinor = 100_00, progressMinor = 50_00, linkedAssetId = "shared"),
                 ),
             ),
             assets = FakeAssetRepository(listOf(sharedAsset)),
@@ -265,7 +267,7 @@ class SavingsGoalsViewModelTest {
         val sharedAsset = asset("shared", Currency.EUR, minor = 100_00)
         val vm = viewModel(
             goals = FakeSavingsGoalRepository(
-                listOf(goal(id = 1, targetMinor = 100_00, progressMinor = 40_00, linkedAssetId = "shared")),
+                listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 40_00, linkedAssetId = "shared")),
             ),
             assets = FakeAssetRepository(listOf(sharedAsset)),
         )
@@ -367,8 +369,8 @@ class SavingsGoalsViewModelTest {
         val vm = viewModel(
             goals = FakeSavingsGoalRepository(
                 listOf(
-                    goal(id = 1, targetMinor = 100_00, progressMinor = 70_00, linkedGroupId = "g1"),
-                    goal(id = 2, targetMinor = 100_00, progressMinor = 50_00, linkedGroupId = "g1"),
+                    goal(id = "goal-1", targetMinor = 100_00, progressMinor = 70_00, linkedGroupId = "g1"),
+                    goal(id = "goal-2", targetMinor = 100_00, progressMinor = 50_00, linkedGroupId = "g1"),
                 ),
             ),
             assets = FakeAssetRepository(listOf(asset("a1", minor = 60_00), asset("a2", minor = 40_00))),
@@ -389,7 +391,7 @@ class SavingsGoalsViewModelTest {
     fun `group coverage flags the conversion when members use other currencies`() = runTest(dispatcher) {
         val vm = viewModel(
             goals = FakeSavingsGoalRepository(
-                listOf(goal(id = 1, targetMinor = 100_00, progressMinor = 90_00, linkedGroupId = "g1")),
+                listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 90_00, linkedGroupId = "g1")),
             ),
             assets = FakeAssetRepository(listOf(asset("a1", minor = 50_00), asset("a2", Currency.USD, minor = 50_00))),
             groups = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts(), group("g1", "a1", "a2"))),
@@ -410,7 +412,7 @@ class SavingsGoalsViewModelTest {
     fun `group coverage within the group balance shows no warning`() = runTest(dispatcher) {
         val vm = viewModel(
             goals = FakeSavingsGoalRepository(
-                listOf(goal(id = 1, targetMinor = 100_00, progressMinor = 40_00, linkedGroupId = "g1")),
+                listOf(goal(id = "goal-1", targetMinor = 100_00, progressMinor = 40_00, linkedGroupId = "g1")),
             ),
             assets = FakeAssetRepository(listOf(asset("a1", minor = 100_00))),
             groups = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts(), group("g1", "a1"))),

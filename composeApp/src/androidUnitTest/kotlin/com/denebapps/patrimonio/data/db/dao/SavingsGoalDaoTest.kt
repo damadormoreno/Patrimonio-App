@@ -6,6 +6,7 @@ import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
+import com.denebapps.patrimonio.data.db.insertGoalReturningId
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.produceIn
@@ -28,7 +29,7 @@ class SavingsGoalDaoTest {
 
         assertEquals(emptyList(), emissions.receive())
 
-        val goalId = dao.insertGoal(goal(linkedAssetId = "asset-1"))
+        val goalId = dao.insertGoalReturningId(goal(linkedAssetId = "asset-1"))
         assertEquals("asset-1", emissions.receive().single().currentAsset?.id)
 
         dao.insertAllocationEvent(allocation(id = 20, goalId = goalId, deltaMinor = 200, timestamp = 1_000))
@@ -56,7 +57,7 @@ class SavingsGoalDaoTest {
     fun `history flows order by timestamp then id and retain every appended event`() = runTest {
         val db = buildInMemoryTestDatabase()
         val dao = db.savingsGoalDao()
-        val goalId = dao.insertGoal(goal())
+        val goalId = dao.insertGoalReturningId(goal())
 
         dao.insertAllocationEvent(allocation(id = 30, goalId = goalId, deltaMinor = 300, timestamp = 2_000))
         dao.insertAllocationEvent(allocation(id = 20, goalId = goalId, deltaMinor = 200, timestamp = 1_000))
@@ -76,7 +77,7 @@ class SavingsGoalDaoTest {
         val db = buildInMemoryTestDatabase()
         val dao = db.savingsGoalDao()
         db.assetDao().insert(asset("asset-1"))
-        val goalId = dao.insertGoal(goal(linkedAssetId = "asset-1"))
+        val goalId = dao.insertGoalReturningId(goal(linkedAssetId = "asset-1"))
         val emissions = dao.observeAll().produceIn(backgroundScope)
 
         val linked = emissions.receive().single()
@@ -98,7 +99,7 @@ class SavingsGoalDaoTest {
         val dao = db.savingsGoalDao()
         db.assetDao().insert(asset("asset-1"))
         db.assetDao().insert(asset("asset-2"))
-        val goalId = dao.insertGoal(goal(linkedAssetId = "asset-1"))
+        val goalId = dao.insertGoalReturningId(goal(linkedAssetId = "asset-1"))
 
         assertEquals(1, dao.updateLinkedAsset(goalId, "asset-2"))
         assertEquals("asset-2", dao.findGoal(goalId)?.linkedAssetId)
@@ -113,7 +114,7 @@ class SavingsGoalDaoTest {
         val dao = db.savingsGoalDao()
         db.assetDao().insert(asset("asset-1"))
         db.accountGroupDao().insertGroup(AccountGroupEntity("g1", "Group", true, 0))
-        val goalId = dao.insertGoal(goal(linkedAssetId = "asset-1"))
+        val goalId = dao.insertGoalReturningId(goal(linkedAssetId = "asset-1"))
 
         assertEquals(1, dao.updateLinkedGroup(goalId, "g1"))
         assertNull(dao.findGoal(goalId)?.linkedAssetId)
@@ -136,7 +137,7 @@ class SavingsGoalDaoTest {
         val db = buildInMemoryTestDatabase()
         val dao = db.savingsGoalDao()
         db.accountGroupDao().insertGroup(AccountGroupEntity("g1", "Group", true, 0))
-        val goalId = dao.insertGoal(goal(linkedGroupId = "g1"))
+        val goalId = dao.insertGoalReturningId(goal(linkedGroupId = "g1"))
 
         db.accountGroupDao().deleteGroup("g1")
 
@@ -153,11 +154,24 @@ class SavingsGoalDaoTest {
     }
 
     @Test
+    fun `goals are listed in creation order whatever their ids`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val dao = db.savingsGoalDao()
+        dao.insertGoal(goal(id = "b", createdAtEpochMs = 3_000))
+        dao.insertGoal(goal(id = "c", createdAtEpochMs = 1_000))
+        dao.insertGoal(goal(id = "a", createdAtEpochMs = 2_000))
+
+        assertEquals(listOf("c", "a", "b"), dao.observeAll().first().map { it.goal.id })
+        assertEquals(listOf("c", "a", "b"), dao.listAllGoals().map { it.id })
+        db.close()
+    }
+
+    @Test
     fun `relation snapshots isolate each goals allocation and link events`() = runTest {
         val db = buildInMemoryTestDatabase()
         val dao = db.savingsGoalDao()
-        val firstGoalId = dao.insertGoal(goal())
-        val secondGoalId = dao.insertGoal(goal())
+        val firstGoalId = dao.insertGoalReturningId(goal())
+        val secondGoalId = dao.insertGoalReturningId(goal())
         dao.insertAllocationEvent(allocation(id = 10, goalId = firstGoalId, deltaMinor = 100, timestamp = 1_000))
         dao.insertLinkEvent(link(id = 20, goalId = firstGoalId, timestamp = 1_000))
         dao.insertAllocationEvent(allocation(id = 30, goalId = secondGoalId, deltaMinor = 300, timestamp = 1_000))
@@ -170,7 +184,15 @@ class SavingsGoalDaoTest {
         db.close()
     }
 
-    private fun goal(linkedAssetId: String? = null, linkedGroupId: String? = null) = SavingsGoalEntity(
+    private var goalCount = 0L
+
+    private fun goal(
+        linkedAssetId: String? = null,
+        linkedGroupId: String? = null,
+        id: String = "goal-${++goalCount}",
+        createdAtEpochMs: Long = goalCount,
+    ) = SavingsGoalEntity(
+        id = id,
         name = "Emergency",
         targetMinor = 10_000,
         currency = "EUR",
@@ -178,13 +200,14 @@ class SavingsGoalDaoTest {
         linkedAssetId = linkedAssetId,
         lifecycle = "OPEN",
         linkedGroupId = linkedGroupId,
+        createdAtEpochMs = createdAtEpochMs,
     )
 
     private fun asset(id: String) = AssetEntity(id, "BANK", "Bank", null, 50_000, "EUR")
 
-    private fun allocation(id: Long, goalId: Long, deltaMinor: Long, timestamp: Long) =
+    private fun allocation(id: Long, goalId: String, deltaMinor: Long, timestamp: Long) =
         SavingsGoalAllocationEventEntity(id, goalId, deltaMinor, timestamp)
 
-    private fun link(id: Long, goalId: Long, timestamp: Long) =
+    private fun link(id: Long, goalId: String, timestamp: Long) =
         SavingsGoalLinkEventEntity(id, goalId, null, "asset-1", SavingsGoalLinkEventKind.LINK.name, timestamp)
 }

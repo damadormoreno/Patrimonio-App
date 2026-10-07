@@ -19,7 +19,7 @@ import androidx.room.PrimaryKey
 )
 data class SavingsGoalLinkEventEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val goalId: Long,
+    val goalId: String,
     val fromAssetId: String?,
     val toAssetId: String?,
     val kind: String,

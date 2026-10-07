@@ -249,19 +249,20 @@ class KoinModuleTest {
                 .build()
 
         try {
-            val goalId =
-                database.savingsGoalDao().insertGoal(
-                    SavingsGoalEntity(
-                        name = "Schema 1",
-                        targetMinor = 1,
-                        currency = "EUR",
-                        targetDateEpochDay = null,
-                        linkedAssetId = null,
-                        lifecycle = "OPEN",
-                    ),
-                )
+            database.savingsGoalDao().insertGoal(
+                SavingsGoalEntity(
+                    id = "goal-1",
+                    name = "Schema 1",
+                    targetMinor = 1,
+                    currency = "EUR",
+                    targetDateEpochDay = null,
+                    linkedAssetId = null,
+                    lifecycle = "OPEN",
+                    createdAtEpochMs = 1,
+                ),
+            )
 
-            assertEquals("Schema 1", database.savingsGoalDao().findGoal(goalId)?.name)
+            assertEquals("Schema 1", database.savingsGoalDao().findGoal("goal-1")?.name)
         } finally {
             database.close()
             context.deleteDatabase(PRODUCTION_DATABASE)

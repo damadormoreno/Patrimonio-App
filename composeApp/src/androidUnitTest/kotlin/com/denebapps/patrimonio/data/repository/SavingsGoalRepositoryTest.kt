@@ -10,6 +10,7 @@ import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
+import com.denebapps.patrimonio.data.db.insertGoalReturningId
 import com.denebapps.patrimonio.data.db.testSeedingGate
 import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.Currency
@@ -70,7 +71,7 @@ private class FailingLinkEventSource(
 private class FailingLifecycleSource(
     private val delegate: SavingsGoalDataSource,
 ) : SavingsGoalDataSource by delegate {
-    override suspend fun updateLifecycle(goalId: Long, lifecycle: String): Int = error("simulated lifecycle failure")
+    override suspend fun updateLifecycle(goalId: String, lifecycle: String): Int = error("simulated lifecycle failure")
 }
 
 @RunWith(RobolectricTestRunner::class)
@@ -91,7 +92,9 @@ class SavingsGoalRepositoryTest {
         val links = fixture.repository.observeLinkHistory(linkedId).first()
         assertEquals(listOf(SavingsGoalLinkEventKind.LINK), links.map { it.kind })
         assertEquals(listOf(NOW_MS), links.map { it.timestampEpochMs })
-        assertEquals(1, fixture.clock.calls)
+        assertEquals(NOW_MS, fixture.db.savingsGoalDao().findGoal(linkedId)?.createdAtEpochMs)
+        // One read per create, shared by the goal's creation time and its LINK event.
+        assertEquals(2, fixture.clock.calls)
         fixture.close()
     }
 
@@ -136,7 +139,7 @@ class SavingsGoalRepositoryTest {
             listOf(130L, -30L),
             fixture.repository.observeAllocationHistory(goalId).first().map { it.delta.minorUnits },
         )
-        assertEquals(2, fixture.clock.calls)
+        assertEquals(3, fixture.clock.calls)
         fixture.close()
     }
 
@@ -482,7 +485,7 @@ class SavingsGoalRepositoryTest {
     @Test
     fun `checked mapping rejects zero and overflowing persisted allocation relations`() = runTest {
         val zeroFixture = fixture()
-        val zeroGoalId = zeroFixture.db.savingsGoalDao().insertGoal(goalEntity("Zero"))
+        val zeroGoalId = zeroFixture.db.savingsGoalDao().insertGoalReturningId(goalEntity("Zero"))
         zeroFixture.db.savingsGoalDao().insertAllocationEvent(
             SavingsGoalAllocationEventEntity(0, zeroGoalId, 0, NOW_MS),
         )
@@ -490,7 +493,7 @@ class SavingsGoalRepositoryTest {
         zeroFixture.close()
 
         val overflowFixture = fixture()
-        val overflowGoalId = overflowFixture.db.savingsGoalDao().insertGoal(goalEntity("Overflow"))
+        val overflowGoalId = overflowFixture.db.savingsGoalDao().insertGoalReturningId(goalEntity("Overflow"))
         overflowFixture.db.savingsGoalDao().insertAllocationEvent(
             SavingsGoalAllocationEventEntity(0, overflowGoalId, Long.MAX_VALUE, NOW_MS),
         )
@@ -501,7 +504,7 @@ class SavingsGoalRepositoryTest {
         overflowFixture.close()
     }
 
-    private suspend fun assertTerminalMutations(repository: SavingsGoalRepository, goalId: Long) {
+    private suspend fun assertTerminalMutations(repository: SavingsGoalRepository, goalId: String) {
         val commands: List<suspend () -> Unit> = listOf(
             { repository.allocate(goalId, Money(1)) },
             { repository.withdraw(goalId, Money(1)) },
@@ -537,12 +540,14 @@ class SavingsGoalRepositoryTest {
     )
 
     private fun goalEntity(name: String) = SavingsGoalEntity(
+        id = "goal-$name",
         name = name,
         targetMinor = 1_000,
         currency = "EUR",
         targetDateEpochDay = null,
         linkedAssetId = null,
         lifecycle = "OPEN",
+        createdAtEpochMs = NOW_MS,
     )
 
     private suspend fun receiveOrNull(channel: ReceiveChannel<*>) =
