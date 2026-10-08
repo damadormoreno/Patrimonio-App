@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The CI checks, locally (Actions minutes are scarce). On a Mac it also compiles iOS, which CI only does
-# on demand. Usage: scripts/check.sh [--fast]   (--fast: ktlint and unit tests only)
+# The CI checks, locally, before pushing. On a Mac it also compiles iOS.
+# Usage: scripts/check.sh [--fast]   (--fast: ktlint and unit tests only)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
