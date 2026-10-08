@@ -49,8 +49,12 @@ import androidx.compose.ui.unit.sp
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.ui.components.AccountUsageTags
+import com.denebapps.patrimonio.ui.components.NoSearchResults
 import com.denebapps.patrimonio.ui.components.Pill
 import com.denebapps.patrimonio.ui.components.PillTone
+import com.denebapps.patrimonio.ui.components.SEARCH_THRESHOLD
+import com.denebapps.patrimonio.ui.components.SearchField
+import com.denebapps.patrimonio.ui.components.matchesSearch
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 import kotlinx.datetime.Clock
@@ -781,16 +785,24 @@ private fun LinkTargetSection(
     onToggleAsset: (String) -> Unit,
     onSelectGroup: (String) -> Unit,
 ) {
+    var query by rememberSaveable { mutableStateOf("") }
+    // Hidden options keep their selection; "Sin vincular" is always there.
+    val visibleAssets = assets.filter { matchesSearch(query, it.name) }
+    val visibleGroups = groups.filter { matchesSearch(query, it.name) }
     SheetSectionLabel("Seguir el saldo de cuentas o de un grupo (opcional)")
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (assets.size + groups.size >= SEARCH_THRESHOLD) {
+            SearchField(query = query, onQueryChange = { query = it }, placeholder = "Buscar cuenta o grupo")
+        }
         LinkOptionRow(
             label = "Sin vincular",
             selected = selectedAssetIds.isEmpty() && selectedGroupId == null,
             onClick = onUnlink,
         )
-        if (assets.isNotEmpty()) {
+        if (visibleAssets.isEmpty() && visibleGroups.isEmpty()) NoSearchResults(query)
+        if (visibleAssets.isNotEmpty()) {
             LinkSubheader("Cuentas · puedes marcar varias")
-            assets.forEach { option ->
+            visibleAssets.forEach { option ->
                 LinkOptionRow(
                     label = option.name,
                     selected = option.id in selectedAssetIds,
@@ -802,9 +814,9 @@ private fun LinkTargetSection(
                 )
             }
         }
-        if (groups.isNotEmpty()) {
+        if (visibleGroups.isNotEmpty()) {
             LinkSubheader("Grupos")
-            groups.forEach { option ->
+            visibleGroups.forEach { option ->
                 LinkOptionRow(
                     label = option.name,
                     selected = option.id == selectedGroupId,
