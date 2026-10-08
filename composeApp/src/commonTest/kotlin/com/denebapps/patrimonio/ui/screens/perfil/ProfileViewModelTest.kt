@@ -1,6 +1,7 @@
 package com.denebapps.patrimonio.ui.screens.perfil
 
 import com.denebapps.patrimonio.testing.FakePreferencesRepository
+import com.denebapps.patrimonio.testing.FakeProfilePhotoRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -13,7 +14,9 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ProfileViewModelTest {
@@ -27,7 +30,7 @@ class ProfileViewModelTest {
 
     @Test
     fun `initial state is empty with neutral initials`() {
-        val viewModel = ProfileViewModel(FakePreferencesRepository())
+        val viewModel = ProfileViewModel(FakePreferencesRepository(), FakeProfilePhotoRepository())
 
         assertEquals("", viewModel.state.value.firstName)
         assertEquals("", viewModel.state.value.lastName)
@@ -37,7 +40,7 @@ class ProfileViewModelTest {
     @Test
     fun `state prefills names and initials from persisted preferences`() = runTest(dispatcher) {
         val preferences = FakePreferencesRepository(firstName = "Ana", lastName = "Gil")
-        val viewModel = ProfileViewModel(preferences)
+        val viewModel = ProfileViewModel(preferences, FakeProfilePhotoRepository())
         val job = launch { viewModel.state.collect {} }
         advanceUntilIdle()
 
@@ -50,7 +53,7 @@ class ProfileViewModelTest {
     @Test
     fun `saveFirstName persists the focus-loss draft`() = runTest(dispatcher) {
         val preferences = FakePreferencesRepository(firstName = "Ana", lastName = "Gil")
-        val viewModel = ProfileViewModel(preferences)
+        val viewModel = ProfileViewModel(preferences, FakeProfilePhotoRepository())
         val job = launch { viewModel.state.collect {} }
         advanceUntilIdle()
 
@@ -66,7 +69,7 @@ class ProfileViewModelTest {
     @Test
     fun `saveLastName persists independently of the first name`() = runTest(dispatcher) {
         val preferences = FakePreferencesRepository(firstName = "Ana", lastName = "Gil")
-        val viewModel = ProfileViewModel(preferences)
+        val viewModel = ProfileViewModel(preferences, FakeProfilePhotoRepository())
         val job = launch { viewModel.state.collect {} }
         advanceUntilIdle()
 
@@ -82,7 +85,7 @@ class ProfileViewModelTest {
     @Test
     fun `clearing both names restores the neutral avatar state`() = runTest(dispatcher) {
         val preferences = FakePreferencesRepository(firstName = "Ana", lastName = "Gil")
-        val viewModel = ProfileViewModel(preferences)
+        val viewModel = ProfileViewModel(preferences, FakeProfilePhotoRepository())
         val job = launch { viewModel.state.collect {} }
         advanceUntilIdle()
 
@@ -91,6 +94,37 @@ class ProfileViewModelTest {
         advanceUntilIdle()
 
         assertNull(viewModel.state.value.initials)
+        job.cancel()
+    }
+
+    @Test
+    fun `a picked image becomes the photo and can be removed`() = runTest(dispatcher) {
+        val photos = FakeProfilePhotoRepository()
+        val viewModel = ProfileViewModel(FakePreferencesRepository(), photos)
+        val job = launch { viewModel.state.collect {} }
+
+        viewModel.onPhotoPicked { byteArrayOf(1, 2, 3) }
+        advanceUntilIdle()
+        assertEquals(listOf(listOf<Byte>(1, 2, 3)), photos.images.map { it.toList() })
+        assertTrue(viewModel.state.value.hasPhoto)
+
+        viewModel.onRemovePhoto()
+        advanceUntilIdle()
+        assertFalse(viewModel.state.value.hasPhoto)
+        job.cancel()
+    }
+
+    @Test
+    fun `an image that cannot be used says so`() = runTest(dispatcher) {
+        val photos = FakeProfilePhotoRepository().apply { failure = IllegalArgumentException("not an image") }
+        val viewModel = ProfileViewModel(FakePreferencesRepository(), photos)
+        val job = launch { viewModel.state.collect {} }
+
+        viewModel.onPhotoPicked { byteArrayOf(9) }
+        advanceUntilIdle()
+
+        assertEquals("No se pudo usar esa imagen.", viewModel.state.value.photoError)
+        assertFalse(viewModel.state.value.hasPhoto)
         job.cancel()
     }
 }

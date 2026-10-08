@@ -12,14 +12,18 @@ import com.denebapps.patrimonio.data.cloud.FirestoreBackupApi
 import com.denebapps.patrimonio.data.cloud.LocalDataChanges
 import com.denebapps.patrimonio.data.datastore.AUTH_SESSION_FILE_NAME
 import com.denebapps.patrimonio.data.datastore.CLOUD_LINK_FILE_NAME
+import com.denebapps.patrimonio.data.datastore.PROFILE_PHOTO_FILE_NAME
 import com.denebapps.patrimonio.data.datastore.dataStoreFilePath
 import com.denebapps.patrimonio.data.db.RoomLocalDataChanges
 import com.denebapps.patrimonio.data.platform.PlatformContext
+import com.denebapps.patrimonio.data.profile.FileKitPhotoFile
+import com.denebapps.patrimonio.data.profile.ProfilePhotoStore
 import com.denebapps.patrimonio.domain.repository.AuthRepository
 import com.denebapps.patrimonio.domain.repository.CloudBackup
+import com.denebapps.patrimonio.domain.repository.ProfilePhotoRepository
 import org.koin.dsl.module
 
-/** Optional cloud account and its automatic backup. Reuses the [fxModule] HttpClient. */
+/** Optional cloud account, its automatic backup and the profile photo. Reuses the [fxModule] HttpClient. */
 val authModule = module {
     single { FirebaseAuthApi(get()) }
     single<AuthSessionStore> {
@@ -38,5 +42,8 @@ val authModule = module {
             localChanges = get(),
             clock = get(),
         )
+    }
+    single<ProfilePhotoRepository> {
+        ProfilePhotoStore(FileKitPhotoFile(dataStoreFilePath(get<PlatformContext>(), PROFILE_PHOTO_FILE_NAME)), get())
     }
 }

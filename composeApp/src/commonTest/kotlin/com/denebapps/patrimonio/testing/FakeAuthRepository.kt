@@ -1,9 +1,12 @@
 package com.denebapps.patrimonio.testing
 
+import com.denebapps.patrimonio.domain.repository.AccountProvider
 import com.denebapps.patrimonio.domain.repository.AccountUser
 import com.denebapps.patrimonio.domain.repository.AuthError
 import com.denebapps.patrimonio.domain.repository.AuthException
 import com.denebapps.patrimonio.domain.repository.AuthRepository
+import com.denebapps.patrimonio.domain.repository.GoogleProfile
+import com.denebapps.patrimonio.domain.repository.Reauthentication
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -26,6 +29,15 @@ class FakeAuthRepository(user: AccountUser? = null) : AuthRepository {
         userBacking.value = AccountUser("uid-${email.trim()}", email.trim())
     }
 
+    /** The profile [signInWithGoogle] hands back. */
+    var googleProfile = GoogleProfile(firstName = "Ana", lastName = "García", photoUrl = "https://photo/ana")
+
+    override suspend fun signInWithGoogle(idToken: String): GoogleProfile {
+        record("google:$idToken")
+        userBacking.value = AccountUser("uid-google", "ana@gmail.com", AccountProvider.GOOGLE)
+        return googleProfile
+    }
+
     override suspend fun sendPasswordReset(email: String) {
         record("reset:$email")
     }
@@ -35,8 +47,13 @@ class FakeAuthRepository(user: AccountUser? = null) : AuthRepository {
         userBacking.value = null
     }
 
-    override suspend fun deleteAccount(password: String, beforeDelete: suspend () -> Unit) {
-        record("delete:$password")
+    override suspend fun deleteAccount(reauthentication: Reauthentication, beforeDelete: suspend () -> Unit) {
+        record(
+            when (reauthentication) {
+                is Reauthentication.Password -> "delete:${reauthentication.password}"
+                is Reauthentication.Google -> "delete:google:${reauthentication.idToken}"
+            },
+        )
         beforeDelete()
         userBacking.value = null
     }

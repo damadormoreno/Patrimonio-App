@@ -1,6 +1,7 @@
 package com.denebapps.patrimonio.ui.screens.perfil
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,28 +35,34 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.denebapps.patrimonio.ui.components.Avatar
 import com.denebapps.patrimonio.ui.components.HeaderIconBtn
 import com.denebapps.patrimonio.ui.components.SettingsCard
 import com.denebapps.patrimonio.ui.components.SettingsSection
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
+import io.github.vinceglb.filekit.dialogs.FileKitType
+import io.github.vinceglb.filekit.dialogs.compose.rememberFilePickerLauncher
+import io.github.vinceglb.filekit.readBytes
 import org.koin.compose.viewmodel.koinViewModel
 
 /**
- * Perfil route (pushed from the Settings profile card). Ports `design-reference/perfil.jsx`
- * scoped to the locked product decisions: initials-only avatar (NO photo/camera badge), inline-edit
- * Nombre/Apellidos autosaved on focus loss, NO Correo field, NO Seguridad/Copia de seguridad
- * sections (landing zones for changes 9/10), NO save button.
+ * Perfil route (pushed from the Settings profile card). Ports `design-reference/perfil.jsx`: avatar with
+ * the profile photo (picked from the gallery, or the Google one) or the initials, inline-edit
+ * Nombre/Apellidos autosaved on focus loss, NO Correo field, NO save button.
  */
 @Composable
 fun PerfilScreen(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel: ProfileViewModel = koinViewModel()) {
     val state by viewModel.state.collectAsState()
+    val photoPicker = rememberFilePickerLauncher(type = FileKitType.Image) { file ->
+        file?.let { viewModel.onPhotoPicked { it.readBytes() } }
+    }
     PerfilContent(
         state = state,
         onBack = onBack,
         onSaveFirstName = viewModel::saveFirstName,
         onSaveLastName = viewModel::saveLastName,
+        onChangePhoto = photoPicker::launch,
+        onRemovePhoto = viewModel::onRemovePhoto,
         modifier = modifier,
     )
 }
@@ -66,6 +73,8 @@ private fun PerfilContent(
     onBack: () -> Unit,
     onSaveFirstName: (String) -> Unit,
     onSaveLastName: (String) -> Unit,
+    onChangePhoto: () -> Unit,
+    onRemovePhoto: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAppColors.current
@@ -100,18 +109,24 @@ private fun PerfilContent(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Avatar(
-                    initials = state.initials,
-                    icon = AppIcons.user.takeIf { state.initials == null },
-                    size = 92.dp,
-                )
+                ProfileAvatar(initials = state.initials, size = 92.dp)
+                Row(
+                    modifier = Modifier.padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    PhotoAction(text = "Cambiar foto", onClick = onChangePhoto)
+                    if (state.hasPhoto) PhotoAction(text = "Quitar foto", onClick = onRemovePhoto)
+                }
+                state.photoError?.let { error ->
+                    Text(text = error, color = colors.expense, fontSize = 12.sp)
+                }
                 Text(
                     text = displayName,
                     color = colors.ink,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                     letterSpacing = (-0.01).sp,
-                    modifier = Modifier.padding(top = 12.dp),
+                    modifier = Modifier.padding(top = 6.dp),
                 )
                 Text(
                     text = "Cuenta local · offline",
@@ -147,6 +162,17 @@ private fun PerfilContent(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+}
+
+@Composable
+private fun PhotoAction(text: String, onClick: () -> Unit) {
+    Text(
+        text = text,
+        color = LocalAppColors.current.brand,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier.clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 6.dp),
+    )
 }
 
 /**

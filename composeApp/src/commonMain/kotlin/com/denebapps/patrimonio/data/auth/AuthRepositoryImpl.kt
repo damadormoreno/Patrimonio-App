@@ -1,9 +1,12 @@
 package com.denebapps.patrimonio.data.auth
 
+import com.denebapps.patrimonio.domain.repository.AccountProvider
 import com.denebapps.patrimonio.domain.repository.AccountUser
 import com.denebapps.patrimonio.domain.repository.AuthError
 import com.denebapps.patrimonio.domain.repository.AuthException
 import com.denebapps.patrimonio.domain.repository.AuthRepository
+import com.denebapps.patrimonio.domain.repository.GoogleProfile
+import com.denebapps.patrimonio.domain.repository.Reauthentication
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -24,8 +27,9 @@ class AuthRepositoryImpl(
 ) : AuthRepository {
     private val refreshMutex = Mutex()
 
-    override fun observeUser(): Flow<AccountUser?> =
-        store.observe().map { session -> session?.let { AccountUser(it.uid, it.email) } }.distinctUntilChanged()
+    override fun observeUser(): Flow<AccountUser?> = store.observe()
+        .map { session -> session?.let { AccountUser(it.uid, it.email, it.provider) } }
+        .distinctUntilChanged()
 
     override suspend fun signUp(email: String, password: String) {
         val trimmed = email.trim()
@@ -37,6 +41,12 @@ class AuthRepositoryImpl(
         save(api.signIn(trimmed, password), trimmed)
     }
 
+    override suspend fun signInWithGoogle(idToken: String): GoogleProfile {
+        val signIn = api.signInWithIdp(idToken)
+        save(signIn.tokens, signIn.tokens.email.orEmpty(), AccountProvider.GOOGLE)
+        return signIn.profile
+    }
+
     override suspend fun sendPasswordReset(email: String) {
         api.sendPasswordReset(email.trim())
     }
@@ -45,9 +55,14 @@ class AuthRepositoryImpl(
         store.clear()
     }
 
-    override suspend fun deleteAccount(password: String, beforeDelete: suspend () -> Unit) {
+    override suspend fun deleteAccount(reauthentication: Reauthentication, beforeDelete: suspend () -> Unit) {
         val session = store.observe().first() ?: throw AuthException(AuthError.NOT_SIGNED_IN)
-        val fresh = api.signIn(session.email, password)
+        val fresh = when (reauthentication) {
+            is Reauthentication.Password -> api.signIn(session.email, reauthentication.password)
+            is Reauthentication.Google -> api.signInWithIdp(reauthentication.idToken).tokens
+        }
+        // Another Google account picked in the dialog proves nothing about this one.
+        if (fresh.uid != session.uid) throw AuthException(AuthError.WRONG_CREDENTIALS)
         beforeDelete()
         api.deleteAccount(fresh.idToken)
         store.clear()
@@ -62,11 +77,11 @@ class AuthRepositoryImpl(
             if (e.error == AuthError.SESSION_EXPIRED) store.clear()
             throw e
         }
-        save(tokens, session.email)
+        save(tokens, session.email, session.provider)
         tokens.idToken
     }
 
-    private suspend fun save(tokens: AuthTokens, email: String) {
+    private suspend fun save(tokens: AuthTokens, email: String, provider: AccountProvider = AccountProvider.PASSWORD) {
         store.save(
             AuthSession(
                 uid = tokens.uid,
@@ -74,6 +89,7 @@ class AuthRepositoryImpl(
                 idToken = tokens.idToken,
                 refreshToken = tokens.refreshToken,
                 expiresAtEpochMs = nowMs() + tokens.expiresInSeconds * 1_000,
+                provider = provider,
             ),
         )
     }

@@ -54,6 +54,7 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.cryptography.core)
             implementation(libs.cryptography.provider.optimal)
+            implementation(libs.filekit.core)
             implementation(libs.filekit.dialogs.compose)
         }
         androidMain.dependencies {
@@ -61,6 +62,9 @@ kotlin {
             implementation(libs.androidx.work.runtime)
             implementation(libs.koin.android)
             implementation(libs.ktor.client.android)
+            implementation(libs.androidx.credentials)
+            implementation(libs.androidx.credentials.play.services)
+            implementation(libs.googleid)
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)

@@ -2,6 +2,7 @@ package com.denebapps.patrimonio.ui.screens.account
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.denebapps.patrimonio.data.platform.AppLogger
 import com.denebapps.patrimonio.domain.repository.AccountUser
 import com.denebapps.patrimonio.domain.repository.AuthError
 import com.denebapps.patrimonio.domain.repository.AuthException
@@ -10,11 +11,17 @@ import com.denebapps.patrimonio.domain.repository.CloudBackup
 import com.denebapps.patrimonio.domain.repository.CloudBackupError
 import com.denebapps.patrimonio.domain.repository.CloudBackupException
 import com.denebapps.patrimonio.domain.repository.CloudBackupState
+import com.denebapps.patrimonio.domain.repository.GoogleProfile
+import com.denebapps.patrimonio.domain.repository.PreferencesRepository
+import com.denebapps.patrimonio.domain.repository.ProfilePhotoRepository
+import com.denebapps.patrimonio.domain.repository.Reauthentication
 import com.denebapps.patrimonio.ui.components.formatDayMonth
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -26,6 +33,9 @@ private const val ACCOUNT_STOP_TIMEOUT_MS = 5_000L
 private const val MIN_PASSWORD_LENGTH = 6
 private const val DELETE_CLOUD_COPY_FAILED =
     "No se pudo borrar la copia de la nube, así que la cuenta sigue activa. Inténtalo de nuevo."
+private const val GOOGLE_NO_ACCOUNT = "No hay ninguna cuenta de Google en este móvil."
+private const val GOOGLE_FAILED = "No se pudo iniciar sesión con Google. Inténtalo de nuevo."
+private const val GOOGLE_OTHER_ACCOUNT = "Elige la misma cuenta de Google con la que iniciaste sesión."
 private val EMAIL_SHAPE = Regex("[^@\\s]+@[^@\\s]+\\.[^@\\s]+")
 
 enum class AccountMode { SIGN_IN, SIGN_UP }
@@ -58,11 +68,16 @@ private data class AccountForm(
 )
 
 /**
- * The optional account: sign in / create it while signed out; while signed in, the state of its cloud backup
- * (and the choice when the cloud holds other data), sign out and delete it.
+ * The optional account: sign in / create it while signed out (email and password, or Google); while signed in,
+ * the state of its cloud backup (and the choice when the cloud holds other data), sign out and delete it.
+ * The first Google sign-in fills an empty profile with the Google name and photo.
  */
-class AccountViewModel(private val authRepository: AuthRepository, private val cloudBackup: CloudBackup) :
-    ViewModel() {
+class AccountViewModel(
+    private val authRepository: AuthRepository,
+    private val cloudBackup: CloudBackup,
+    private val preferencesRepository: PreferencesRepository,
+    private val photoRepository: ProfilePhotoRepository,
+) : ViewModel() {
     private val form = MutableStateFlow(AccountForm())
 
     val state: StateFlow<AccountUiState> =
@@ -103,6 +118,15 @@ class AccountViewModel(private val authRepository: AuthRepository, private val c
         }
     }
 
+    /** What the Google account picker gave back; signs in with the picked account. */
+    fun onGoogleResult(result: GoogleIdTokenResult) {
+        val idToken = googleIdTokenOrShowError(result) ?: return
+        run(successInfo = null) {
+            val profile = authRepository.signInWithGoogle(idToken)
+            fillProfileFrom(profile)
+        }
+    }
+
     fun onForgotPassword() {
         if (!state.value.canResetPassword) return
         val email = form.value.email
@@ -119,9 +143,22 @@ class AccountViewModel(private val authRepository: AuthRepository, private val c
     }
 
     /** Deletes the cloud copy and the account after checking [password]; the data on this device is kept. */
-    fun onDeleteAccount(password: String) {
-        run(successInfo = "Cuenta y copia en la nube borradas. Tus datos siguen en este móvil.") {
-            cloudBackup.deleteAccount(password)
+    fun onDeleteAccount(password: String) = deleteAccount(Reauthentication.Password(password))
+
+    /** As [onDeleteAccount] for a Google account: the user picks the same Google account again. */
+    fun onDeleteAccountWithGoogle(result: GoogleIdTokenResult) {
+        val idToken = googleIdTokenOrShowError(result) ?: return
+        deleteAccount(Reauthentication.Google(idToken))
+    }
+
+    private fun deleteAccount(reauthentication: Reauthentication) {
+        // A Google account has no password to get wrong: another Google account was picked.
+        val authMessage = { error: AuthError ->
+            val otherAccount = reauthentication is Reauthentication.Google && error == AuthError.WRONG_CREDENTIALS
+            if (otherAccount) GOOGLE_OTHER_ACCOUNT else messageFor(error)
+        }
+        run(successInfo = "Cuenta y copia en la nube borradas. Tus datos siguen en este móvil.", authMessage) {
+            cloudBackup.deleteAccount(reauthentication)
         }
     }
 
@@ -145,14 +182,49 @@ class AccountViewModel(private val authRepository: AuthRepository, private val c
         }
     }
 
-    private fun run(successInfo: String?, action: suspend () -> Unit) {
+    /** The token to sign in with, or null after showing why there is none (nothing when the user cancelled). */
+    private fun googleIdTokenOrShowError(result: GoogleIdTokenResult): String? {
+        val error = when (result) {
+            is GoogleIdTokenResult.Token -> return result.idToken
+            GoogleIdTokenResult.Cancelled -> null
+            GoogleIdTokenResult.NoAccount -> GOOGLE_NO_ACCOUNT
+            GoogleIdTokenResult.Failed -> GOOGLE_FAILED
+        }
+        form.update { it.copy(error = error, info = null) }
+        return null
+    }
+
+    /** Only an empty profile: a name or a photo the user chose is never replaced. A photo that cannot be
+     *  downloaded is skipped, the sign-in has already worked. */
+    private suspend fun fillProfileFrom(profile: GoogleProfile) {
+        val noName = preferencesRepository.observeFirstName().first().isBlank() &&
+            preferencesRepository.observeLastName().first().isBlank()
+        if (noName) {
+            profile.firstName?.let { preferencesRepository.setFirstName(it) }
+            profile.lastName?.let { preferencesRepository.setLastName(it) }
+        }
+        val photoUrl = profile.photoUrl ?: return
+        try {
+            photoRepository.setFromGoogleIfEmpty(photoUrl)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLogger.error("AccountViewModel", "Could not download the Google photo", e)
+        }
+    }
+
+    private fun run(
+        successInfo: String?,
+        authMessage: (AuthError) -> String = ::messageFor,
+        action: suspend () -> Unit,
+    ) {
         form.update { it.copy(busy = true, error = null, info = null) }
         viewModelScope.launch {
             try {
                 action()
                 form.update { it.copy(busy = false, info = successInfo) }
             } catch (e: AuthException) {
-                form.update { it.copy(busy = false, error = messageFor(e.error)) }
+                form.update { it.copy(busy = false, error = authMessage(e.error)) }
             } catch (e: CloudBackupException) {
                 form.update { it.copy(busy = false, error = DELETE_CLOUD_COPY_FAILED) }
             }
@@ -168,6 +240,7 @@ internal fun messageFor(error: AuthError): String = when (error) {
     AuthError.TOO_MANY_ATTEMPTS -> "Demasiados intentos. Espera unos minutos y vuelve a probar."
     AuthError.NOT_SIGNED_IN, AuthError.SESSION_EXPIRED -> "La sesión ha caducado. Vuelve a iniciar sesión."
     AuthError.NETWORK -> "No hay conexión. Inténtalo de nuevo."
+    AuthError.NOT_AVAILABLE -> "Ese método de acceso no está disponible ahora mismo."
     AuthError.UNKNOWN -> "No se ha podido completar. Inténtalo de nuevo."
 }
 

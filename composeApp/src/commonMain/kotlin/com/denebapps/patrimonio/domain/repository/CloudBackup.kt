@@ -77,13 +77,13 @@ interface CloudBackup {
     suspend fun changePassphrase(passphrase: String)
 
     /**
-     * Deletes the cloud copy and then the account, after checking [password] ([AuthRepository.deleteAccount]).
+     * Deletes the cloud copy and then the account, after checking [reauthentication] ([AuthRepository.deleteAccount]).
      * The data on this device stays.
      *
      * @throws AuthException when the password is wrong or the account cannot be reached.
      * @throws CloudBackupException when the cloud copy cannot be deleted; the account is kept.
      */
-    suspend fun deleteAccount(password: String)
+    suspend fun deleteAccount(reauthentication: Reauthentication)
 }
 
 enum class CloudBackupError {

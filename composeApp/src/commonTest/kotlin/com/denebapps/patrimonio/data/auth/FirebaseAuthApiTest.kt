@@ -2,6 +2,7 @@ package com.denebapps.patrimonio.data.auth
 
 import com.denebapps.patrimonio.domain.repository.AuthError
 import com.denebapps.patrimonio.domain.repository.AuthException
+import com.denebapps.patrimonio.domain.repository.GoogleProfile
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
@@ -84,6 +85,41 @@ class FirebaseAuthApiTest {
     }
 
     @Test
+    fun `Google sign-in posts the ID token and returns the tokens and profile`() = runTest {
+        val api = api {
+            respondJson(
+                """{"localId":"uid-g","email":"ana@gmail.com","idToken":"id-g","refreshToken":"refresh-g",""" +
+                    """"expiresIn":"3600","firstName":"Ana","lastName":"García",""" +
+                    """"photoUrl":"https://lh3.googleusercontent.com/a/x=s96-c","providerId":"google.com"}""",
+            )
+        }
+
+        val signIn = api.signInWithIdp("google-jwt")
+
+        assertEquals(AuthTokens("uid-g", "ana@gmail.com", "id-g", "refresh-g", 3600), signIn.tokens)
+        assertEquals(
+            GoogleProfile("Ana", "García", "https://lh3.googleusercontent.com/a/x=s96-c"),
+            signIn.profile,
+        )
+        val request = requests.single()
+        assertEquals(
+            "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=test-key",
+            request.url.toString(),
+        )
+        val body = Json.parseToJsonElement((request.body as TextContent).text).jsonObject
+        assertEquals("id_token=google-jwt&providerId=google.com", body.getValue("postBody").jsonPrimitive.content)
+        assertEquals("http://localhost", body.getValue("requestUri").jsonPrimitive.content)
+        assertEquals("true", body.getValue("returnSecureToken").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a Google email that belongs to another sign-in method is refused`() = runTest {
+        val api = api { respondJson("""{"email":"ana@gmail.com","needConfirmation":true}""") }
+
+        assertEquals(AuthError.EMAIL_IN_USE, assertFailsWith<AuthException> { api.signInWithIdp("t") }.error)
+    }
+
+    @Test
     fun `password reset and account deletion hit their endpoints`() = runTest {
         val api = api { respondJson("{}") }
 
@@ -114,6 +150,8 @@ class FirebaseAuthApiTest {
         assertEquals(AuthError.WRONG_CREDENTIALS, authErrorFor("INVALID_LOGIN_CREDENTIALS"))
         assertEquals(AuthError.SESSION_EXPIRED, authErrorFor("TOKEN_EXPIRED"))
         assertEquals(AuthError.TOO_MANY_ATTEMPTS, authErrorFor("TOO_MANY_ATTEMPTS_TRY_LATER : Too many attempts"))
+        assertEquals(AuthError.NOT_AVAILABLE, authErrorFor("OPERATION_NOT_ALLOWED"))
+        assertEquals(AuthError.NOT_AVAILABLE, authErrorFor("INVALID_IDP_RESPONSE : Invalid Idp Response"))
         assertEquals(AuthError.UNKNOWN, authErrorFor("SOMETHING_NEW"))
     }
 

@@ -77,6 +77,16 @@ jobs:
           echo "$PREVIEW_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/preview.jks"
           echo "PREVIEW_KEYSTORE_PATH=$RUNNER_TEMP/preview.jks" >> "$GITHUB_ENV"
 
+      # The fingerprints are public (any APK shows them), but Firebase needs them for Sign in with Google:
+      # Project settings → the preview Android app → SHA certificate fingerprints. Shown in the run summary.
+      - name: Signing certificate fingerprints
+        run: |
+          {
+            echo "### Preview signing certificate"
+            keytool -list -v -keystore "$PREVIEW_KEYSTORE_PATH" -alias "$PREVIEW_KEY_ALIAS" \
+              -storepass "$PREVIEW_KEYSTORE_PASSWORD" | grep -E '^\s*SHA(1|256):' | sed -E 's/^\s*/- `/; s/$/`/'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Assemble preview APK
         env:
           VERSION_CODE: ${{ github.run_number }}

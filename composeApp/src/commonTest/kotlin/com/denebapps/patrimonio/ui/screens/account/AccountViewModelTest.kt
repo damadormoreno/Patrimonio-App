@@ -1,11 +1,15 @@
 package com.denebapps.patrimonio.ui.screens.account
 
+import com.denebapps.patrimonio.domain.repository.AccountProvider
 import com.denebapps.patrimonio.domain.repository.AccountUser
 import com.denebapps.patrimonio.domain.repository.AuthError
 import com.denebapps.patrimonio.domain.repository.CloudBackupError
 import com.denebapps.patrimonio.domain.repository.CloudBackupState
+import com.denebapps.patrimonio.domain.repository.GoogleProfile
 import com.denebapps.patrimonio.testing.FakeAuthRepository
 import com.denebapps.patrimonio.testing.FakeCloudBackup
+import com.denebapps.patrimonio.testing.FakePreferencesRepository
+import com.denebapps.patrimonio.testing.FakeProfilePhotoRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -34,10 +38,97 @@ class AccountViewModelTest {
     @AfterTest
     fun tearDown() = Dispatchers.resetMain()
 
+    private val preferences = FakePreferencesRepository()
+    private val photos = FakeProfilePhotoRepository()
+
+    private fun viewModel(auth: FakeAuthRepository, cloud: FakeCloudBackup = FakeCloudBackup(auth)) =
+        AccountViewModel(auth, cloud, preferences, photos)
+
+    @Test
+    fun `Google sign-in fills an empty profile with the Google name and photo`() = runTest(dispatcher) {
+        val auth = FakeAuthRepository()
+        val vm = viewModel(auth)
+        val job = launch { vm.state.collect {} }
+
+        vm.onGoogleResult(GoogleIdTokenResult.Token("jwt"))
+        advanceUntilIdle()
+
+        assertEquals(listOf("google:jwt"), auth.calls)
+        assertEquals(AccountProvider.GOOGLE, vm.state.value.user?.provider)
+        assertEquals("Ana", preferences.observeFirstName().value)
+        assertEquals("García", preferences.observeLastName().value)
+        assertEquals(listOf("https://photo/ana"), photos.googleUrls)
+        assertNull(vm.state.value.error)
+        job.cancel()
+    }
+
+    @Test
+    fun `Google sign-in keeps a name and a photo the user already has`() = runTest(dispatcher) {
+        preferences.setFirstName("David")
+        photos.setImage(byteArrayOf(1))
+        val auth = FakeAuthRepository().apply { googleProfile = GoogleProfile("Ana", null, "https://photo/ana") }
+        val vm = viewModel(auth)
+
+        vm.onGoogleResult(GoogleIdTokenResult.Token("jwt"))
+        advanceUntilIdle()
+
+        assertEquals("David", preferences.observeFirstName().value)
+        assertEquals("", preferences.observeLastName().value)
+        assertEquals(emptyList(), photos.googleUrls)
+    }
+
+    @Test
+    fun `a cancelled picker says nothing and the others say why`() = runTest(dispatcher) {
+        val auth = FakeAuthRepository()
+        val vm = viewModel(auth)
+        val job = launch { vm.state.collect {} }
+
+        vm.onGoogleResult(GoogleIdTokenResult.Cancelled)
+        advanceUntilIdle()
+        assertNull(vm.state.value.error)
+
+        vm.onGoogleResult(GoogleIdTokenResult.NoAccount)
+        advanceUntilIdle()
+        assertEquals("No hay ninguna cuenta de Google en este móvil.", vm.state.value.error)
+
+        vm.onGoogleResult(GoogleIdTokenResult.Failed)
+        advanceUntilIdle()
+        assertEquals("No se pudo iniciar sesión con Google. Inténtalo de nuevo.", vm.state.value.error)
+
+        auth.failWith = AuthError.NOT_AVAILABLE
+        vm.onGoogleResult(GoogleIdTokenResult.Token("jwt"))
+        advanceUntilIdle()
+        assertEquals("Ese método de acceso no está disponible ahora mismo.", vm.state.value.error)
+        assertNull(vm.state.value.user)
+        job.cancel()
+    }
+
+    @Test
+    fun `a Google account is deleted after picking it again, and another one is refused`() = runTest(dispatcher) {
+        val auth = FakeAuthRepository(AccountUser("uid-google", "ana@gmail.com", AccountProvider.GOOGLE))
+        val cloud = FakeCloudBackup(auth)
+        val vm = viewModel(auth, cloud)
+        val job = launch { vm.state.collect {} }
+
+        auth.failWith = AuthError.WRONG_CREDENTIALS
+        vm.onDeleteAccountWithGoogle(GoogleIdTokenResult.Token("other"))
+        advanceUntilIdle()
+        assertEquals("Elige la misma cuenta de Google con la que iniciaste sesión.", vm.state.value.error)
+        assertEquals("ana@gmail.com", vm.state.value.user?.email)
+
+        auth.failWith = null
+        vm.onDeleteAccountWithGoogle(GoogleIdTokenResult.Token("same"))
+        advanceUntilIdle()
+        assertEquals(listOf("delete:google:same"), auth.calls)
+        assertEquals(listOf("deleteCloudCopy"), cloud.calls)
+        assertNull(vm.state.value.user)
+        job.cancel()
+    }
+
     @Test
     fun `signing in needs a plausible email and a 6 character password`() = runTest(dispatcher) {
         val auth = FakeAuthRepository()
-        val vm = AccountViewModel(auth, FakeCloudBackup(auth))
+        val vm = viewModel(auth)
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
@@ -67,7 +158,7 @@ class AccountViewModelTest {
     @Test
     fun `create account mode signs up and errors read in Spanish`() = runTest(dispatcher) {
         val auth = FakeAuthRepository().apply { failWith = AuthError.EMAIL_IN_USE }
-        val vm = AccountViewModel(auth, FakeCloudBackup(auth))
+        val vm = viewModel(auth)
         val job = launch { vm.state.collect {} }
         vm.onModeChange(AccountMode.SIGN_UP)
         vm.onEmailChange("ana@example.com")
@@ -90,7 +181,7 @@ class AccountViewModelTest {
     @Test
     fun `forgot password sends the reset email and says so`() = runTest(dispatcher) {
         val auth = FakeAuthRepository()
-        val vm = AccountViewModel(auth, FakeCloudBackup(auth))
+        val vm = viewModel(auth)
         val job = launch { vm.state.collect {} }
         vm.onEmailChange("ana@example.com")
         advanceUntilIdle()
@@ -109,7 +200,7 @@ class AccountViewModelTest {
     @Test
     fun `signing out and deleting the account go back to the signed out form`() = runTest(dispatcher) {
         val auth = FakeAuthRepository(AccountUser("uid-1", "ana@example.com"))
-        val vm = AccountViewModel(auth, FakeCloudBackup(auth))
+        val vm = viewModel(auth)
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
         assertEquals("ana@example.com", vm.state.value.user?.email)
@@ -132,7 +223,7 @@ class AccountViewModelTest {
     fun `the account is kept when its cloud copy cannot be deleted`() = runTest(dispatcher) {
         val auth = FakeAuthRepository(AccountUser("uid-1", "ana@example.com"))
         val cloud = FakeCloudBackup(auth).apply { deleteFailure = CloudBackupError.NETWORK }
-        val vm = AccountViewModel(auth, cloud)
+        val vm = viewModel(auth, cloud)
         val job = launch { vm.state.collect {} }
 
         vm.onDeleteAccount("secreto")
@@ -152,7 +243,7 @@ class AccountViewModelTest {
     fun `the cloud backup state and choices go through to the cloud backup`() = runTest(dispatcher) {
         val auth = FakeAuthRepository(AccountUser("uid-1", "ana@example.com"))
         val cloud = FakeCloudBackup(auth)
-        val vm = AccountViewModel(auth, cloud)
+        val vm = viewModel(auth, cloud)
         val job = launch { vm.state.collect {} }
         val conflict = CloudBackupState.Conflict(Instant.parse("2026-10-08T09:00:00Z"))
 

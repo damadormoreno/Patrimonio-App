@@ -20,6 +20,34 @@ deciden el token del usuario y las reglas de seguridad.
 Mientras no se haga el paso 1, Firebase responde `CONFIGURATION_NOT_FOUND` y la app muestra «No se ha
 podido completar».
 
+### Iniciar sesión con Google (Android)
+
+1. **Authentication → Método de inicio de sesión → Agregar proveedor → Google** → Habilitar, elegir el
+   correo de asistencia y Guardar. Firebase crea a la vez el cliente OAuth «Web client» en Google Cloud.
+2. Su ID va en `FirebaseConfig.GOOGLE_WEB_CLIENT_ID`. Se puede leer sin entrar en Google Cloud:
+   `https://www.googleapis.com/identitytoolkit/v3/relyingparty/getProjectConfig?key=<API_KEY>` →
+   `idpConfig[].clientId` del proveedor `google.com`. Mientras esté vacío, la app no enseña el botón.
+3. **Configuración del proyecto → General → Tus apps** → en cada app Android, **Agregar huella digital**
+   con la SHA-1 y la SHA-256 del certificado que firma esa build:
+   - `com.denebapps.patrimonio.preview`: el keystore de preview. El workflow de preview las escribe en el
+     resumen de cada ejecución (Actions → la ejecución → Summary).
+   - `com.denebapps.patrimonio` (Android Studio): `keytool -list -v -keystore ~/.android/debug.keystore
+     -alias androiddebugkey -storepass android`.
+   - Play Store, cuando llegue: la del certificado de firma de apps de Play Console, no la de subida.
+
+   Sin la huella, el selector de cuentas falla o se cierra sin decir por qué («No se pudo iniciar sesión
+   con Google»).
+
+El selector es el de Credential Manager (`GetSignInWithGoogleOption`); su ID token se cambia por la sesión
+de Firebase en `accounts:signInWithIdp`. La primera vez rellena el perfil vacío con el nombre y la foto
+de Google; un nombre o una foto que ya tengas no se tocan. Si el correo ya tiene cuenta con contraseña,
+Firebase (una cuenta por correo) la une a Google y mantiene el mismo uid, así que la copia en la nube
+sigue siendo la misma. Ojo: si ese correo no estaba verificado, Firebase quita la contraseña y desde
+entonces solo se entra con Google.
+
+**iOS no lo ofrece todavía**: la App Store obliga a añadir «Iniciar sesión con Apple» si hay login con
+Google (norma 4.8), así que llegarán juntos.
+
 ### Copia en la nube (Firestore)
 
 4. **Firestore Database** → **Crear base de datos** → edición **Standard**, ubicación
@@ -42,12 +70,13 @@ en la nube no está disponible ahora mismo».
 
 ## Qué guarda la app
 
-- **Sesión**: uid, email y tokens en su propio DataStore (`patrimonio-auth.preferences_pb`). Ese
+- **Sesión**: uid, email, proveedor (contraseña o Google) y tokens en su propio DataStore (`patrimonio-auth.preferences_pb`). Ese
   archivo queda fuera del backup automático de Android, así que al restaurar en otro móvil hay que
   volver a iniciar sesión.
 - **Token**: dura una hora y se renueva solo unos minutos antes de caducar. Si Firebase rechaza la
   renovación (contraseña cambiada, cuenta borrada en otro sitio), la app cierra la sesión.
-- **Borrar cuenta**: Firebase exige un inicio de sesión reciente, por eso pide la contraseña. Primero
+- **Borrar cuenta**: Firebase exige un inicio de sesión reciente, por eso pide la contraseña (o, en una
+  cuenta de Google, volver a elegir la misma cuenta de Google). Primero
   borra la copia en la nube y después la cuenta; si la copia no se puede borrar, la cuenta se queda. Los
   datos del móvil no se tocan.
 

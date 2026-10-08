@@ -42,13 +42,13 @@ import com.denebapps.patrimonio.domain.repository.RenewalReminderSettings
 import com.denebapps.patrimonio.domain.repository.ThemeMode
 import com.denebapps.patrimonio.resources.Res
 import com.denebapps.patrimonio.resources.delete_data_failure_message
-import com.denebapps.patrimonio.ui.components.Avatar
 import com.denebapps.patrimonio.ui.components.ScreenHeader
 import com.denebapps.patrimonio.ui.components.SettingsCard
 import com.denebapps.patrimonio.ui.components.SettingsRow
 import com.denebapps.patrimonio.ui.components.SettingsSection
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.screens.account.AccountViewModel
+import com.denebapps.patrimonio.ui.screens.perfil.ProfileAvatar
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 import com.denebapps.patrimonio.ui.theme.LocalAppShapes
 import io.github.vinceglb.filekit.dialogs.compose.rememberFilePickerLauncher
@@ -355,11 +355,7 @@ private fun ProfileCard(state: SettingsUiState, accountEmail: String?, onClick: 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Avatar(
-            initials = state.profileInitials,
-            icon = AppIcons.user.takeIf { state.profileInitials == null },
-            size = 48.dp,
-        )
+        ProfileAvatar(initials = state.profileInitials, size = 48.dp)
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = state.profileName ?: "Tu perfil",
