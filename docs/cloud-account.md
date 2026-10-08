@@ -60,6 +60,7 @@ sangrías):
 | --- | --- | --- |
 | `revision` | string | UUID de la subida que escribió la copia |
 | `savedAt` | timestamp | cuándo se subió |
+| `records` | integer | cuentas + deudas + grupos + metas + suscripciones |
 | `data` | array de strings | el JSON en trozos de ≤ 1.400 bytes UTF-8 |
 
 El JSON va troceado porque Firestore indexa todos los campos y limita los strings indexados a 1.500
@@ -69,12 +70,14 @@ bytes. Un documento admite 1 MiB; la app rechaza datos de más de ~900 KB («ocu
 
 1. Al iniciar sesión y al abrir la app, lee solo `revision` y `savedAt` de la nube.
    - Sin copia: sube la de este móvil.
-   - Con la revisión que este móvil subió la última vez: sigue sin preguntar.
+   - Con la revisión que este móvil subió la última vez: sigue sin preguntar. Al cerrar sesión se olvida,
+     así que volver a iniciar sesión siempre pregunta (los datos pueden haber cambiado mientras tanto).
    - Con otra revisión (otro móvil, otra cuenta en este móvil, móvil restaurado): **pregunta** qué
      datos usar, la copia de la nube o los de este móvil. No sube nada hasta que se elige.
 2. Cada cambio en los datos (Room, 5 s de margen) sube la copia entera con una revisión nueva. Antes
    comprueba que la nube sigue con la revisión de este móvil; si otro móvil subió entretanto, vuelve a
-   preguntar en lugar de pisarla.
+   preguntar en lugar de pisarla. Tampoco sube nunca sin preguntar un móvil vacío (`records` = 0, p. ej.
+   tras «Borrar todos los datos») encima de una copia con datos.
 3. Los fallos (sin conexión, Firestore caído) se reintentan solos, de 30 s a 15 min, y con «Reintentar» /
    «Guardar ahora».
 

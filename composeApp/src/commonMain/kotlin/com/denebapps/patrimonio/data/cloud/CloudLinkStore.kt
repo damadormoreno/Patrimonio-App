@@ -10,7 +10,7 @@ import okio.Path.Companion.toPath
 /**
  * The last copy this device uploaded: to which account, with which [revision] and when. While the cloud copy
  * still has that revision nobody else has changed it, so this device can keep uploading without asking.
- * It survives signing out, so signing back in resumes silently when the cloud copy is untouched.
+ * Signing out clears it: the data may change while signed out, so signing in again always asks first.
  */
 data class CloudLink(val uid: String, val revision: String, val savedAtEpochMs: Long)
 
@@ -18,6 +18,8 @@ interface CloudLinkStore {
     suspend fun get(): CloudLink?
 
     suspend fun save(link: CloudLink)
+
+    suspend fun clear()
 }
 
 private val UID_KEY = stringPreferencesKey("uid")
@@ -43,5 +45,9 @@ class DataStoreCloudLinkStore(filePath: String) : CloudLinkStore {
             prefs[REVISION_KEY] = link.revision
             prefs[SAVED_AT_KEY] = link.savedAtEpochMs
         }
+    }
+
+    override suspend fun clear() {
+        dataStore.edit { it.clear() }
     }
 }

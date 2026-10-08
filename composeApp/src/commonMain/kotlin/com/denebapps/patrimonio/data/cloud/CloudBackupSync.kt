@@ -30,6 +30,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -40,11 +43,12 @@ import kotlin.uuid.Uuid
  * [CloudBackup] for the signed-in account. For each session:
  *
  * 1. **Check**: read the cloud copy's revision. No copy: upload this device's data. Same revision this device
- *    last wrote ([CloudLinkStore]): nothing changed elsewhere. Anything else: [CloudBackupState.Conflict] until
- *    the user picks a side.
+ *    last wrote ([CloudLinkStore], cleared on sign-out): nothing changed elsewhere. Anything else:
+ *    [CloudBackupState.Conflict] until the user picks a side.
  * 2. **Back up**: every change (debounced) uploads the whole backup JSON under a new revision. Each upload
  *    first checks that the cloud still has this device's revision; if another device wrote meanwhile, it goes
- *    back to step 1 instead of overwriting that copy.
+ *    back to step 1 instead of overwriting that copy. Data emptied on this device (Borrar todos los datos) is
+ *    never uploaded over a copy that has data without asking either.
  *
  * Failures are retried with a growing delay, or straight away with [retry] / [backUpNow].
  */
@@ -72,11 +76,13 @@ class CloudBackupSync(
         authRepository.observeUser().collectLatest { user ->
             if (user == null) {
                 _state.value = CloudBackupState.SignedOut
+                forgetLastUpload()
                 return@collectLatest
             }
+            var askFirst = false
             while (true) {
-                val inSync = check(user.uid)
-                backUpChanges(user.uid, skipFirst = inSync)
+                val inSync = check(user.uid, askFirst)
+                askFirst = backUpChanges(user.uid, skipFirst = inSync)
             }
         }
     }
@@ -106,8 +112,11 @@ class CloudBackupSync(
         }
     }
 
-    /** Step 1. Returns true when the cloud copy now matches this device's data, so no upload is due. */
-    private suspend fun check(uid: String): Boolean {
+    /**
+     * Step 1. Returns true when the cloud copy now matches this device's data, so no upload is due. With
+     * [askFirst] an existing cloud copy is always a conflict.
+     */
+    private suspend fun check(uid: String, askFirst: Boolean): Boolean {
         var retryDelay = FIRST_RETRY_DELAY
         while (true) {
             _state.value = CloudBackupState.Checking
@@ -119,7 +128,7 @@ class CloudBackupSync(
                         upload(uid, checkCloud = false)
                         true
                     }
-                    link?.uid == uid && link.revision == cloud.revision -> {
+                    !askFirst && link?.uid == uid && link.revision == cloud.revision -> {
                         _state.value = CloudBackupState.Active(Instant.fromEpochMilliseconds(link.savedAtEpochMs))
                         false
                     }
@@ -158,14 +167,18 @@ class CloudBackupSync(
         return true
     }
 
-    /** Step 2. Returns when another device changed the cloud copy, so [check] runs again. */
-    private suspend fun backUpChanges(uid: String, skipFirst: Boolean) {
+    /**
+     * Step 2. Returns when the cloud copy must not be overwritten without asking, so [check] runs again: true
+     * when this device's data was emptied, false when another device changed the cloud copy.
+     */
+    private suspend fun backUpChanges(uid: String, skipFirst: Boolean): Boolean {
         val changes = localChanges.observe().let { if (skipFirst) it.drop(1) else it }
         try {
             merge(changes.debounce(UPLOAD_DEBOUNCE), uploadRequests).collectLatest { uploadWithRetry(uid) }
-        } catch (e: CloudChangedElsewhere) {
-            // Back to the check, which lets the user choose between both copies.
+        } catch (e: StopBackingUp) {
+            return e.localDataEmptied
         }
+        error("The data changes never complete")
     }
 
     private suspend fun uploadWithRetry(uid: String) {
@@ -179,7 +192,7 @@ class CloudBackupSync(
             } catch (e: CancellationException) {
                 _state.value = active
                 throw e
-            } catch (e: CloudChangedElsewhere) {
+            } catch (e: StopBackingUp) {
                 throw e
             } catch (e: Exception) {
                 AppLogger.error(TAG, "Cloud backup upload failed", e)
@@ -192,15 +205,21 @@ class CloudBackupSync(
 
     private suspend fun upload(uid: String, checkCloud: Boolean) = uploadMutex.withLock {
         val idToken = authRepository.idToken()
+        val backup = Json.parseToJsonElement(backupRepository.exportJson()).jsonObject
+        val records = recordCount(backup)
         if (checkCloud) {
             val cloud = remote.fetch(uid, idToken, withData = false)
             val link = linkStore.get()
-            if (cloud != null && (link?.uid != uid || link.revision != cloud.revision)) throw CloudChangedElsewhere()
+            if (cloud != null && (link?.uid != uid || link.revision != cloud.revision)) {
+                throw StopBackingUp(localDataEmptied = false)
+            }
+            // A copy from before the record count existed (null) is taken to have data.
+            if (cloud != null && records == 0 && cloud.records != 0) throw StopBackingUp(localDataEmptied = true)
         }
-        val json = compact(backupRepository.exportJson())
         val savedAt = clock.now()
         val revision = newRevision()
-        remote.upload(uid, idToken, CloudBackupDocument(revision, savedAt, json))
+        // The backup file is pretty-printed for people; the cloud copy does not need the whitespace.
+        remote.upload(uid, idToken, CloudBackupDocument(revision, savedAt, records, backup.toString()))
         linkStore.save(CloudLink(uid, revision, savedAt.toEpochMilliseconds()))
         _state.value = CloudBackupState.Active(savedAt)
     }
@@ -212,9 +231,21 @@ class CloudBackupSync(
         }
     }
 
+    /** After signing out the data may change, so the next sign-in compares with the cloud copy again. */
+    private suspend fun forgetLastUpload() {
+        try {
+            linkStore.clear()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLogger.error(TAG, "Could not forget the last cloud upload", e)
+        }
+    }
+
     private enum class Choice { RETRY, USE_CLOUD, KEEP_LOCAL }
 
-    private class CloudChangedElsewhere : Exception("The cloud copy was changed by another device")
+    /** Another device changed the cloud copy, or this device's data was emptied ([localDataEmptied]). */
+    private class StopBackingUp(val localDataEmptied: Boolean) : Exception("The cloud copy needs the user's choice")
 
     private companion object {
         const val TAG = "CloudBackupSync"
@@ -224,8 +255,10 @@ class CloudBackupSync(
     }
 }
 
-/** The backup file is pretty-printed for people; the cloud copy does not need the whitespace. */
-private fun compact(json: String): String = Json.parseToJsonElement(json).toString()
+private val RECORD_KEYS = listOf("assets", "liabilities", "accountGroups", "savingsGoals", "subscriptions")
+
+/** Accounts, debts, groups, goals and subscriptions in a backup: zero means there is nothing to protect. */
+internal fun recordCount(backup: JsonObject): Int = RECORD_KEYS.sumOf { (backup[it] as? JsonArray)?.size ?: 0 }
 
 internal fun cloudBackupErrorFor(error: Exception): CloudBackupError = when (error) {
     is CloudBackupException -> error.error

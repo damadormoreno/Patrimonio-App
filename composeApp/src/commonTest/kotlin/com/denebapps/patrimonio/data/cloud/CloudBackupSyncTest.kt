@@ -33,7 +33,7 @@ import kotlin.time.Duration.Companion.seconds
 class CloudBackupSyncTest {
     private val user = AccountUser("uid-1", "ana@example.com")
     private val auth = FakeAuthRepository(user)
-    private val backup = FakeBackupRepository(exported = "{ \"assets\": [] }")
+    private val backup = FakeBackupRepository(exported = "{ \"assets\": [{ \"id\": \"a1\" }] }")
     private val remote = FakeCloudRemote()
     private val links = InMemoryCloudLinkStore()
     private val changes = FakeLocalDataChanges()
@@ -50,8 +50,8 @@ class CloudBackupSyncTest {
         runCurrent()
     }
 
-    private fun cloudCopy(revision: String, json: String = "{\"cloud\":true}") =
-        CloudBackupDocument(revision, Instant.parse("2026-10-01T08:00:00Z"), json)
+    private fun cloudCopy(revision: String, records: Int? = 3, json: String = "{\"cloud\":true}") =
+        CloudBackupDocument(revision, Instant.parse("2026-10-01T08:00:00Z"), records, json)
 
     @Test
     fun `signed out nothing is checked or uploaded`() = runTest {
@@ -67,7 +67,8 @@ class CloudBackupSyncTest {
         start()
 
         assertEquals(listOf("fetch:meta", "upload:rev-1"), remote.calls)
-        assertEquals("{\"assets\":[]}", remote.document?.json)
+        assertEquals("{\"assets\":[{\"id\":\"a1\"}]}", remote.document?.json)
+        assertEquals(1, remote.document?.records)
         assertEquals(CloudLink("uid-1", "rev-1", clock.now.toEpochMilliseconds()), links.link)
         assertEquals(CloudBackupState.Active(clock.now), sync.state.value)
 
@@ -148,6 +149,60 @@ class CloudBackupSyncTest {
 
         assertTrue(sync.state.value is CloudBackupState.Conflict)
         assertEquals("rev-other", remote.document?.revision)
+    }
+
+    @Test
+    fun `signing in again asks first even when the cloud still has this device's copy`() = runTest {
+        start()
+        assertEquals("rev-1", links.link?.revision)
+
+        auth.signOut()
+        runCurrent()
+        assertNull(links.link)
+        backup.exported = EMPTY_BACKUP
+        auth.signIn("ana@example.com", "secreto")
+        runCurrent()
+        advanceTimeBy(60.seconds)
+
+        assertTrue(sync.state.value is CloudBackupState.Conflict)
+        assertEquals("rev-1", remote.document?.revision)
+    }
+
+    @Test
+    fun `emptied data is not uploaded over a copy with data without asking`() = runTest {
+        start()
+
+        backup.exported = EMPTY_BACKUP
+        changes.emit()
+        advanceTimeBy(6.seconds)
+        runCurrent()
+
+        assertTrue(sync.state.value is CloudBackupState.Conflict)
+        assertEquals("rev-1", remote.document?.revision)
+
+        // Keeping the empty data is a choice; after that an empty copy is backed up as usual.
+        sync.keepLocalData()
+        runCurrent()
+        assertEquals(0, remote.document?.records)
+        changes.emit()
+        advanceTimeBy(6.seconds)
+        runCurrent()
+        assertEquals("rev-3", remote.document?.revision)
+        assertTrue(sync.state.value is CloudBackupState.Active)
+    }
+
+    @Test
+    fun `an empty device with an old copy without a record count asks too`() = runTest {
+        remote.document = cloudCopy("rev-0", records = null)
+        links.link = CloudLink("uid-1", "rev-0", 1_000)
+        backup.exported = EMPTY_BACKUP
+        start()
+
+        advanceTimeBy(6.seconds)
+        runCurrent()
+
+        assertTrue(sync.state.value is CloudBackupState.Conflict)
+        assertEquals("rev-0", remote.document?.revision)
     }
 
     @Test
@@ -275,7 +330,14 @@ private class InMemoryCloudLinkStore : CloudLinkStore {
     override suspend fun save(link: CloudLink) {
         this.link = link
     }
+
+    override suspend fun clear() {
+        link = null
+    }
 }
+
+private const val EMPTY_BACKUP =
+    "{\"assets\":[],\"liabilities\":[],\"accountGroups\":[],\"savingsGoals\":[],\"subscriptions\":[]}"
 
 private class FakeLocalDataChanges : LocalDataChanges {
     private val changes = MutableSharedFlow<Unit>(extraBufferCapacity = 8)

@@ -28,8 +28,12 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
-/** The cloud copy. [revision] identifies the upload that wrote it; [json] is null when only the metadata was read. */
-data class CloudBackupDocument(val revision: String, val savedAt: Instant, val json: String?)
+/**
+ * The cloud copy. [revision] identifies the upload that wrote it; [records] counts its accounts, debts, groups,
+ * goals and subscriptions (null in copies written before it existed); [json] is null when only the metadata
+ * was read.
+ */
+data class CloudBackupDocument(val revision: String, val savedAt: Instant, val records: Int?, val json: String?)
 
 /** One backup document per account in the cloud. Failures are [CloudBackupException]s. */
 interface CloudBackupRemote {
@@ -59,6 +63,7 @@ class FirestoreBackupApi(
                 if (!withData) {
                     parameter(MASK, REVISION)
                     parameter(MASK, SAVED_AT)
+                    parameter(MASK, RECORDS)
                 }
             }
         }
@@ -75,6 +80,9 @@ class FirestoreBackupApi(
                 buildJsonObject {
                     put(REVISION, stringValue(document.revision))
                     put(SAVED_AT, buildJsonObject { put("timestampValue", document.savedAt.toString()) })
+                    document.records?.let { records ->
+                        put(RECORDS, buildJsonObject { put("integerValue", records.toString()) })
+                    }
                     val chunks = JsonArray(utf8Chunks(json).map(::stringValue))
                     put(DATA, buildJsonObject { put("arrayValue", buildJsonObject { put("values", chunks) }) })
                 },
@@ -122,6 +130,7 @@ class FirestoreBackupApi(
         CloudBackupDocument(
             revision = fields.value(REVISION, "stringValue"),
             savedAt = Instant.parse(fields.value(SAVED_AT, "timestampValue")),
+            records = fields[RECORDS]?.let { fields.value(RECORDS, "integerValue").toInt() },
             json = if (withData) {
                 fields.getValue(DATA).jsonObject.getValue("arrayValue").jsonObject["values"]
                     ?.jsonArray
@@ -147,6 +156,7 @@ class FirestoreBackupApi(
         const val MASK = "mask.fieldPaths"
         const val REVISION = "revision"
         const val SAVED_AT = "savedAt"
+        const val RECORDS = "records"
         const val DATA = "data"
 
         /** Firestore documents hold up to 1 MiB; the rest is headroom for the field names and array overhead. */

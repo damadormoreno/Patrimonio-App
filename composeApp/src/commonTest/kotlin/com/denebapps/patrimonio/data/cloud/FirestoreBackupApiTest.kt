@@ -51,7 +51,7 @@ class FirestoreBackupApiTest {
         val api = api { respondJson("{}") }
         val json = "{\"name\":\"" + "á".repeat(1_000) + "\"}"
 
-        api.upload("uid-1", "id-1", CloudBackupDocument("rev-1", SAVED_AT, json))
+        api.upload("uid-1", "id-1", CloudBackupDocument("rev-1", SAVED_AT, records = 7, json))
 
         val request = requests.single()
         assertEquals(HttpMethod.Patch, request.method)
@@ -67,6 +67,7 @@ class FirestoreBackupApiTest {
         )
         val chunks = fields.getValue("data").jsonObject.getValue("arrayValue").jsonObject.getValue("values").jsonArray
             .map { it.jsonObject.getValue("stringValue").jsonPrimitive.content }
+        assertEquals("7", fields.getValue("records").jsonObject.getValue("integerValue").jsonPrimitive.content)
         assertEquals(2, chunks.size)
         assertEquals(json, chunks.joinToString(""))
     }
@@ -75,15 +76,19 @@ class FirestoreBackupApiTest {
     fun `fetch without data asks only for the metadata`() = runTest {
         val api = api {
             respondJson(
-                """{"name":"x","fields":{"revision":{"stringValue":"rev-1"},""" +
+                """{"name":"x","fields":{"revision":{"stringValue":"rev-1"},"records":{"integerValue":"7"},""" +
                     """"savedAt":{"timestampValue":"2026-10-08T09:00:00.123456Z"}}}""",
             )
         }
 
         val document = api.fetch("uid-1", "id-1", withData = false)
 
-        assertEquals(CloudBackupDocument("rev-1", Instant.parse("2026-10-08T09:00:00.123456Z"), null), document)
-        assertEquals(listOf("revision", "savedAt"), requests.single().url.parameters.getAll("mask.fieldPaths"))
+        val savedAt = Instant.parse("2026-10-08T09:00:00.123456Z")
+        assertEquals(CloudBackupDocument("rev-1", savedAt, records = 7, json = null), document)
+        assertEquals(
+            listOf("revision", "savedAt", "records"),
+            requests.single().url.parameters.getAll("mask.fieldPaths"),
+        )
         assertEquals("Bearer id-1", requests.single().headers[HttpHeaders.Authorization])
     }
 
@@ -100,6 +105,8 @@ class FirestoreBackupApiTest {
         val document = api.fetch("uid-1", "id-1", withData = true)
 
         assertEquals("{\"a\":1}", document?.json)
+        // Copies from before the record count have none.
+        assertNull(document?.records)
         assertTrue(requests.single().url.parameters.getAll("mask.fieldPaths").isNullOrEmpty())
     }
 
@@ -156,7 +163,7 @@ class FirestoreBackupApiTest {
         val api = api { respondJson("{}") }
 
         val error = assertFailsWith<CloudBackupException> {
-            api.upload("uid-1", "id-1", CloudBackupDocument("r", SAVED_AT, "x".repeat(950_000)))
+            api.upload("uid-1", "id-1", CloudBackupDocument("r", SAVED_AT, records = 1, "x".repeat(950_000)))
         }
 
         assertEquals(CloudBackupError.TOO_LARGE, error.error)
