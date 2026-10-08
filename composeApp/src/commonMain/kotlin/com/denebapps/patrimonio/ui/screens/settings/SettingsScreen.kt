@@ -517,5 +517,7 @@ private fun accountSubtitle(cloud: CloudBackupState): String = when (cloud) {
     is CloudBackupState.Active ->
         if (cloud.failure != null) "No se pudo guardar la última copia" else "Copia en la nube activada"
     is CloudBackupState.CheckFailed -> "La copia en la nube no está al día"
+    is CloudBackupState.NeedsPassphrase ->
+        if (cloud.unlock) "Escribe tu frase de cifrado" else "Crea una frase para activar la copia"
     else -> "Sesión iniciada"
 }

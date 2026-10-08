@@ -9,6 +9,7 @@ import com.denebapps.patrimonio.domain.repository.CloudBackupState
 import com.denebapps.patrimonio.domain.repository.InvalidBackupException
 import com.denebapps.patrimonio.testing.FakeAuthRepository
 import com.denebapps.patrimonio.testing.FakeBackupRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -24,6 +25,7 @@ import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -43,15 +45,34 @@ class CloudBackupSyncTest {
         override fun now() = now
     }
     private var revisions = 0
-    private val sync = CloudBackupSync(auth, backup, remote, links, changes, clock) { "rev-${++revisions}" }
 
-    private fun TestScope.start() {
+    // Few PBKDF2 iterations and no thread switch keep the tests fast and in virtual time.
+    private val crypto = BackupCrypto(iterations = 1_000, dispatcher = Dispatchers.Unconfined)
+    private val sync = CloudBackupSync(auth, backup, remote, links, changes, clock, crypto) { "rev-${++revisions}" }
+    private var deviceKey: CloudKey? = null
+
+    /** The account's data key, created once with [PASSPHRASE]. */
+    private suspend fun key(): CloudKey = deviceKey ?: crypto.createKey("key-1", PASSPHRASE).also { deviceKey = it }
+
+    /** Starts the backup; by default this device already holds the account's data key. */
+    private suspend fun TestScope.start(deviceHasKey: Boolean = true) {
+        if (deviceHasKey) links.saveKey("uid-1", key())
         backgroundScope.launch { sync.run() }
         runCurrent()
     }
 
-    private fun cloudCopy(revision: String, records: Int? = 3, json: String = "{\"cloud\":true}") =
-        CloudBackupDocument(revision, Instant.parse("2026-10-01T08:00:00Z"), records, json)
+    /** A copy in the cloud, encrypted with the account's key unless [encrypted] is false (before encryption). */
+    private suspend fun cloudCopy(
+        revision: String,
+        records: Int? = 3,
+        json: String = CLOUD_JSON,
+        encrypted: Boolean = true,
+    ): CloudBackupDocument {
+        val data = if (encrypted) crypto.encrypt(key(), "uid-1", json) else json
+        return CloudBackupDocument(revision, CLOUD_SAVED_AT, records, key().wrapped.takeIf { encrypted }, data)
+    }
+
+    private suspend fun uploadedJson(): String = crypto.decrypt(key(), "uid-1", remote.document?.data.orEmpty())
 
     @Test
     fun `signed out nothing is checked or uploaded`() = runTest {
@@ -67,7 +88,9 @@ class CloudBackupSyncTest {
         start()
 
         assertEquals(listOf("fetch:meta", "upload:rev-1"), remote.calls)
-        assertEquals("{\"assets\":[{\"id\":\"a1\"}]}", remote.document?.json)
+        assertEquals("{\"assets\":[{\"id\":\"a1\"}]}", uploadedJson())
+        assertFalse("a1" in remote.document?.data.orEmpty())
+        assertEquals("key-1", remote.document?.key?.keyId)
         assertEquals(1, remote.document?.records)
         assertEquals(CloudLink("uid-1", "rev-1", clock.now.toEpochMilliseconds()), links.link)
         assertEquals(CloudBackupState.Active(clock.now), sync.state.value)
@@ -162,6 +185,10 @@ class CloudBackupSyncTest {
         backup.exported = EMPTY_BACKUP
         auth.signIn("ana@example.com", "secreto")
         runCurrent()
+        // Signing out also forgot the data key, so the passphrase comes first.
+        assertEquals(CloudBackupState.NeedsPassphrase(unlock = true), sync.state.value)
+        sync.submitPassphrase(PASSPHRASE)
+        runCurrent()
         advanceTimeBy(60.seconds)
 
         assertTrue(sync.state.value is CloudBackupState.Conflict)
@@ -203,6 +230,101 @@ class CloudBackupSyncTest {
 
         assertTrue(sync.state.value is CloudBackupState.Conflict)
         assertEquals("rev-0", remote.document?.revision)
+    }
+
+    @Test
+    fun `the first copy waits for a new passphrase and is encrypted with it`() = runTest {
+        start(deviceHasKey = false)
+        assertEquals(CloudBackupState.NeedsPassphrase(unlock = false), sync.state.value)
+        assertEquals(listOf("fetch:meta"), remote.calls)
+
+        sync.startOver("ignorada") // only when unlocking
+        sync.submitPassphrase("mi frase nueva")
+        runCurrent()
+
+        assertEquals(listOf("fetch:meta", "upload:rev-1"), remote.calls)
+        val uploaded = remote.document!!
+        val opened = crypto.unwrap(uploaded.key!!, "mi frase nueva")
+        assertEquals(links.keys["uid-1"], opened)
+        assertEquals("{\"assets\":[{\"id\":\"a1\"}]}", crypto.decrypt(opened, "uid-1", uploaded.data!!))
+        assertFailsWith<WrongPassphraseException> { crypto.unwrap(uploaded.key!!, "otra") }
+    }
+
+    @Test
+    fun `a new device opens the cloud copy with the passphrase and can restore it`() = runTest {
+        remote.document = cloudCopy("rev-0")
+        start(deviceHasKey = false)
+        assertEquals(CloudBackupState.NeedsPassphrase(unlock = true), sync.state.value)
+
+        sync.submitPassphrase("no es esta")
+        runCurrent()
+        assertEquals(CloudBackupState.NeedsPassphrase(unlock = true, wrongPassphrase = true), sync.state.value)
+        assertTrue(links.keys.isEmpty())
+
+        sync.submitPassphrase(PASSPHRASE)
+        runCurrent()
+        assertEquals(key(), links.keys["uid-1"])
+        assertEquals(CloudBackupState.Conflict(CLOUD_SAVED_AT), sync.state.value)
+
+        sync.useCloudCopy()
+        runCurrent()
+        assertEquals(listOf(CLOUD_JSON), backup.imported)
+        assertEquals(CloudBackupState.Active(CLOUD_SAVED_AT), sync.state.value)
+    }
+
+    @Test
+    fun `a forgotten passphrase starts over with this device's data`() = runTest {
+        remote.document = cloudCopy("rev-0")
+        start(deviceHasKey = false)
+
+        sync.startOver("frase nueva")
+        runCurrent()
+
+        val uploaded = remote.document!!
+        assertEquals("rev-1", uploaded.revision)
+        assertTrue(uploaded.key!!.keyId != "key-1")
+        val opened = crypto.unwrap(uploaded.key!!, "frase nueva")
+        assertEquals("{\"assets\":[{\"id\":\"a1\"}]}", crypto.decrypt(opened, "uid-1", uploaded.data!!))
+        assertEquals(CloudBackupState.Active(clock.now), sync.state.value)
+        assertTrue(backup.imported.isEmpty())
+    }
+
+    @Test
+    fun `a copy from before encryption asks for a passphrase and can still be restored`() = runTest {
+        remote.document = cloudCopy("rev-0", encrypted = false)
+        start(deviceHasKey = false)
+        assertEquals(CloudBackupState.NeedsPassphrase(unlock = false), sync.state.value)
+
+        sync.submitPassphrase("mi frase nueva")
+        runCurrent()
+        assertTrue(sync.state.value is CloudBackupState.Conflict)
+
+        sync.useCloudCopy()
+        runCurrent()
+        assertEquals(listOf(CLOUD_JSON), backup.imported)
+
+        // The next copy goes up encrypted.
+        changes.emit()
+        advanceTimeBy(6.seconds)
+        runCurrent()
+        assertTrue(sync.state.value is CloudBackupState.Active)
+        assertNotNull(remote.document?.key)
+        assertFalse("a1" in remote.document?.data.orEmpty())
+    }
+
+    @Test
+    fun `changing the passphrase re-wraps the same key and uploads it`() = runTest {
+        start()
+
+        sync.changePassphrase("frase cambiada")
+        advanceTimeBy(6.seconds)
+        runCurrent()
+
+        val uploaded = remote.document!!
+        assertEquals("rev-2", uploaded.revision)
+        assertEquals(key().secret, crypto.unwrap(uploaded.key!!, "frase cambiada").secret)
+        assertFailsWith<WrongPassphraseException> { crypto.unwrap(uploaded.key!!, PASSPHRASE) }
+        assertEquals("key-1", uploaded.key!!.keyId)
     }
 
     @Test
@@ -306,7 +428,7 @@ private class FakeCloudRemote : CloudBackupRemote {
     override suspend fun fetch(uid: String, idToken: String, withData: Boolean): CloudBackupDocument? {
         calls += if (withData) "fetch:data" else "fetch:meta"
         failure?.let { throw CloudBackupException(it) }
-        return document?.let { if (withData) it else it.copy(json = null) }
+        return document?.let { if (withData) it else it.copy(data = null) }
     }
 
     override suspend fun upload(uid: String, idToken: String, document: CloudBackupDocument) {
@@ -324,6 +446,7 @@ private class FakeCloudRemote : CloudBackupRemote {
 
 private class InMemoryCloudLinkStore : CloudLinkStore {
     var link: CloudLink? = null
+    val keys = mutableMapOf<String, CloudKey>()
 
     override suspend fun get() = link
 
@@ -331,10 +454,21 @@ private class InMemoryCloudLinkStore : CloudLinkStore {
         this.link = link
     }
 
+    override suspend fun key(uid: String) = keys[uid]
+
+    override suspend fun saveKey(uid: String, key: CloudKey) {
+        keys[uid] = key
+    }
+
     override suspend fun clear() {
         link = null
+        keys.clear()
     }
 }
+
+private const val PASSPHRASE = "frase de prueba"
+private const val CLOUD_JSON = "{\"cloud\":true}"
+private val CLOUD_SAVED_AT = Instant.parse("2026-10-01T08:00:00Z")
 
 private const val EMPTY_BACKUP =
     "{\"assets\":[],\"liabilities\":[],\"accountGroups\":[],\"savingsGoals\":[],\"subscriptions\":[]}"

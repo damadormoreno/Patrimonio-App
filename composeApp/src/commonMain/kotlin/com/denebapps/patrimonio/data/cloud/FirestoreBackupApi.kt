@@ -30,17 +30,24 @@ import kotlinx.serialization.json.put
 
 /**
  * The cloud copy. [revision] identifies the upload that wrote it; [records] counts its accounts, debts, groups,
- * goals and subscriptions (null in copies written before it existed); [json] is null when only the metadata
- * was read.
+ * goals and subscriptions (null in copies written before it existed). [key] is the wrapped data key that
+ * encrypted [data] (null in copies from before encryption, whose [data] is the plain backup JSON). [data] is
+ * null when only the metadata was read.
  */
-data class CloudBackupDocument(val revision: String, val savedAt: Instant, val records: Int?, val json: String?)
+data class CloudBackupDocument(
+    val revision: String,
+    val savedAt: Instant,
+    val records: Int?,
+    val key: WrappedDataKey?,
+    val data: String?,
+)
 
 /** One backup document per account in the cloud. Failures are [CloudBackupException]s. */
 interface CloudBackupRemote {
     /** Null when the account has no copy yet. With [withData] false only the metadata is downloaded. */
     suspend fun fetch(uid: String, idToken: String, withData: Boolean): CloudBackupDocument?
 
-    /** Replaces the copy; [CloudBackupDocument.json] must be set. */
+    /** Replaces the copy; [CloudBackupDocument.data] must be set. */
     suspend fun upload(uid: String, idToken: String, document: CloudBackupDocument)
 
     /** Deletes the copy; deleting a copy that does not exist succeeds. */
@@ -49,8 +56,9 @@ interface CloudBackupRemote {
 
 /**
  * Cloud Firestore over its REST API: the copy lives at `users/{uid}/backup/latest`, which the security rules
- * open only to that user (docs/cloud-account.md). The JSON is stored as an array of strings of at most
- * [MAX_CHUNK_BYTES], because Firestore indexes every field and limits indexed strings to 1,500 bytes.
+ * open only to that user (docs/cloud-account.md). The data is stored as an array of strings of at most
+ * [MAX_CHUNK_BYTES], because Firestore indexes every field and limits indexed strings to 1,500 bytes; the
+ * wrapped key sits next to it, so a copy and the key that opens it are always written together.
  */
 class FirestoreBackupApi(
     private val httpClient: HttpClient,
@@ -60,11 +68,7 @@ class FirestoreBackupApi(
         val response = send {
             httpClient.get(documentUrl(uid)) {
                 bearerAuth(idToken)
-                if (!withData) {
-                    parameter(MASK, REVISION)
-                    parameter(MASK, SAVED_AT)
-                    parameter(MASK, RECORDS)
-                }
+                if (!withData) METADATA_FIELDS.forEach { parameter(MASK, it) }
             }
         }
         if (response.status == HttpStatusCode.NotFound) return null
@@ -72,8 +76,8 @@ class FirestoreBackupApi(
     }
 
     override suspend fun upload(uid: String, idToken: String, document: CloudBackupDocument) {
-        val json = requireNotNull(document.json) { "Uploading a backup needs its JSON" }
-        if (json.encodeToByteArray().size > MAX_DATA_BYTES) throw CloudBackupException(CloudBackupError.TOO_LARGE)
+        val data = requireNotNull(document.data) { "Uploading a backup needs its data" }
+        if (data.encodeToByteArray().size > MAX_DATA_BYTES) throw CloudBackupException(CloudBackupError.TOO_LARGE)
         val body = buildJsonObject {
             put(
                 "fields",
@@ -83,7 +87,13 @@ class FirestoreBackupApi(
                     document.records?.let { records ->
                         put(RECORDS, buildJsonObject { put("integerValue", records.toString()) })
                     }
-                    val chunks = JsonArray(utf8Chunks(json).map(::stringValue))
+                    document.key?.let { key ->
+                        put(KEY_ID, stringValue(key.keyId))
+                        put(KDF_SALT, stringValue(key.salt))
+                        put(KDF_ITERATIONS, buildJsonObject { put("integerValue", key.iterations.toString()) })
+                        put(WRAPPED_KEY, stringValue(key.wrapped))
+                    }
+                    val chunks = JsonArray(utf8Chunks(data).map(::stringValue))
                     put(DATA, buildJsonObject { put("arrayValue", buildJsonObject { put("values", chunks) }) })
                 },
             )
@@ -131,7 +141,15 @@ class FirestoreBackupApi(
             revision = fields.value(REVISION, "stringValue"),
             savedAt = Instant.parse(fields.value(SAVED_AT, "timestampValue")),
             records = fields[RECORDS]?.let { fields.value(RECORDS, "integerValue").toInt() },
-            json = if (withData) {
+            key = fields[KEY_ID]?.let {
+                WrappedDataKey(
+                    keyId = fields.value(KEY_ID, "stringValue"),
+                    salt = fields.value(KDF_SALT, "stringValue"),
+                    iterations = fields.value(KDF_ITERATIONS, "integerValue").toInt(),
+                    wrapped = fields.value(WRAPPED_KEY, "stringValue"),
+                )
+            },
+            data = if (withData) {
                 fields.getValue(DATA).jsonObject.getValue("arrayValue").jsonObject["values"]
                     ?.jsonArray
                     .orEmpty()
@@ -158,6 +176,11 @@ class FirestoreBackupApi(
         const val SAVED_AT = "savedAt"
         const val RECORDS = "records"
         const val DATA = "data"
+        const val KEY_ID = "keyId"
+        const val KDF_SALT = "kdfSalt"
+        const val KDF_ITERATIONS = "kdfIterations"
+        const val WRAPPED_KEY = "wrappedKey"
+        val METADATA_FIELDS = listOf(REVISION, SAVED_AT, RECORDS, KEY_ID, KDF_SALT, KDF_ITERATIONS, WRAPPED_KEY)
 
         /** Firestore documents hold up to 1 MiB; the rest is headroom for the field names and array overhead. */
         const val MAX_DATA_BYTES = 900_000

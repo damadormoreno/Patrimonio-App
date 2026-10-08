@@ -23,6 +23,8 @@ navigationCompose = "2.9.2"
 lifecycleViewmodel = "2.9.1"
 filekit = "0.12.0"
 androidxWork = "2.10.0"
+# 0.6.x is built with Kotlin 2.3; 0.5.0 matches the Kotlin 2.2 compiler.
+cryptography = "0.5.0"
 
 [libraries]
 androidx-work-runtime = { module = "androidx.work:work-runtime", version.ref = "androidxWork" }
@@ -51,6 +53,8 @@ ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx
 ktor-client-android = { module = "io.ktor:ktor-client-android", version.ref = "ktor" }
 ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "ktor" }
 ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
+cryptography-core = { module = "dev.whyoleg.cryptography:cryptography-core", version.ref = "cryptography" }
+cryptography-provider-optimal = { module = "dev.whyoleg.cryptography:cryptography-provider-optimal", version.ref = "cryptography" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTestCore" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTestRunner" }

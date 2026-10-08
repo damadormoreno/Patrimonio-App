@@ -164,9 +164,32 @@ class AccountViewModelTest {
         vm.onKeepLocalData()
         vm.onRetryCloud()
         vm.onBackUpNow()
+        vm.onSubmitPassphrase("frase uno")
+        vm.onStartOver("frase dos")
+        vm.onChangePassphrase("frase tres")
+        advanceUntilIdle()
 
-        assertEquals(listOf("useCloudCopy", "keepLocalData", "retry", "backUpNow"), cloud.calls)
+        assertEquals(
+            listOf(
+                "useCloudCopy",
+                "keepLocalData",
+                "retry",
+                "backUpNow",
+                "submitPassphrase:frase uno",
+                "startOver:frase dos",
+                "changePassphrase:frase tres",
+            ),
+            cloud.calls,
+        )
+        assertEquals("Frase cambiada. La copia de la nube se abre ya con la nueva.", vm.state.value.info)
         job.cancel()
+    }
+
+    @Test
+    fun `a new passphrase needs 8 characters typed twice`() {
+        assertEquals("La frase debe tener al menos 8 caracteres.", passphraseProblem("corta", "corta"))
+        assertEquals("Las dos frases no coinciden.", passphraseProblem("frase larga", "frase largo"))
+        assertNull(passphraseProblem("frase larga", "frase larga"))
     }
 
     @Test

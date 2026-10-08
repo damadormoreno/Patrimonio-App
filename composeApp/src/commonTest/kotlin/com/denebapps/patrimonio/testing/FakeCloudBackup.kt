@@ -33,6 +33,18 @@ class FakeCloudBackup(private val auth: AuthRepository = FakeAuthRepository()) :
         calls += "backUpNow"
     }
 
+    override fun submitPassphrase(passphrase: String) {
+        calls += "submitPassphrase:$passphrase"
+    }
+
+    override fun startOver(passphrase: String) {
+        calls += "startOver:$passphrase"
+    }
+
+    override suspend fun changePassphrase(passphrase: String) {
+        calls += "changePassphrase:$passphrase"
+    }
+
     override suspend fun deleteAccount(password: String) {
         auth.deleteAccount(password) {
             calls += "deleteCloudCopy"

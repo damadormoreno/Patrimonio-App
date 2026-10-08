@@ -133,6 +133,18 @@ class AccountViewModel(private val authRepository: AuthRepository, private val c
 
     fun onBackUpNow() = cloudBackup.backUpNow()
 
+    /** Creates the passphrase, or opens the encrypted cloud copy with it. */
+    fun onSubmitPassphrase(passphrase: String) = cloudBackup.submitPassphrase(passphrase)
+
+    /** Forgotten passphrase: the cloud copy is replaced with this device's data under [passphrase]. */
+    fun onStartOver(passphrase: String) = cloudBackup.startOver(passphrase)
+
+    fun onChangePassphrase(passphrase: String) {
+        run(successInfo = "Frase cambiada. La copia de la nube se abre ya con la nueva.") {
+            cloudBackup.changePassphrase(passphrase)
+        }
+    }
+
     private fun run(successInfo: String?, action: suspend () -> Unit) {
         form.update { it.copy(busy = true, error = null, info = null) }
         viewModelScope.launch {
@@ -157,6 +169,15 @@ internal fun messageFor(error: AuthError): String = when (error) {
     AuthError.NOT_SIGNED_IN, AuthError.SESSION_EXPIRED -> "La sesión ha caducado. Vuelve a iniciar sesión."
     AuthError.NETWORK -> "No hay conexión. Inténtalo de nuevo."
     AuthError.UNKNOWN -> "No se ha podido completar. Inténtalo de nuevo."
+}
+
+internal const val MIN_PASSPHRASE_LENGTH = 8
+
+/** Why a new passphrase cannot be used yet, or null when it can. */
+internal fun passphraseProblem(passphrase: String, confirmation: String): String? = when {
+    passphrase.length < MIN_PASSPHRASE_LENGTH -> "La frase debe tener al menos $MIN_PASSPHRASE_LENGTH caracteres."
+    passphrase != confirmation -> "Las dos frases no coinciden."
+    else -> null
 }
 
 internal fun cloudMessageFor(error: CloudBackupError): String = when (error) {
