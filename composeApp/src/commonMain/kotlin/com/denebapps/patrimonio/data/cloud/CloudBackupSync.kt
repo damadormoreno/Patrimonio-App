@@ -10,6 +10,7 @@ import com.denebapps.patrimonio.domain.repository.CloudBackupError
 import com.denebapps.patrimonio.domain.repository.CloudBackupException
 import com.denebapps.patrimonio.domain.repository.CloudBackupState
 import com.denebapps.patrimonio.domain.repository.InvalidBackupException
+import com.denebapps.patrimonio.domain.repository.Reauthentication
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.BufferOverflow
@@ -133,9 +134,9 @@ class CloudBackupSync(
         uploadRequests.tryEmit(Unit)
     }
 
-    override suspend fun deleteAccount(password: String) {
+    override suspend fun deleteAccount(reauthentication: Reauthentication) {
         uploadMutex.withLock {
-            authRepository.deleteAccount(password) {
+            authRepository.deleteAccount(reauthentication) {
                 val uid = authRepository.observeUser().first()?.uid ?: throw AuthException(AuthError.NOT_SIGNED_IN)
                 remote.delete(uid, authRepository.idToken())
             }

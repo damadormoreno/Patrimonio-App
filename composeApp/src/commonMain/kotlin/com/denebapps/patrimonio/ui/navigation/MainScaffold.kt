@@ -23,7 +23,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
-import com.denebapps.patrimonio.ui.components.Avatar
 import com.denebapps.patrimonio.ui.components.Fab
 import com.denebapps.patrimonio.ui.components.TabBar
 import com.denebapps.patrimonio.ui.components.TabItem
@@ -36,6 +35,7 @@ import com.denebapps.patrimonio.ui.screens.patrimonio.NuevoGrupoSheet
 import com.denebapps.patrimonio.ui.screens.patrimonio.PatrimonioScreen
 import com.denebapps.patrimonio.ui.screens.patrimonio.PatrimonioView
 import com.denebapps.patrimonio.ui.screens.perfil.PerfilScreen
+import com.denebapps.patrimonio.ui.screens.perfil.ProfileAvatar
 import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
 import com.denebapps.patrimonio.ui.screens.savings.GoalAllocateSheet
 import com.denebapps.patrimonio.ui.screens.savings.NewGoalSheet
@@ -220,9 +220,8 @@ private fun MainHeaderAffordances(
         horizontalArrangement = Arrangement.End,
     ) {
         if (TabMapping.fabVisible(routeName)) {
-            Avatar(
+            ProfileAvatar(
                 initials = profile.initials,
-                icon = AppIcons.user.takeIf { profile.initials == null },
                 size = 38.dp,
                 modifier = Modifier
                     .clip(CircleShape)

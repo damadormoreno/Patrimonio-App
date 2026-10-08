@@ -11,3 +11,10 @@
 # R8 renames classes, so code must not compare KClass names with strings fixed at compile time: the tab
 # lookup used `Patrimonio::class.qualifiedName` against navigation's route names and lost the header
 # and the FAB. Use the serial name instead (TabMapping.routeName).
+
+# Credential Manager finds its Google Play services provider by reflection (rule from the Credential Manager
+# docs: without it Sign in with Google fails in minified builds with "no provider dependencies found").
+-if class androidx.credentials.CredentialManager
+-keep class androidx.credentials.playservices.** {
+  *;
+}

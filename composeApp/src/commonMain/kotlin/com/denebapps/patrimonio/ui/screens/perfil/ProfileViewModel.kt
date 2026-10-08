@@ -2,8 +2,12 @@ package com.denebapps.patrimonio.ui.screens.perfil
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.denebapps.patrimonio.data.platform.AppLogger
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
+import com.denebapps.patrimonio.domain.repository.ProfilePhotoRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -17,6 +21,9 @@ data class ProfileUiState(
     val firstName: String,
     val lastName: String,
     val initials: String?,
+    val hasPhoto: Boolean = false,
+    /** One-line message after a picked image could not be used. */
+    val photoError: String? = null,
 )
 
 /**
@@ -26,15 +33,22 @@ data class ProfileUiState(
  */
 class ProfileViewModel(
     private val preferencesRepository: PreferencesRepository,
+    private val photoRepository: ProfilePhotoRepository,
 ) : ViewModel() {
+    private val photoError = MutableStateFlow<String?>(null)
+
     val state: StateFlow<ProfileUiState> = combine(
         preferencesRepository.observeFirstName(),
         preferencesRepository.observeLastName(),
-    ) { firstName, lastName ->
+        photoRepository.photo,
+        photoError,
+    ) { firstName, lastName, photo, error ->
         ProfileUiState(
             firstName = firstName,
             lastName = lastName,
             initials = profileInitials(firstName, lastName),
+            hasPhoto = photo != null,
+            photoError = error,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -56,5 +70,25 @@ class ProfileViewModel(
         viewModelScope.launch {
             withContext(NonCancellable) { preferencesRepository.setLastName(value) }
         }
+    }
+
+    /** [read] gives the bytes of the image picked in the gallery. */
+    fun onPhotoPicked(read: suspend () -> ByteArray) {
+        photoError.value = null
+        viewModelScope.launch {
+            try {
+                photoRepository.setImage(read())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLogger.error("ProfileViewModel", "Could not use the picked image", e)
+                photoError.value = "No se pudo usar esa imagen."
+            }
+        }
+    }
+
+    fun onRemovePhoto() {
+        photoError.value = null
+        viewModelScope.launch { photoRepository.clear() }
     }
 }

@@ -5,6 +5,7 @@ import com.denebapps.patrimonio.domain.repository.CloudBackup
 import com.denebapps.patrimonio.domain.repository.CloudBackupError
 import com.denebapps.patrimonio.domain.repository.CloudBackupException
 import com.denebapps.patrimonio.domain.repository.CloudBackupState
+import com.denebapps.patrimonio.domain.repository.Reauthentication
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /** Records the calls; [state] is set by the test. [deleteFailure] makes deleting the cloud copy fail. */
@@ -45,8 +46,8 @@ class FakeCloudBackup(private val auth: AuthRepository = FakeAuthRepository()) :
         calls += "changePassphrase:$passphrase"
     }
 
-    override suspend fun deleteAccount(password: String) {
-        auth.deleteAccount(password) {
+    override suspend fun deleteAccount(reauthentication: Reauthentication) {
+        auth.deleteAccount(reauthentication) {
             calls += "deleteCloudCopy"
             deleteFailure?.let { throw CloudBackupException(it) }
         }

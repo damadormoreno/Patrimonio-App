@@ -2,6 +2,7 @@ package com.denebapps.patrimonio.data.auth
 
 import com.denebapps.patrimonio.domain.repository.AuthError
 import com.denebapps.patrimonio.domain.repository.AuthException
+import com.denebapps.patrimonio.domain.repository.GoogleProfile
 import io.ktor.client.HttpClient
 import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.parameter
@@ -40,6 +41,28 @@ class FirebaseAuthApi(private val httpClient: HttpClient, private val apiKey: St
 
     suspend fun signIn(email: String, password: String): AuthTokens =
         accounts("signInWithPassword", EmailPasswordRequest(email, password)).decode<SignInResponse>().toTokens()
+
+    /** Signs in with a Google ID token; Firebase creates the account the first time. */
+    suspend fun signInWithIdp(googleIdToken: String): IdpSignIn {
+        val response = accounts("signInWithIdp", IdpRequest("id_token=$googleIdToken&providerId=google.com"))
+            .decode<IdpResponse>()
+        // The email already belongs to an account that signs in another way and Google cannot vouch for it.
+        if (response.needConfirmation) throw AuthException(AuthError.EMAIL_IN_USE)
+        return IdpSignIn(
+            tokens = AuthTokens(
+                uid = response.localId,
+                email = response.email,
+                idToken = response.idToken,
+                refreshToken = response.refreshToken,
+                expiresInSeconds = response.expiresIn.toLong(),
+            ),
+            profile = GoogleProfile(
+                firstName = response.firstName?.takeIf { it.isNotBlank() },
+                lastName = response.lastName?.takeIf { it.isNotBlank() },
+                photoUrl = response.photoUrl?.takeIf { it.isNotBlank() },
+            ),
+        )
+    }
 
     suspend fun sendPasswordReset(email: String) {
         accounts("sendOobCode", OobCodeRequest(requestType = "PASSWORD_RESET", email = email))
@@ -101,6 +124,9 @@ class FirebaseAuthApi(private val httpClient: HttpClient, private val apiKey: St
     }
 }
 
+/** A Google sign-in: the session tokens and what Google shares about the user. */
+data class IdpSignIn(val tokens: AuthTokens, val profile: GoogleProfile)
+
 /** Firebase sends codes like `EMAIL_EXISTS` or `WEAK_PASSWORD : Password should be at least 6 characters`. */
 internal fun authErrorFor(message: String): AuthError = when (message.substringBefore(' ')) {
     "EMAIL_EXISTS" -> AuthError.EMAIL_IN_USE
@@ -108,6 +134,8 @@ internal fun authErrorFor(message: String): AuthError = when (message.substringB
     "WEAK_PASSWORD", "MISSING_PASSWORD" -> AuthError.WEAK_PASSWORD
     "INVALID_LOGIN_CREDENTIALS", "EMAIL_NOT_FOUND", "INVALID_PASSWORD", "USER_DISABLED" -> AuthError.WRONG_CREDENTIALS
     "TOO_MANY_ATTEMPTS_TRY_LATER" -> AuthError.TOO_MANY_ATTEMPTS
+    // The provider is off in Firebase, or the token was issued for a client Firebase does not trust.
+    "OPERATION_NOT_ALLOWED", "INVALID_IDP_RESPONSE", "CONFIGURATION_NOT_FOUND" -> AuthError.NOT_AVAILABLE
     "TOKEN_EXPIRED", "INVALID_REFRESH_TOKEN", "INVALID_ID_TOKEN", "USER_NOT_FOUND", "CREDENTIAL_TOO_OLD_LOGIN_AGAIN" ->
         AuthError.SESSION_EXPIRED
     else -> AuthError.UNKNOWN
@@ -115,6 +143,27 @@ internal fun authErrorFor(message: String): AuthError = when (message.substringB
 
 @Serializable
 private data class EmailPasswordRequest(val email: String, val password: String, val returnSecureToken: Boolean = true)
+
+@Serializable
+private data class IdpRequest(
+    val postBody: String,
+    val requestUri: String = "http://localhost",
+    val returnSecureToken: Boolean = true,
+    val returnIdpCredential: Boolean = true,
+)
+
+@Serializable
+private data class IdpResponse(
+    val localId: String = "",
+    val email: String? = null,
+    val idToken: String = "",
+    val refreshToken: String = "",
+    val expiresIn: String = "0",
+    val firstName: String? = null,
+    val lastName: String? = null,
+    val photoUrl: String? = null,
+    val needConfirmation: Boolean = false,
+)
 
 @Serializable
 private data class OobCodeRequest(val requestType: String, val email: String)

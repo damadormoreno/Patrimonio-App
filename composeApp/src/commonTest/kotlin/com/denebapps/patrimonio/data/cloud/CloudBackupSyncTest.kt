@@ -7,6 +7,7 @@ import com.denebapps.patrimonio.domain.repository.CloudBackupError
 import com.denebapps.patrimonio.domain.repository.CloudBackupException
 import com.denebapps.patrimonio.domain.repository.CloudBackupState
 import com.denebapps.patrimonio.domain.repository.InvalidBackupException
+import com.denebapps.patrimonio.domain.repository.Reauthentication
 import com.denebapps.patrimonio.testing.FakeAuthRepository
 import com.denebapps.patrimonio.testing.FakeBackupRepository
 import kotlinx.coroutines.Dispatchers
@@ -396,12 +397,12 @@ class CloudBackupSyncTest {
         start()
         remote.failure = CloudBackupError.NETWORK
 
-        assertFailsWith<CloudBackupException> { sync.deleteAccount("secreto") }
+        assertFailsWith<CloudBackupException> { sync.deleteAccount(Reauthentication.Password("secreto")) }
         assertNotNull(remote.document)
         assertEquals(user, auth.currentUser)
 
         remote.failure = null
-        sync.deleteAccount("secreto")
+        sync.deleteAccount(Reauthentication.Password("secreto"))
         runCurrent()
 
         assertNull(remote.document)
@@ -414,7 +415,7 @@ class CloudBackupSyncTest {
         start()
         auth.failWith = AuthError.WRONG_CREDENTIALS
 
-        assertFailsWith<AuthException> { sync.deleteAccount("mala") }
+        assertFailsWith<AuthException> { sync.deleteAccount(Reauthentication.Password("mala")) }
 
         assertNotNull(remote.document)
     }

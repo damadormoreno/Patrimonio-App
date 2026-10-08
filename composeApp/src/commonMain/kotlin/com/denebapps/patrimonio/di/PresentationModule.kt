@@ -32,8 +32,8 @@ val presentationModule = module {
     viewModel { AppViewModel(get(), get(), get()) }
     viewModel { SettingsViewModel(get(), get()) }
     viewModel { BackupViewModel(get(), get(), get()) }
-    viewModel { ProfileViewModel(get()) }
-    viewModel { AccountViewModel(get(), get()) }
+    viewModel { ProfileViewModel(get(), get()) }
+    viewModel { AccountViewModel(get(), get(), get(), get()) }
     viewModel {
         NetWorthHistoryViewModel(
             assetRepository = get(),

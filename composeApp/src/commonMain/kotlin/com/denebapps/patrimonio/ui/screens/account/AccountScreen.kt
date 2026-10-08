@@ -25,6 +25,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -33,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.denebapps.patrimonio.domain.repository.AccountProvider
 import com.denebapps.patrimonio.domain.repository.CloudBackupState
 import com.denebapps.patrimonio.ui.components.GhostButton
 import com.denebapps.patrimonio.ui.components.HeaderIconBtn
@@ -43,18 +45,20 @@ import com.denebapps.patrimonio.ui.components.TextField
 import com.denebapps.patrimonio.ui.components.TextLink
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
+import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import org.koin.compose.viewmodel.koinViewModel
 
 /**
- * The optional cloud account, pushed from Ajustes. Signed out: sign in or create the account (email and
- * password) and reset a forgotten password. Signed in: who it is, its cloud backup, sign out and delete the
+ * The optional cloud account, pushed from Ajustes. Signed out: sign in with Google (Android), or sign in or
+ * create the account with email and password and reset a forgotten password. Signed in: who it is, its cloud backup, sign out and delete the
  * account.
  */
 @Composable
 fun AccountScreen(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel: AccountViewModel = koinViewModel()) {
     val state by viewModel.state.collectAsState()
     val colors = LocalAppColors.current
+    val requestGoogleIdToken = rememberGoogleIdTokenRequester()
 
     Column(modifier = modifier.fillMaxSize().background(colors.bg)) {
         Row(
@@ -78,9 +82,9 @@ fun AccountScreen(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel: 
                 .padding(horizontal = 20.dp),
         ) {
             if (state.user == null) {
-                SignedOutContent(state, viewModel)
+                SignedOutContent(state, viewModel, requestGoogleIdToken)
             } else {
-                SignedInContent(state, viewModel)
+                SignedInContent(state, viewModel, requestGoogleIdToken)
             }
             state.error?.let { Message(it, isError = true) }
             state.info?.let { Message(it, isError = false) }
@@ -90,9 +94,14 @@ fun AccountScreen(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel: 
 }
 
 @Composable
-private fun ColumnScope.SignedOutContent(state: AccountUiState, viewModel: AccountViewModel) {
+private fun ColumnScope.SignedOutContent(
+    state: AccountUiState,
+    viewModel: AccountViewModel,
+    requestGoogleIdToken: (suspend () -> GoogleIdTokenResult)?,
+) {
     val colors = LocalAppColors.current
     val signUp = state.mode == AccountMode.SIGN_UP
+    val scope = rememberCoroutineScope()
     Text(
         text = "Con una cuenta podrás guardar tus datos en la nube y recuperarlos en otro móvil. " +
             "Es opcional: sin cuenta, todo sigue funcionando en este dispositivo.",
@@ -100,6 +109,20 @@ private fun ColumnScope.SignedOutContent(state: AccountUiState, viewModel: Accou
         fontSize = 14.sp,
         lineHeight = 20.sp,
     )
+    if (requestGoogleIdToken != null) {
+        GhostButton(
+            text = "Continuar con Google",
+            onClick = { scope.launch { viewModel.onGoogleResult(requestGoogleIdToken()) } },
+            enabled = !state.busy,
+            modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+        )
+        Text(
+            text = "o con tu correo",
+            color = colors.muted,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(top = 14.dp).align(Alignment.CenterHorizontally),
+        )
+    }
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -137,15 +160,21 @@ private fun ColumnScope.SignedOutContent(state: AccountUiState, viewModel: Accou
 }
 
 @Composable
-private fun SignedInContent(state: AccountUiState, viewModel: AccountViewModel) {
+private fun SignedInContent(
+    state: AccountUiState,
+    viewModel: AccountViewModel,
+    requestGoogleIdToken: (suspend () -> GoogleIdTokenResult)?,
+) {
     val colors = LocalAppColors.current
+    val scope = rememberCoroutineScope()
     var confirmSignOut by rememberSaveable { mutableStateOf(false) }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    val google = state.user?.provider == AccountProvider.GOOGLE
 
     SettingsCard {
         SettingsRow(
             title = state.user?.email.orEmpty(),
-            subtitle = "Sesión iniciada",
+            subtitle = if (google) "Sesión iniciada con Google" else "Sesión iniciada",
             leading = { Icon(AppIcons.cloud, contentDescription = null, tint = colors.brand) },
             showDivider = false,
         )
@@ -174,7 +203,18 @@ private fun SignedInContent(state: AccountUiState, viewModel: AccountViewModel) 
             dismissButton = { TextButton(onClick = { confirmSignOut = false }) { Text("Cancelar") } },
         )
     }
-    if (confirmDelete) {
+    if (confirmDelete && google) {
+        DeleteGoogleAccountDialog(
+            canConfirm = requestGoogleIdToken != null,
+            onConfirm = {
+                confirmDelete = false
+                requestGoogleIdToken?.let { request ->
+                    scope.launch { viewModel.onDeleteAccountWithGoogle(request()) }
+                }
+            },
+            onDismiss = { confirmDelete = false },
+        )
+    } else if (confirmDelete) {
         DeleteAccountDialog(
             onConfirm = { password ->
                 confirmDelete = false
@@ -488,6 +528,30 @@ private fun DeleteAccountDialog(onConfirm: (String) -> Unit, onDismiss: () -> Un
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(password) }, enabled = password.isNotEmpty()) { Text("Borrar cuenta") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
+}
+
+/** Firebase asks for a recent sign-in before deleting an account: the user picks the Google account again.
+ *  Not [canConfirm] where Google sign-in is not available (the account cannot be deleted from here). */
+@Composable
+private fun DeleteGoogleAccountDialog(canConfirm: Boolean, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("¿Borrar la cuenta?") },
+        text = {
+            Text(
+                "Se borran para siempre la cuenta y su copia en la nube. Tus datos siguen en este móvil. " +
+                    if (canConfirm) {
+                        "Para confirmarlo, elige de nuevo tu cuenta de Google."
+                    } else {
+                        "Para borrarla, entra con Google desde la app de Android."
+                    },
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = canConfirm) { Text("Borrar cuenta") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
