@@ -129,6 +129,11 @@ fun MainScaffold() {
                             AddPatrimonio(isLiability = view == PatrimonioView.PASIVOS, groupId = groupId),
                         )
                     },
+                    onEditItem = { view, itemId ->
+                        mainNavController.navigate(
+                            AddPatrimonio(isLiability = view == PatrimonioView.PASIVOS, itemId = itemId),
+                        )
+                    },
                     onViewChange = { patrimonioIsLiability = it == PatrimonioView.PASIVOS },
                     onNewGoal = { mainNavController.navigate(NewGoal()) },
                     onGoalTap = { goalId -> mainNavController.navigate(GoalAllocate(goalId = goalId)) },
@@ -148,6 +153,7 @@ fun MainScaffold() {
                 AddPatrimonioSheet(
                     isLiability = route.isLiability,
                     groupId = route.groupId,
+                    itemId = route.itemId,
                     onNavigateBack = { mainNavController.popBackStack() },
                 )
             }
@@ -157,6 +163,7 @@ fun MainScaffold() {
                     onNewGroup = { mainNavController.navigate(NuevoGrupo()) },
                     onEditGroup = { groupId -> mainNavController.navigate(NuevoGrupo(groupId = groupId)) },
                     onNewAsset = { mainNavController.navigate(AddPatrimonio(isLiability = false, groupId = null)) },
+                    onEditAsset = { assetId -> mainNavController.navigate(AddPatrimonio(itemId = assetId)) },
                 )
             }
             composable<NuevoGrupo> { backStackEntry ->

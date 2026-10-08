@@ -23,8 +23,8 @@ import org.koin.dsl.module
  * `koinViewModel()` in composables. Depends on [dataModule]'s repository + `Clock`/`() -> TimeZone`
  * bindings.
  *
- * [AddPatrimonioSheetViewModel] takes the `AddPatrimonio.isLiability`/`groupId` nav args via Koin's
- * parameter-injection lambda (`parametersOf(isLiability, groupId)`). [SavingsGoalsViewModel] backs
+ * [AddPatrimonioSheetViewModel] takes the `AddPatrimonio.isLiability`/`groupId`/`itemId` nav args via Koin's
+ * parameter-injection lambda (`parametersOf(isLiability, groupId, itemId)`). [SavingsGoalsViewModel] backs
  * three destinations (the Metas de ahorro section, `NewGoal`, `GoalAllocate`): the first two resolve
  * it with empty params, while `GoalAllocateSheet` passes `parametersOf(goalId, withdraw)`.
  */
@@ -63,8 +63,12 @@ val presentationModule = module {
             assetRepository = get(),
             liabilityRepository = get(),
             fxRepository = get(),
-            initialIsLiability = params.get(),
-            initialGroupId = params.getOrNull(),
+            savingsGoalRepository = get(),
+            accountGroupRepository = get(),
+            // By position: groupId and itemId are both nullable Strings.
+            initialIsLiability = params[0],
+            initialGroupId = params[1],
+            editingItemId = params[2],
         )
     }
     viewModel { params ->

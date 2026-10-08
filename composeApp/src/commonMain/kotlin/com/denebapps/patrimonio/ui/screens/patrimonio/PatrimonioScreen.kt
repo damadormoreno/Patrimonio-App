@@ -3,6 +3,7 @@ package com.denebapps.patrimonio.ui.screens.patrimonio
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -87,7 +88,8 @@ private const val EUR_MINOR_SCALE = 100L
  * outside this composable's scope but still needs the active Activos/Pasivos toggle to route the FAB
  * tap correctly (design.md Data Flow: `FAB(Patrimonio) -> navigate(AddPatrimonio)`). The Metas de
  * ahorro section is backed by a second, independent [SavingsGoalsViewModel] (design.md Decision 8) —
- * [onNewGoal]/[onGoalTap] are wired by `MainScaffold` to push `NewGoal`/`GoalAllocate(goalId)`.
+ * [onNewGoal]/[onGoalTap] are wired by `MainScaffold` to push `NewGoal`/`GoalAllocate(goalId)`. Tapping or
+ * long-pressing an account calls [onEditItem] with the active view and the account id.
  */
 @Composable
 fun PatrimonioScreen(
@@ -97,6 +99,7 @@ fun PatrimonioScreen(
     onOpenGroups: () -> Unit = {},
     onOpenHistory: () -> Unit = {},
     onAddItem: (PatrimonioView, String?) -> Unit = { _, _ -> },
+    onEditItem: (PatrimonioView, String) -> Unit = { _, _ -> },
     onViewChange: (PatrimonioView) -> Unit = {},
     onNewGoal: () -> Unit = {},
     onGoalTap: (String) -> Unit = {},
@@ -199,7 +202,11 @@ fun PatrimonioScreen(
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     state.groups.forEach { group ->
-                        PatrimonioGroupCard(group = group, onAdd = { onAddItem(state.view, group.groupId) })
+                        PatrimonioGroupCard(
+                            group = group,
+                            onAdd = { onAddItem(state.view, group.groupId) },
+                            onEditItem = { itemId -> onEditItem(state.view, itemId) },
+                        )
                     }
                 }
 
@@ -498,7 +505,12 @@ private fun StackedShare(groups: List<GroupShareUi>, modifier: Modifier = Modifi
 }
 
 @Composable
-private fun PatrimonioGroupCard(group: PatrimonioGroupUi, onAdd: () -> Unit, modifier: Modifier = Modifier) {
+private fun PatrimonioGroupCard(
+    group: PatrimonioGroupUi,
+    onAdd: () -> Unit,
+    onEditItem: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val colors = LocalAppColors.current
     val tone = groupTone(group.groupId)
 
@@ -560,7 +572,12 @@ private fun PatrimonioGroupCard(group: PatrimonioGroupUi, onAdd: () -> Unit, mod
         }
         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
             group.items.forEachIndexed { index, item ->
-                PatrimonioItemRow(item = item, tone = tone, showDivider = index != group.items.lastIndex)
+                PatrimonioItemRow(
+                    item = item,
+                    tone = tone,
+                    showDivider = index != group.items.lastIndex,
+                    onEdit = { onEditItem(item.id) },
+                )
             }
         }
     }
@@ -571,6 +588,7 @@ private fun PatrimonioItemRow(
     item: PatrimonioItemUi,
     tone: Color,
     showDivider: Boolean,
+    onEdit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAppColors.current
@@ -593,6 +611,8 @@ private fun PatrimonioItemRow(
                     Modifier
                 },
             )
+            // A tap and a long press both open the editor.
+            .combinedClickable(onClickLabel = "Editar", onLongClick = onEdit, onClick = onEdit)
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
