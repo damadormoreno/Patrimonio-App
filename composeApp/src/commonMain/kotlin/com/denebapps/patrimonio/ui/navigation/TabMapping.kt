@@ -1,5 +1,7 @@
 package com.denebapps.patrimonio.ui.navigation
 
+import kotlinx.serialization.serializer
+
 /**
  * The `Main` zone tabs, in display order. [iconName] is an `AppIcons` property name, resolved to
  * an `ImageVector` by [MainScaffold] via `AppIcons.get`.
@@ -18,9 +20,15 @@ enum class TabKey(val id: String, val label: String, val iconName: String) {
 /**
  * Pure route↔tab mapping helper — no Compose/navigation-library dependency, unit-tested
  * directly (see `TabMappingTest`). [tabForRoute] takes `NavDestination.route` (the
- * type-safe route class's `qualifiedName`) and returns the matching [TabKey], or `null`
+ * type-safe route's [routeName]) and returns the matching [TabKey], or `null`
  * for non-tab (pushed) routes such as [Settings]/[Profile]/[AddPatrimonio].
  */
+/**
+ * The route name navigation gives a type-safe destination without arguments: its serial name, a string
+ * fixed at compile time. Not `T::class.qualifiedName`, which R8 renames in minified builds.
+ */
+inline fun <reified T : Any> routeName(): String = serializer<T>().descriptor.serialName
+
 object TabMapping {
     /** The tabs, in [TabBar][com.denebapps.patrimonio.ui.components.TabBar] display order. */
     val tabs: List<TabKey> = TabKey.entries.toList()
@@ -29,8 +37,8 @@ object TabMapping {
     val tabBarVisible: Boolean get() = tabs.size > 1
 
     private val routeNameToTab: Map<String?, TabKey> = mapOf(
-        Patrimonio::class.qualifiedName to TabKey.PATRIMONIO,
-        Subscriptions::class.qualifiedName to TabKey.SUBSCRIPTIONS,
+        routeName<Patrimonio>() to TabKey.PATRIMONIO,
+        routeName<Subscriptions>() to TabKey.SUBSCRIPTIONS,
     )
 
     /** Maps a destination's route name to its [TabKey], or `null` if it is not a tab route. */

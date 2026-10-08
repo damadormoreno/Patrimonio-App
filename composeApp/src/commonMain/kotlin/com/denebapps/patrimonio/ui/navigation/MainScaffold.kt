@@ -1,25 +1,30 @@
 package com.denebapps.patrimonio.ui.navigation
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.denebapps.patrimonio.ui.components.Avatar
 import com.denebapps.patrimonio.ui.components.Fab
-import com.denebapps.patrimonio.ui.components.HeaderIconBtn
 import com.denebapps.patrimonio.ui.components.TabBar
 import com.denebapps.patrimonio.ui.components.TabItem
 import com.denebapps.patrimonio.ui.icons.AppIcons
@@ -31,11 +36,13 @@ import com.denebapps.patrimonio.ui.screens.patrimonio.NuevoGrupoSheet
 import com.denebapps.patrimonio.ui.screens.patrimonio.PatrimonioScreen
 import com.denebapps.patrimonio.ui.screens.patrimonio.PatrimonioView
 import com.denebapps.patrimonio.ui.screens.perfil.PerfilScreen
+import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
 import com.denebapps.patrimonio.ui.screens.savings.GoalAllocateSheet
 import com.denebapps.patrimonio.ui.screens.savings.NewGoalSheet
 import com.denebapps.patrimonio.ui.screens.settings.SettingsScreen
 import com.denebapps.patrimonio.ui.screens.subscriptions.SubscriptionSheet
 import com.denebapps.patrimonio.ui.screens.subscriptions.SubscriptionsScreen
+import org.koin.compose.viewmodel.koinViewModel
 
 /** Maps a [TabKey] to its route object for `mainNavController.navigate(...)` calls. */
 private fun routeForTab(tab: TabKey): Any = when (tab) {
@@ -198,19 +205,31 @@ fun MainScaffold() {
 }
 
 /**
- * Header row hosting the non-tab navigation affordances: a settings cog (visible on any tab,
- * pushes [Settings]). There is intentionally NO Perfil/user affordance here — Perfil is reached
- * from the Settings profile card instead.
+ * Header row on every tab: the profile avatar (initials, or the user icon without a name), which pushes
+ * [Settings], where the profile card and the rest of the settings live.
  */
 @Composable
-private fun MainHeaderAffordances(routeName: String?, mainNavController: androidx.navigation.NavHostController) {
-    val onTab = TabMapping.fabVisible(routeName)
+private fun MainHeaderAffordances(
+    routeName: String?,
+    mainNavController: androidx.navigation.NavHostController,
+    profileViewModel: ProfileViewModel = koinViewModel(),
+) {
+    val profile by profileViewModel.state.collectAsState()
     Row(
         modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.End,
     ) {
-        if (onTab) {
-            HeaderIconBtn(icon = AppIcons.cog, onClick = { mainNavController.navigate(Settings) }, label = "Settings")
+        if (TabMapping.fabVisible(routeName)) {
+            Avatar(
+                initials = profile.initials,
+                icon = AppIcons.user.takeIf { profile.initials == null },
+                size = 38.dp,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(onClickLabel = "Abrir ajustes", role = Role.Button) {
+                        mainNavController.navigate(Settings)
+                    },
+            )
         }
     }
 }

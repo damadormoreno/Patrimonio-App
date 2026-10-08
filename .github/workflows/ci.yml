@@ -38,6 +38,29 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew :composeApp:assembleDebug
 
+      # The preview build is minified like the store build (R8), signed here with the debug key. R8 fails
+      # the build on classes referenced but missing; it then writes the rules it suggests.
+      - name: Assemble minified preview APK (R8)
+        run: ./gradlew :composeApp:assemblePreview
+
+      - name: R8 suggested rules
+        if: failure()
+        run: |
+          rules=composeApp/build/outputs/mapping/preview/missing_rules.txt
+          if [ -f "$rules" ]; then
+            # One annotation, so the rules can be read from the check run without the log.
+            echo "::error title=R8 missing rules::$(sed ':a;N;$!ba;s/\n/%0A/g' "$rules")"
+          fi
+
+      - name: Upload R8 mapping
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r8-mapping-preview
+          path: composeApp/build/outputs/mapping/preview/mapping.txt
+          if-no-files-found: error
+          retention-days: 30
+
       # Room exports the schema on every build; a diff means the committed JSON is stale or
       # missing, and migrations would be written against the wrong baseline.
       - name: Room schema is committed
