@@ -36,6 +36,7 @@ import com.denebapps.patrimonio.ui.screens.patrimonio.GruposViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.PatrimonioViewModel
 import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
+import com.denebapps.patrimonio.ui.screens.settings.AccountTypesViewModel
 import com.denebapps.patrimonio.ui.screens.settings.BackupViewModel
 import com.denebapps.patrimonio.ui.screens.settings.SecurityViewModel
 import com.denebapps.patrimonio.ui.screens.settings.SettingsViewModel
@@ -298,6 +299,7 @@ class KoinModuleTest {
         assertNotNull(koin.get<AccountViewModel>())
         assertNotNull(koin.get<LockViewModel>())
         assertNotNull(koin.get<SecurityViewModel>())
+        assertNotNull(koin.get<AccountTypesViewModel>())
         assertSame(koin.get<CloudBackup>(), koin.get<CloudBackup>())
     }
 

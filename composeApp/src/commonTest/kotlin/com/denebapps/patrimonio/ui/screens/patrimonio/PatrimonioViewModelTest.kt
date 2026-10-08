@@ -3,17 +3,21 @@ package com.denebapps.patrimonio.ui.screens.patrimonio
 import com.denebapps.patrimonio.domain.calc.AccountAssignment
 import com.denebapps.patrimonio.domain.calc.fixedClock
 import com.denebapps.patrimonio.domain.model.AccountGroup
+import com.denebapps.patrimonio.domain.model.AccountKind
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
+import com.denebapps.patrimonio.domain.model.CustomAccountType
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.NetWorthSnapshot
 import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
+import com.denebapps.patrimonio.domain.model.TypeColor
 import com.denebapps.patrimonio.domain.model.YearMonth
 import com.denebapps.patrimonio.testing.FakeAccountGroupRepository
+import com.denebapps.patrimonio.testing.FakeAccountTypeRepository
 import com.denebapps.patrimonio.testing.FakeAssetRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeLiabilityRepository
@@ -71,6 +75,7 @@ class PatrimonioViewModelTest {
         fx: FakeFxRepository = FakeFxRepository(FxRates(emptyMap())),
         month: YearMonth = YearMonth(2026, 5),
         goals: FakeSavingsGoalRepository = FakeSavingsGoalRepository(),
+        accountTypes: FakeAccountTypeRepository = FakeAccountTypeRepository(),
     ) = PatrimonioViewModel(
         assetRepository = assets,
         liabilityRepository = liabilities,
@@ -78,6 +83,7 @@ class PatrimonioViewModelTest {
         accountGroupRepository = accountGroups,
         fxRepository = fx,
         savingsGoalRepository = goals,
+        accountTypeRepository = accountTypes,
         clock = fixedClock("2026-05-21T12:00:00Z"),
         zoneProvider = { TimeZone.UTC },
         monthFlow = flowOf(month),
@@ -167,6 +173,30 @@ class PatrimonioViewModelTest {
         advanceUntilIdle()
 
         assertEquals(PatrimonioView.PASIVOS, vm.state.value.view)
+        job.cancel()
+    }
+
+    @Test
+    fun `a custom type shows its name and emoji, and an account its own emoji`() = runTest(dispatcher) {
+        val watches = CustomAccountType("watch", AccountKind.ASSET, "Relojes", "⌚", TypeColor.GOLD, 0)
+        val vm = viewModel(
+            assets = FakeAssetRepository(
+                listOf(
+                    asset("a1", "watch", "Rolex", 900_000),
+                    asset("a2", Asset.AssetGroup.BANK, "Nómina", 100_000).copy(emoji = "🏦"),
+                ),
+            ),
+            accountTypes = FakeAccountTypeRepository(watches),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        val share = vm.state.value.composition.first()
+        assertEquals("Relojes", share.label)
+        assertEquals("⌚", share.type.emoji)
+        assertEquals(TypeColor.GOLD, vm.state.value.groups.first().type.color)
+        assertEquals(listOf("Bancos", "Relojes"), vm.state.value.typeFilterOptions.map { it.label })
+        assertEquals("🏦", vm.state.value.groups.flatMap { it.items }.single { it.id == "a2" }.emoji)
         job.cancel()
     }
 

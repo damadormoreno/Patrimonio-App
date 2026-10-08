@@ -2,16 +2,20 @@ package com.denebapps.patrimonio.ui.screens.patrimonio
 
 import com.denebapps.patrimonio.domain.calc.AccountUsage
 import com.denebapps.patrimonio.domain.model.AccountGroup
+import com.denebapps.patrimonio.domain.model.AccountKind
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
+import com.denebapps.patrimonio.domain.model.CustomAccountType
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.RATE_SCALE
 import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
+import com.denebapps.patrimonio.domain.model.TypeColor
 import com.denebapps.patrimonio.testing.FakeAccountGroupRepository
+import com.denebapps.patrimonio.testing.FakeAccountTypeRepository
 import com.denebapps.patrimonio.testing.FakeAssetRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeLiabilityRepository
@@ -53,12 +57,14 @@ class AddPatrimonioSheetViewModelTest {
         editingItemId: String? = null,
         goals: FakeSavingsGoalRepository = FakeSavingsGoalRepository(),
         accountGroups: FakeAccountGroupRepository = FakeAccountGroupRepository(),
+        accountTypes: FakeAccountTypeRepository = FakeAccountTypeRepository(),
     ) = AddPatrimonioSheetViewModel(
         assetRepository = assetRepository,
         liabilityRepository = liabilityRepository,
         fxRepository = fxRepository,
         savingsGoalRepository = goals,
         accountGroupRepository = accountGroups,
+        accountTypeRepository = accountTypes,
         idProvider = idProvider,
         initialIsLiability = isLiability,
         initialGroupId = groupId,
@@ -80,6 +86,66 @@ class AddPatrimonioSheetViewModelTest {
         assertTrue(vmLiability.state.value.isLiability)
         assertEquals(Liability.LiabilityGroup.entries.size, vmLiability.state.value.groupOptions.size)
         jobLiability.cancel()
+    }
+
+    @Test
+    fun `the user's types follow the built-in ones of the same kind`() = runTest(dispatcher) {
+        val types = FakeAccountTypeRepository(
+            CustomAccountType("watch", AccountKind.ASSET, "Relojes", "⌚", TypeColor.GOLD, 0),
+            CustomAccountType("family", AccountKind.LIABILITY, "Familia", "👪", TypeColor.BLUE, 0),
+        )
+        val vm = viewModel(accountTypes = types)
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        val options = vm.state.value.groupOptions
+        assertEquals(Asset.AssetGroup.entries + "watch", options.map { it.id })
+        assertEquals("Relojes", options.last().label)
+        assertEquals("⌚", options.last().type.emoji)
+        job.cancel()
+    }
+
+    @Test
+    fun `a type created from the form is selected`() = runTest(dispatcher) {
+        val types = FakeAccountTypeRepository()
+        val vm = viewModel(isLiability = true, accountTypes = types)
+        val job = launch { vm.state.collect {} }
+
+        vm.onCreateType("Familia", "👪", TypeColor.BLUE)
+        advanceUntilIdle()
+
+        assertEquals(AccountKind.LIABILITY, types.types.value.single().kind)
+        assertEquals("type-1", vm.state.value.selectedGroupId)
+        assertEquals("Familia", vm.state.value.groupOptions.last().label)
+        job.cancel()
+    }
+
+    @Test
+    fun `the account's emoji is saved, and clearing it saves none`() = runTest(dispatcher) {
+        val assets = FakeAssetRepository()
+        val vm = viewModel(assetRepository = assets)
+        val job = launch { vm.state.collect {} }
+        vm.onGroupSelect(Asset.AssetGroup.BANK)
+        vm.onNameChange("Nómina")
+        vm.onAmountChange("10")
+        vm.onEmojiChange(" 🏦 ")
+        advanceUntilIdle()
+        assertEquals("🏦", vm.state.value.emoji)
+
+        vm.onSave()
+        advanceUntilIdle()
+        assertEquals("🏦", assets.list().single().emoji)
+
+        val editor = viewModel(assetRepository = assets, editingItemId = "generated-id")
+        val editorJob = launch { editor.state.collect {} }
+        advanceUntilIdle()
+        assertEquals("🏦", editor.state.value.emoji)
+        editor.onEmojiChange("")
+        editor.onSave()
+        advanceUntilIdle()
+        assertNull(assets.list().single().emoji)
+        editorJob.cancel()
+        job.cancel()
     }
 
     @Test

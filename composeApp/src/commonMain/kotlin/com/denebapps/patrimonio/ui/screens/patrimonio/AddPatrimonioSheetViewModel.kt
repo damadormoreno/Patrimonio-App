@@ -6,19 +6,26 @@ import com.denebapps.patrimonio.domain.calc.AccountUsage
 import com.denebapps.patrimonio.domain.calc.accountUsage
 import com.denebapps.patrimonio.domain.calc.parseAmountToMinor
 import com.denebapps.patrimonio.domain.calc.toEur
+import com.denebapps.patrimonio.domain.model.AccountKind
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
+import com.denebapps.patrimonio.domain.model.CustomAccountType
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.TypeColor
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
+import com.denebapps.patrimonio.domain.repository.AccountTypeRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
+import com.denebapps.patrimonio.ui.components.MAX_EMOJI_LENGTH
+import com.denebapps.patrimonio.ui.components.TypeLook
 import com.denebapps.patrimonio.ui.components.amountInputText
-import com.denebapps.patrimonio.ui.components.typeLabel
+import com.denebapps.patrimonio.ui.components.typeLook
+import com.denebapps.patrimonio.ui.components.typeOptions
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,8 +41,8 @@ import kotlin.uuid.Uuid
 
 private const val ADD_PATRIMONIO_STOP_TIMEOUT_MS = 5_000L
 
-/** One selectable group tile in the Add sheet's group picker (spec: Add Patrimonio Item Form). */
-data class GroupOptionUi(val id: String, val label: String)
+/** One selectable type tile in the Add sheet's type picker (spec: Add Patrimonio Item Form). */
+data class GroupOptionUi(val id: String, val label: String, val type: TypeLook = typeLook(id))
 
 /**
  * Patrimonio item form state, for a new item or for [isEditing] an existing one. [deleteWarning] says what
@@ -52,6 +59,8 @@ data class AddPatrimonioUiState(
     val currency: Currency,
     val eurHint: String?,
     val canSave: Boolean,
+    /** The account's own emoji, blank for none (then its type's icon or emoji stands for it). */
+    val emoji: String = "",
 )
 
 /** One user-editable field group — combined with the fx-rates repo [Flow] to build
@@ -63,6 +72,7 @@ private data class FormFields(
     val name: String,
     val amountText: String,
     val currency: Currency,
+    val emoji: String = "",
 )
 
 /**
@@ -85,6 +95,7 @@ class AddPatrimonioSheetViewModel(
     fxRepository: FxRepository,
     private val savingsGoalRepository: SavingsGoalRepository,
     private val accountGroupRepository: AccountGroupRepository,
+    private val accountTypeRepository: AccountTypeRepository,
     private val idProvider: () -> String = ::newPatrimonioItemId,
     initialIsLiability: Boolean = false,
     initialGroupId: String? = null,
@@ -106,8 +117,6 @@ class AddPatrimonioSheetViewModel(
     /** The edited item's subtitle, which the form does not show but must keep. */
     private var editingSubtitle: String? = null
 
-    /** Kept as is on save: the form does not edit it (yet). */
-    private var editingEmoji: String? = null
     private val deleteWarning = MutableStateFlow<String?>(null)
 
     init {
@@ -121,12 +130,13 @@ class AddPatrimonioSheetViewModel(
         form,
         fxRepository.observeRates(),
         deleteWarning,
-    ) { f, rates, warning ->
-        buildState(f, rates).copy(deleteWarning = warning)
+        accountTypeRepository.observeAll(),
+    ) { f, rates, warning, customTypes ->
+        buildState(f, rates, customTypes).copy(deleteWarning = warning)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(ADD_PATRIMONIO_STOP_TIMEOUT_MS),
-        initialValue = buildState(form.value, FxRates(emptyMap())),
+        initialValue = buildState(form.value, FxRates(emptyMap()), emptyList()),
     )
 
     fun onModeChange(isLiability: Boolean) {
@@ -136,6 +146,22 @@ class AddPatrimonioSheetViewModel(
 
     fun onGroupSelect(groupId: String) {
         form.value = form.value.copy(selectedGroupId = groupId)
+    }
+
+    /** Any text the keyboard gives, kept short: an emoji (some are several characters) or a symbol. */
+    fun onEmojiChange(text: String) {
+        form.value = form.value.copy(emoji = text.trim().take(MAX_EMOJI_LENGTH))
+    }
+
+    /** Creates a type of the form's kind and selects it. */
+    fun onCreateType(name: String, emoji: String, color: TypeColor) {
+        val kind = if (form.value.isLiability) AccountKind.LIABILITY else AccountKind.ASSET
+        viewModelScope.launch {
+            val id = accountTypeRepository.create(kind, name, emoji, color)
+            if (form.value.isLiability == (kind == AccountKind.LIABILITY)) {
+                form.value = form.value.copy(selectedGroupId = id)
+            }
+        }
     }
 
     fun onNameChange(text: String) {
@@ -157,6 +183,7 @@ class AddPatrimonioSheetViewModel(
         val name = f.name.trim()
         if (name.isEmpty()) return
 
+        val emoji = f.emoji.ifBlank { null }
         viewModelScope.launch {
             val amount = CurrencyAmount(Money(amountMinor), f.currency)
             val id = editingItemId ?: idProvider()
@@ -167,7 +194,7 @@ class AddPatrimonioSheetViewModel(
                     name = name,
                     subtitle = editingSubtitle,
                     amount = amount,
-                    emoji = editingEmoji,
+                    emoji = emoji,
                 )
                 if (editingItemId != null) {
                     liabilityRepository.update(liability)
@@ -181,7 +208,7 @@ class AddPatrimonioSheetViewModel(
                     name = name,
                     subtitle = editingSubtitle,
                     amount = amount,
-                    emoji = editingEmoji,
+                    emoji = emoji,
                 )
                 if (editingItemId != null) assetRepository.update(asset) else assetRepository.insert(asset)
             }
@@ -202,30 +229,30 @@ class AddPatrimonioSheetViewModel(
         val fields = if (form.value.isLiability) {
             liabilityRepository.list().find { it.id == id }?.let { liability ->
                 editingSubtitle = liability.subtitle
-                editingEmoji = liability.emoji
-                formFields(true, liability.group, liability.name, liability.amount)
+                formFields(true, liability.group, liability.name, liability.amount, liability.emoji)
             }
         } else {
             assetRepository.list().find { it.id == id }?.let { asset ->
                 editingSubtitle = asset.subtitle
-                editingEmoji = asset.emoji
                 val usage = accountUsage(
                     goals = savingsGoalRepository.observeAll().first(),
                     groups = accountGroupRepository.observeAll().first(),
                 )[id]
                 deleteWarning.value = usage?.let(::deleteWarningFor)
-                formFields(false, asset.group, asset.name, asset.amount)
+                formFields(false, asset.group, asset.name, asset.amount, asset.emoji)
             }
         }
         // Gone meanwhile (deleted elsewhere): nothing to edit.
         if (fields == null) navigateBackChannel.send(Unit) else form.value = fields
     }
 
-    private fun buildState(f: FormFields, rates: FxRates): AddPatrimonioUiState {
+    private fun buildState(f: FormFields, rates: FxRates, customTypes: List<CustomAccountType>): AddPatrimonioUiState {
         val amountMinor = parseAmountToMinor(f.amountText, f.currency, allowZero = true)
+        val kind = if (f.isLiability) AccountKind.LIABILITY else AccountKind.ASSET
         return AddPatrimonioUiState(
             isLiability = f.isLiability,
-            groupOptions = if (f.isLiability) liabilityGroupOptions() else assetGroupOptions(),
+            groupOptions = typeOptions(kind, customTypes).map { GroupOptionUi(it.id, it.label, it) },
+            emoji = f.emoji,
             selectedGroupId = f.selectedGroupId,
             name = f.name,
             amountText = f.amountText,
@@ -237,13 +264,15 @@ class AddPatrimonioSheetViewModel(
     }
 }
 
-private fun formFields(isLiability: Boolean, groupId: String, name: String, amount: CurrencyAmount) = FormFields(
-    isLiability = isLiability,
-    selectedGroupId = groupId,
-    name = name,
-    amountText = amountInputText(amount.amount, amount.currency),
-    currency = amount.currency,
-)
+private fun formFields(isLiability: Boolean, groupId: String, name: String, amount: CurrencyAmount, emoji: String?) =
+    FormFields(
+        isLiability = isLiability,
+        selectedGroupId = groupId,
+        name = name,
+        amountText = amountInputText(amount.amount, amount.currency),
+        currency = amount.currency,
+        emoji = emoji.orEmpty(),
+    )
 
 @OptIn(ExperimentalUuidApi::class)
 private fun newPatrimonioItemId(): String = Uuid.random().toString()
@@ -265,11 +294,6 @@ private fun quoted(noun: String, names: List<String>): String {
     val list = if (all.size == 1) all.single() else all.dropLast(1).joinToString(", ") + " y " + all.last()
     return "en $noun $list"
 }
-
-private fun assetGroupOptions(): List<GroupOptionUi> = Asset.AssetGroup.entries.map { GroupOptionUi(it, typeLabel(it)) }
-
-private fun liabilityGroupOptions(): List<GroupOptionUi> =
-    Liability.LiabilityGroup.entries.map { GroupOptionUi(it, typeLabel(it)) }
 
 /** `null` when [currency] is EUR or [amountMinor] failed to parse; otherwise `"≈ X,XX € al cambio"`. */
 private fun eurHintFor(currency: Currency, amountMinor: Long?, rates: FxRates): String? {

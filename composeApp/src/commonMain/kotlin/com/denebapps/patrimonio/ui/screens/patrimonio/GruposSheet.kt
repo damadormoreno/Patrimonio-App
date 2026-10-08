@@ -41,8 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.denebapps.patrimonio.ui.components.typeIcon
-import com.denebapps.patrimonio.ui.components.typeTone
+import com.denebapps.patrimonio.ui.components.TypeBadge
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 import org.koin.compose.viewmodel.koinViewModel
@@ -394,17 +393,12 @@ private fun GrupoRow(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            Box(
-                                Modifier.size(26.dp).background(assetGroupTone(member.group), RoundedCornerShape(8.dp)),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    imageVector = assetGroupIcon(member.group),
-                                    contentDescription = null,
-                                    tint = colors.surface2,
-                                    modifier = Modifier.size(13.dp),
-                                )
-                            }
+                            TypeBadge(
+                                member.type,
+                                emoji = member.emoji ?: member.type.emoji,
+                                size = 26.dp,
+                                cornerRadius = 8.dp,
+                            )
                             Text(
                                 text = member.name,
                                 color = colors.ink,
@@ -462,12 +456,6 @@ private fun RowActionButton(
         )
     }
 }
-
-/** The account's type icon and colour ([typeIcon]/[typeTone]). */
-internal fun assetGroupIcon(group: String): ImageVector = typeIcon(group)
-
-@Composable
-internal fun assetGroupTone(group: String): Color = typeTone(group)
 
 /** EUR formatting matching [PatrimonioScreen]'s private `formatMoneyEs`, duplicated per-file. */
 internal fun formatMoneyEsGrupos(money: com.denebapps.patrimonio.domain.model.Money): String {

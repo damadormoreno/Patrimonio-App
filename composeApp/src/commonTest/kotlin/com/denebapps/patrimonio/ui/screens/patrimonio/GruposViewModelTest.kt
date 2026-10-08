@@ -9,6 +9,7 @@ import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
 import com.denebapps.patrimonio.testing.FakeAccountGroupRepository
+import com.denebapps.patrimonio.testing.FakeAccountTypeRepository
 import com.denebapps.patrimonio.testing.FakeAssetRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeSavingsGoalRepository
@@ -77,11 +78,13 @@ class GruposViewModelTest {
         fx: FakeFxRepository = FakeFxRepository(FxRates(emptyMap())),
         idProvider: () -> String = { "generated-group-id" },
         editingGroupId: String? = null,
+        accountTypes: FakeAccountTypeRepository = FakeAccountTypeRepository(),
     ) = GruposViewModel(
         assetRepository = assets,
         accountGroupRepository = accountGroups,
         savingsGoalRepository = savingsGoals,
         fxRepository = fx,
+        accountTypeRepository = accountTypes,
         editingGroupId = editingGroupId,
         idProvider = idProvider,
     )

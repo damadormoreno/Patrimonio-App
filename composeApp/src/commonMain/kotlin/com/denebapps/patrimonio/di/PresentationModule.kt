@@ -10,6 +10,7 @@ import com.denebapps.patrimonio.ui.screens.patrimonio.GruposViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.PatrimonioViewModel
 import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
+import com.denebapps.patrimonio.ui.screens.settings.AccountTypesViewModel
 import com.denebapps.patrimonio.ui.screens.settings.BackupViewModel
 import com.denebapps.patrimonio.ui.screens.settings.SecurityViewModel
 import com.denebapps.patrimonio.ui.screens.settings.SettingsViewModel
@@ -34,6 +35,7 @@ val presentationModule = module {
     viewModel { AppViewModel(get(), get(), get(), get()) }
     viewModel { SettingsViewModel(get(), get()) }
     viewModel { SecurityViewModel(get(), get()) }
+    viewModel { AccountTypesViewModel(get(), get(), get()) }
     viewModel { LockViewModel(get(), get(), get(), get()) }
     viewModel { BackupViewModel(get(), get(), get()) }
     viewModel { ProfileViewModel(get(), get()) }
@@ -57,6 +59,7 @@ val presentationModule = module {
             get(),
             get(),
             get(),
+            get(),
             clock,
             zoneProvider,
             currentMonthFlow(clock, zoneProvider),
@@ -69,6 +72,7 @@ val presentationModule = module {
             fxRepository = get(),
             savingsGoalRepository = get(),
             accountGroupRepository = get(),
+            accountTypeRepository = get(),
             // By position: groupId and itemId are both nullable Strings.
             initialIsLiability = params[0],
             initialGroupId = params[1],
@@ -81,6 +85,7 @@ val presentationModule = module {
             accountGroupRepository = get(),
             savingsGoalRepository = get(),
             fxRepository = get(),
+            accountTypeRepository = get(),
             editingGroupId = params.getOrNull(),
         )
     }
