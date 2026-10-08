@@ -1,9 +1,11 @@
 package com.denebapps.patrimonio
 
 import com.denebapps.patrimonio.domain.calc.fixedClock
+import com.denebapps.patrimonio.domain.repository.AppLockState
 import com.denebapps.patrimonio.domain.repository.RenewalReminderSettings
 import com.denebapps.patrimonio.domain.repository.ThemeMode
 import com.denebapps.patrimonio.notifications.RenewalReminderSync
+import com.denebapps.patrimonio.testing.FakeAppLock
 import com.denebapps.patrimonio.testing.FakeCloudBackup
 import com.denebapps.patrimonio.testing.FakePreferencesRepository
 import com.denebapps.patrimonio.testing.FakeReminderScheduler
@@ -35,6 +37,7 @@ class AppViewModelTest {
 
     private val scheduler = FakeReminderScheduler()
     private val cloudBackup = FakeCloudBackup()
+    private val appLock = FakeAppLock(pin = "1234")
 
     private fun viewModel(preferences: FakePreferencesRepository) = AppViewModel(
         preferencesRepository = preferences,
@@ -46,7 +49,20 @@ class AppViewModelTest {
             zoneProvider = { TimeZone.UTC },
         ),
         cloudBackup = cloudBackup,
+        appLock = appLock,
     )
+
+    @Test
+    fun `starting the app starts the lock and the lifecycle goes to it`() = runTest(dispatcher) {
+        val viewModel = viewModel(FakePreferencesRepository())
+        advanceUntilIdle()
+
+        viewModel.onBackground()
+        viewModel.onForeground()
+
+        assertEquals(listOf("start", "background", "foreground"), appLock.calls)
+        assertEquals(AppLockState.Locked(), viewModel.lockState.value)
+    }
 
     @Test
     fun `theme starts at SYSTEM before preferences emit`() {

@@ -195,6 +195,7 @@ private fun SettingsContent(
                     onLeadDaysSelect = onReminderLeadDaysSelect,
                 )
             }
+            SecuritySection()
             SettingsSection(title = "Datos", modifier = Modifier.padding(top = 12.dp))
             SettingsCard {
                 SettingsRow(
@@ -453,7 +454,7 @@ private fun ThemeSegments(selected: ThemeMode, onSelect: (ThemeMode) -> Unit) {
 }
 
 @Composable
-private fun <T> SegmentedPicker(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
+internal fun <T> SegmentedPicker(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
     val colors = LocalAppColors.current
     val shape = RoundedCornerShape(12.dp)
 
@@ -490,7 +491,7 @@ private fun <T> SegmentedPicker(options: List<Pair<T, String>>, selected: T, onS
 }
 
 @Composable
-private fun SettingsIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, danger: Boolean = false) {
+internal fun SettingsIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, danger: Boolean = false) {
     val colors = LocalAppColors.current
     val radius = LocalAppShapes.current.sm
     Box(

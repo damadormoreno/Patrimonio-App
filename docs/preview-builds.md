@@ -10,8 +10,10 @@ Firebase App Distribution:
 ## Qué corre en Actions
 
 - **CI** (`ci.yml`) en cada PR que toca código (no en `docs/` ni en `.md`): Android (ktlint, tests y la
-  build minificada) e iOS (compilación Kotlin/Native), en paralelo. No se repite al mergear: lo mergeado
-  es lo que ya pasó en la PR, y la preview de `main` lo vuelve a compilar.
+  build minificada). No se repite al mergear: lo mergeado es lo que ya pasó en la PR, y la preview de
+  `main` lo vuelve a compilar.
+- **iOS** (compilación Kotlin/Native) solo a mano mientras no se trabaja en iOS: Actions → CI → *Run
+  workflow* sobre la rama. Los runners de macOS tardan en arrancar.
 - **En local**, antes de hacer push: `scripts/check.sh` (lo mismo que CI; iOS solo en un Mac) o
   `scripts/check.sh --fast` (ktlint y tests).
 
