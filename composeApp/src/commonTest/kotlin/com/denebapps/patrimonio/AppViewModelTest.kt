@@ -4,6 +4,7 @@ import com.denebapps.patrimonio.domain.calc.fixedClock
 import com.denebapps.patrimonio.domain.repository.RenewalReminderSettings
 import com.denebapps.patrimonio.domain.repository.ThemeMode
 import com.denebapps.patrimonio.notifications.RenewalReminderSync
+import com.denebapps.patrimonio.testing.FakeCloudBackup
 import com.denebapps.patrimonio.testing.FakePreferencesRepository
 import com.denebapps.patrimonio.testing.FakeReminderScheduler
 import com.denebapps.patrimonio.testing.FakeSubscriptionRepository
@@ -33,6 +34,7 @@ class AppViewModelTest {
     fun tearDown() = Dispatchers.resetMain()
 
     private val scheduler = FakeReminderScheduler()
+    private val cloudBackup = FakeCloudBackup()
 
     private fun viewModel(preferences: FakePreferencesRepository) = AppViewModel(
         preferencesRepository = preferences,
@@ -43,6 +45,7 @@ class AppViewModelTest {
             clock = fixedClock("2026-10-06T10:00:00Z"),
             zoneProvider = { TimeZone.UTC },
         ),
+        cloudBackup = cloudBackup,
     )
 
     @Test
@@ -76,5 +79,13 @@ class AppViewModelTest {
         advanceUntilIdle()
 
         assertTrue(scheduler.calls.isNotEmpty())
+    }
+
+    @Test
+    fun `starting the app starts the cloud backup`() = runTest(dispatcher) {
+        viewModel(FakePreferencesRepository())
+        advanceUntilIdle()
+
+        assertEquals(listOf("run"), cloudBackup.calls)
     }
 }

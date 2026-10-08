@@ -12,6 +12,7 @@ class FakeAuthRepository(user: AccountUser? = null) : AuthRepository {
     private val userBacking = MutableStateFlow(user)
     val calls = mutableListOf<String>()
     var failWith: AuthError? = null
+    val currentUser: AccountUser? get() = userBacking.value
 
     override fun observeUser(): Flow<AccountUser?> = userBacking
 
@@ -34,8 +35,9 @@ class FakeAuthRepository(user: AccountUser? = null) : AuthRepository {
         userBacking.value = null
     }
 
-    override suspend fun deleteAccount(password: String) {
+    override suspend fun deleteAccount(password: String, beforeDelete: suspend () -> Unit) {
         record("delete:$password")
+        beforeDelete()
         userBacking.value = null
     }
 

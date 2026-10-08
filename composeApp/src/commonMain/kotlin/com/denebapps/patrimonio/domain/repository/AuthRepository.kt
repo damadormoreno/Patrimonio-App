@@ -23,8 +23,9 @@ interface AuthRepository {
     suspend fun signOut()
 
     /** Deletes the account for good. Firebase wants a recent sign-in, so it signs in again with
-     *  [password] first; the local data stays on the device. */
-    suspend fun deleteAccount(password: String)
+     *  [password] first; then runs [beforeDelete] (while the account still exists, so it can clean up its
+     *  cloud data) and deletes the account unless that throws. The local data stays on the device. */
+    suspend fun deleteAccount(password: String, beforeDelete: suspend () -> Unit = {})
 
     /** A valid ID token for the cloud backup, refreshed when close to expiring.
      *  @throws AuthException with [AuthError.NOT_SIGNED_IN] when nobody is signed in. */

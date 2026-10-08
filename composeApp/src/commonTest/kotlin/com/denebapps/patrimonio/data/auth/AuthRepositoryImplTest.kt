@@ -19,6 +19,7 @@ import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
 private class InMemoryAuthSessionStore(initial: AuthSession? = null) : AuthSessionStore {
@@ -119,10 +120,24 @@ class AuthRepositoryImplTest {
         )
         repository.signIn("ana@example.com", "secreto")
 
-        repository.deleteAccount("secreto")
+        repository.deleteAccount("secreto") { paths += "beforeDelete" }
 
-        assertEquals(listOf("accounts:signInWithPassword", "accounts:signInWithPassword", "accounts:delete"), paths)
+        assertEquals(
+            listOf("accounts:signInWithPassword", "accounts:signInWithPassword", "beforeDelete", "accounts:delete"),
+            paths,
+        )
         assertNull(repository.observeUser().first())
+    }
+
+    @Test
+    fun `a failing cleanup keeps the account and the session`() = runTest {
+        val repository = repository(mapOf("accounts:signInWithPassword" to signInBody(idToken = "fresh")))
+        repository.signIn("ana@example.com", "secreto")
+
+        assertFailsWith<IllegalStateException> { repository.deleteAccount("secreto") { error("cloud down") } }
+
+        assertEquals(listOf("accounts:signInWithPassword", "accounts:signInWithPassword"), paths)
+        assertNotNull(repository.observeUser().first())
     }
 
     @Test

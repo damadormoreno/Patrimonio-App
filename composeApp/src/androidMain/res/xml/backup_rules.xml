@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Android 10-11 auto backup: everything except the account session tokens, which must not reach
-     another device (the user signs in again there). -->
+     another device (the user signs in again there), and the cloud backup link, so a restored device checks
+     the cloud copy before uploading over it. -->
 <full-backup-content>
     <exclude domain="file" path="patrimonio-auth.preferences_pb" />
+    <exclude domain="file" path="patrimonio-cloud.preferences_pb" />
 </full-backup-content>

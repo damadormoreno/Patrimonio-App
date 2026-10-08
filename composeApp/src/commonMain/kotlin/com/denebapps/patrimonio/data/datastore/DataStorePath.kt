@@ -10,3 +10,6 @@ const val PREFERENCES_FILE_NAME = "patrimonio.preferences_pb"
 
 /** Kept apart from the preferences so Android's auto backup can leave the session tokens out. */
 const val AUTH_SESSION_FILE_NAME = "patrimonio-auth.preferences_pb"
+
+/** Which account this device last backed up to; excluded from Android's auto backup like the session. */
+const val CLOUD_LINK_FILE_NAME = "patrimonio-cloud.preferences_pb"

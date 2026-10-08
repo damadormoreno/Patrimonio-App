@@ -33,6 +33,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.denebapps.patrimonio.domain.repository.CloudBackupState
+import com.denebapps.patrimonio.ui.components.GhostButton
 import com.denebapps.patrimonio.ui.components.HeaderIconBtn
 import com.denebapps.patrimonio.ui.components.PrimaryButton
 import com.denebapps.patrimonio.ui.components.SettingsCard
@@ -41,11 +43,13 @@ import com.denebapps.patrimonio.ui.components.TextField
 import com.denebapps.patrimonio.ui.components.TextLink
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
+import kotlinx.datetime.TimeZone
 import org.koin.compose.viewmodel.koinViewModel
 
 /**
  * The optional cloud account, pushed from Ajustes. Signed out: sign in or create the account (email and
- * password) and reset a forgotten password. Signed in: who it is, sign out and delete the account.
+ * password) and reset a forgotten password. Signed in: who it is, its cloud backup, sign out and delete the
+ * account.
  */
 @Composable
 fun AccountScreen(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel: AccountViewModel = koinViewModel()) {
@@ -146,14 +150,9 @@ private fun SignedInContent(state: AccountUiState, viewModel: AccountViewModel) 
             showDivider = false,
         )
     }
-    Text(
-        text = "Muy pronto tus datos se guardarán solos en la nube con esta cuenta. " +
-            "Mientras tanto, siguen solo en este móvil.",
-        color = colors.muted,
-        fontSize = 13.sp,
-        lineHeight = 18.sp,
-        modifier = Modifier.padding(top = 12.dp, bottom = 12.dp),
-    )
+    Spacer(Modifier.height(12.dp))
+    CloudBackupSection(state.cloud, viewModel)
+    Spacer(Modifier.height(12.dp))
     SettingsCard {
         SettingsRow(title = "Cerrar sesión", onClick = { confirmSignOut = true })
         SettingsRow(title = "Borrar cuenta", onClick = { confirmDelete = true }, showDivider = false, danger = true)
@@ -186,6 +185,98 @@ private fun SignedInContent(state: AccountUiState, viewModel: AccountViewModel) 
     }
 }
 
+private enum class ConflictChoice { USE_CLOUD, KEEP_LOCAL }
+
+/** The automatic backup: when it last saved, or the choice to make when the cloud holds other data. */
+@Composable
+private fun CloudBackupSection(cloud: CloudBackupState, viewModel: AccountViewModel) {
+    val colors = LocalAppColors.current
+    val zone = remember { TimeZone.currentSystemDefault() }
+    var confirm by rememberSaveable { mutableStateOf<ConflictChoice?>(null) }
+
+    if (cloud is CloudBackupState.Conflict) {
+        Text(
+            text = "Esta cuenta ya tiene una copia en la nube con otros datos, guardada el " +
+                "${formatBackupTime(cloud.cloudSavedAt, zone)}. ¿Con cuáles te quedas?",
+            color = colors.ink2,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
+        )
+        PrimaryButton(
+            text = "Usar la copia de la nube",
+            onClick = { confirm = ConflictChoice.USE_CLOUD },
+            modifier = Modifier.padding(top = 14.dp),
+        )
+        GhostButton(
+            text = "Mantener los datos de este móvil",
+            onClick = { confirm = ConflictChoice.KEEP_LOCAL },
+            modifier = Modifier.padding(top = 10.dp),
+        )
+    } else {
+        SettingsCard {
+            SettingsRow(
+                title = "Copia en la nube",
+                subtitle = cloudSubtitle(cloud, zone),
+                leading = { Icon(AppIcons.cloud, contentDescription = null, tint = colors.brand) },
+                showDivider = cloud is CloudBackupState.CheckFailed || cloud is CloudBackupState.Active,
+            )
+            when {
+                cloud is CloudBackupState.CheckFailed ->
+                    SettingsRow(title = "Reintentar", onClick = viewModel::onRetryCloud, showDivider = false)
+                cloud is CloudBackupState.Active && !cloud.backingUp ->
+                    SettingsRow(title = "Guardar ahora", onClick = viewModel::onBackUpNow, showDivider = false)
+                cloud is CloudBackupState.Active -> SettingsRow(title = "Guardando…", showDivider = false)
+            }
+        }
+    }
+
+    when (confirm) {
+        ConflictChoice.USE_CLOUD -> AlertDialog(
+            onDismissRequest = { confirm = null },
+            title = { Text("¿Usar la copia de la nube?") },
+            text = {
+                Text(
+                    "Los datos de este móvil se sustituirán por los de la copia. Si quieres conservarlos, " +
+                        "exporta antes una copia desde Ajustes.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirm = null
+                        viewModel.onUseCloudCopy()
+                    },
+                ) { Text("Usar la copia") }
+            },
+            dismissButton = { TextButton(onClick = { confirm = null }) { Text("Cancelar") } },
+        )
+        ConflictChoice.KEEP_LOCAL -> AlertDialog(
+            onDismissRequest = { confirm = null },
+            title = { Text("¿Mantener los datos de este móvil?") },
+            text = { Text("La copia de la nube se sustituirá por los datos de este móvil.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirm = null
+                        viewModel.onKeepLocalData()
+                    },
+                ) { Text("Mantener") }
+            },
+            dismissButton = { TextButton(onClick = { confirm = null }) { Text("Cancelar") } },
+        )
+        null -> Unit
+    }
+}
+
+private fun cloudSubtitle(cloud: CloudBackupState, zone: TimeZone): String = when (cloud) {
+    CloudBackupState.SignedOut, CloudBackupState.Checking -> "Comprobando la copia de la nube…"
+    CloudBackupState.Resolving -> "Aplicando tu elección…"
+    is CloudBackupState.Conflict -> ""
+    is CloudBackupState.CheckFailed -> cloudMessageFor(cloud.error)
+    is CloudBackupState.Active -> cloud.failure?.let { "No se pudo guardar la última copia. ${cloudMessageFor(it)}" }
+        ?: "Última copia: ${formatBackupTime(cloud.lastBackupAt, zone)}. Se guarda sola con cada cambio."
+}
+
 /** Firebase asks for a recent sign-in before deleting an account, so the dialog asks for the password. */
 @Composable
 private fun DeleteAccountDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
@@ -195,7 +286,10 @@ private fun DeleteAccountDialog(onConfirm: (String) -> Unit, onDismiss: () -> Un
         title = { Text("¿Borrar la cuenta?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Se borra la cuenta para siempre. Tus datos siguen en este móvil. Escribe tu contraseña:")
+                Text(
+                    "Se borran para siempre la cuenta y su copia en la nube. Tus datos siguen en este móvil. " +
+                        "Escribe tu contraseña:",
+                )
                 TextField(value = password, onValueChange = { password = it }, label = "Contraseña", isPassword = true)
             }
         },
