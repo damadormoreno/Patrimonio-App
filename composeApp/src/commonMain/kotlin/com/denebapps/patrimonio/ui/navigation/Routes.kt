@@ -33,6 +33,10 @@ object Settings
 @Serializable
 object Profile
 
+/** Optional cloud account (sign in, create, sign out, delete), opened from Ajustes. */
+@Serializable
+object Account
+
 /** Month-by-month net worth ("Evolución mensual"), opened from the Patrimonio header. */
 @Serializable
 object NetWorthHistory

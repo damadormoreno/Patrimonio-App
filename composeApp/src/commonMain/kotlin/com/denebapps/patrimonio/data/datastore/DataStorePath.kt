@@ -3,5 +3,10 @@ package com.denebapps.patrimonio.data.datastore
 import com.denebapps.patrimonio.data.platform.PlatformContext
 
 /** Android: `context.filesDir`. iOS: Application Support `datastore/` (okio Path resolved by the DataStore
- *  factory from this plain [String]). */
-expect fun dataStoreFilePath(context: PlatformContext): String
+ *  factory from this plain [String]). Each [fileName] is its own DataStore (one instance per file). */
+expect fun dataStoreFilePath(context: PlatformContext, fileName: String = PREFERENCES_FILE_NAME): String
+
+const val PREFERENCES_FILE_NAME = "patrimonio.preferences_pb"
+
+/** Kept apart from the preferences so Android's auto backup can leave the session tokens out. */
+const val AUTH_SESSION_FILE_NAME = "patrimonio-auth.preferences_pb"

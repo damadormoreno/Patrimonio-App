@@ -27,6 +27,7 @@ import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.domain.repository.SubscriptionRepository
+import com.denebapps.patrimonio.ui.screens.account.AccountViewModel
 import com.denebapps.patrimonio.ui.screens.history.NetWorthHistoryViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.AddPatrimonioSheetViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.GruposViewModel
@@ -278,7 +279,7 @@ class KoinModuleTest {
 
     @Test
     fun `every presentation ViewModel resolves with all dependencies satisfied`() {
-        val koin = startTestKoin(fxModule, presentationModule)
+        val koin = startTestKoin(fxModule, authModule, presentationModule)
 
         assertNotNull(koin.get<AppViewModel>())
         assertNotNull(koin.get<SettingsViewModel>())
@@ -291,6 +292,7 @@ class KoinModuleTest {
         assertNotNull(koin.get<GruposViewModel>())
         assertNotNull(koin.get<SavingsGoalsViewModel>())
         assertNotNull(koin.get<ProfileViewModel>())
+        assertNotNull(koin.get<AccountViewModel>())
     }
 
     private fun startTestKoin(vararg additionalModules: Module): Koin {
