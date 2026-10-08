@@ -50,6 +50,9 @@ import kotlin.uuid.Uuid
  *    back to step 1 instead of overwriting that copy. Data emptied on this device (Borrar todos los datos) is
  *    never uploaded over a copy that has data without asking either.
  *
+ * Everything uploaded is encrypted ([BackupCrypto]). The first time, the user creates a passphrase; a device
+ * without the data key asks for it to open the cloud copy, or lets the user start over.
+ *
  * Failures are retried with a growing delay, or straight away with [retry] / [backUpNow].
  */
 @OptIn(FlowPreview::class, ExperimentalUuidApi::class)
@@ -60,12 +63,14 @@ class CloudBackupSync(
     private val linkStore: CloudLinkStore,
     private val localChanges: LocalDataChanges,
     private val clock: Clock,
+    private val crypto: BackupCrypto = BackupCrypto(),
     private val newRevision: () -> String = { Uuid.random().toString() },
 ) : CloudBackup {
     private val _state = MutableStateFlow<CloudBackupState>(CloudBackupState.SignedOut)
     override val state: StateFlow<CloudBackupState> = _state.asStateFlow()
 
     private val choices = Channel<Choice>(Channel.CONFLATED)
+    private val passphrases = Channel<PassphraseAction>(Channel.CONFLATED)
     private val uploadRequests =
         MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
@@ -103,6 +108,31 @@ class CloudBackupSync(
         if (_state.value is CloudBackupState.Active) uploadRequests.tryEmit(Unit)
     }
 
+    override fun submitPassphrase(passphrase: String) {
+        val current = _state.value
+        if (current is CloudBackupState.NeedsPassphrase && !current.working) {
+            passphrases.trySend(PassphraseAction.Submit(passphrase))
+        }
+    }
+
+    override fun startOver(passphrase: String) {
+        val current = _state.value
+        if (current is CloudBackupState.NeedsPassphrase && current.unlock && !current.working) {
+            passphrases.trySend(PassphraseAction.StartOver(passphrase))
+        }
+    }
+
+    override suspend fun changePassphrase(passphrase: String) {
+        if (_state.value !is CloudBackupState.Active) return
+        val uid = authRepository.observeUser().first()?.uid ?: return
+        uploadMutex.withLock {
+            val key = linkStore.key(uid) ?: return
+            linkStore.saveKey(uid, crypto.rewrap(key, passphrase))
+        }
+        // The next copy carries the key under the new passphrase.
+        uploadRequests.tryEmit(Unit)
+    }
+
     override suspend fun deleteAccount(password: String) {
         uploadMutex.withLock {
             authRepository.deleteAccount(password) {
@@ -122,6 +152,12 @@ class CloudBackupSync(
             _state.value = CloudBackupState.Checking
             try {
                 val cloud = remote.fetch(uid, authRepository.idToken(), withData = false)
+                val cloudKey = cloud?.key
+                if (cloudKey != null && linkStore.key(uid)?.keyId != cloudKey.keyId) {
+                    if (unlock(uid, cloudKey)) return true
+                } else if (linkStore.key(uid) == null) {
+                    createKey(uid)
+                }
                 val link = linkStore.get()
                 return when {
                     cloud == null -> {
@@ -156,12 +192,12 @@ class CloudBackupSync(
             return true
         }
         val cloud = remote.fetch(uid, authRepository.idToken(), withData = true)
-        if (cloud?.json == null) {
+        if (cloud?.data == null) {
             // The copy was deleted meanwhile: this device's data becomes the copy.
             upload(uid, checkCloud = false)
             return true
         }
-        backupRepository.importJson(cloud.json)
+        backupRepository.importJson(readable(uid, cloud, cloud.data))
         linkStore.save(CloudLink(uid, cloud.revision, cloud.savedAt.toEpochMilliseconds()))
         _state.value = CloudBackupState.Active(cloud.savedAt)
         return true
@@ -203,8 +239,62 @@ class CloudBackupSync(
         }
     }
 
+    /** The backup JSON in [cloud]: decrypted, or as is in a copy from before encryption. */
+    private suspend fun readable(uid: String, cloud: CloudBackupDocument, data: String): String {
+        val cloudKey = cloud.key ?: return data
+        val key = requireKey(uid)
+        if (key.keyId != cloudKey.keyId) throw CloudBackupException(CloudBackupError.INVALID_BACKUP)
+        return try {
+            crypto.decrypt(key, uid, data)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw CloudBackupException(CloudBackupError.INVALID_BACKUP, e)
+        }
+    }
+
+    /** No data key on this device and no encrypted copy in the cloud: the user creates the passphrase. */
+    private suspend fun createKey(uid: String) {
+        while (passphrases.tryReceive().isSuccess) Unit
+        _state.value = CloudBackupState.NeedsPassphrase(unlock = false)
+        val action = passphrases.receive()
+        _state.value = CloudBackupState.NeedsPassphrase(unlock = false, working = true)
+        linkStore.saveKey(uid, crypto.createKey(newKeyId(), action.passphrase))
+    }
+
+    /**
+     * The cloud copy is encrypted with a key this device does not hold: the passphrase opens it, or the user
+     * starts over with a new one, replacing the cloud copy with this device's data. Returns true after
+     * starting over, when the cloud copy already matches this device.
+     */
+    private suspend fun unlock(uid: String, wrapped: WrappedDataKey): Boolean {
+        while (passphrases.tryReceive().isSuccess) Unit
+        _state.value = CloudBackupState.NeedsPassphrase(unlock = true)
+        while (true) {
+            val action = passphrases.receive()
+            _state.value = CloudBackupState.NeedsPassphrase(unlock = true, working = true)
+            when (action) {
+                is PassphraseAction.Submit -> try {
+                    linkStore.saveKey(uid, crypto.unwrap(wrapped, action.passphrase))
+                    return false
+                } catch (e: WrongPassphraseException) {
+                    _state.value = CloudBackupState.NeedsPassphrase(unlock = true, wrongPassphrase = true)
+                }
+                is PassphraseAction.StartOver -> {
+                    linkStore.saveKey(uid, crypto.createKey(newKeyId(), action.passphrase))
+                    upload(uid, checkCloud = false)
+                    return true
+                }
+            }
+        }
+    }
+
+    private suspend fun requireKey(uid: String): CloudKey =
+        linkStore.key(uid) ?: throw IllegalStateException("No data key on this device")
+
     private suspend fun upload(uid: String, checkCloud: Boolean) = uploadMutex.withLock {
         val idToken = authRepository.idToken()
+        val key = requireKey(uid)
         val backup = Json.parseToJsonElement(backupRepository.exportJson()).jsonObject
         val records = recordCount(backup)
         if (checkCloud) {
@@ -219,7 +309,8 @@ class CloudBackupSync(
         val savedAt = clock.now()
         val revision = newRevision()
         // The backup file is pretty-printed for people; the cloud copy does not need the whitespace.
-        remote.upload(uid, idToken, CloudBackupDocument(revision, savedAt, records, backup.toString()))
+        val data = crypto.encrypt(key, uid, backup.toString())
+        remote.upload(uid, idToken, CloudBackupDocument(revision, savedAt, records, key.wrapped, data))
         linkStore.save(CloudLink(uid, revision, savedAt.toEpochMilliseconds()))
         _state.value = CloudBackupState.Active(savedAt)
     }
@@ -242,7 +333,17 @@ class CloudBackupSync(
         }
     }
 
+    private fun newKeyId() = Uuid.random().toString()
+
     private enum class Choice { RETRY, USE_CLOUD, KEEP_LOCAL }
+
+    private sealed interface PassphraseAction {
+        val passphrase: String
+
+        class Submit(override val passphrase: String) : PassphraseAction
+
+        class StartOver(override val passphrase: String) : PassphraseAction
+    }
 
     /** Another device changed the cloud copy, or this device's data was emptied ([localDataEmptied]). */
     private class StopBackingUp(val localDataEmptied: Boolean) : Exception("The cloud copy needs the user's choice")

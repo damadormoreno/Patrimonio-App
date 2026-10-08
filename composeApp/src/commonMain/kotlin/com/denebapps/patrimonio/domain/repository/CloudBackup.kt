@@ -11,6 +11,18 @@ sealed interface CloudBackupState {
     /** Comparing the cloud copy with this device before uploading anything. */
     data object Checking : CloudBackupState
 
+    /**
+     * The copy is end-to-end encrypted and this device has no key yet. With [unlock] the cloud copy exists and
+     * its passphrase opens it ([CloudBackup.submitPassphrase]), or the user starts over with a new one
+     * ([CloudBackup.startOver]); otherwise the user creates the passphrase. [working] while it is derived
+     * (on purpose slow); [wrongPassphrase] after one that did not open the copy.
+     */
+    data class NeedsPassphrase(
+        val unlock: Boolean,
+        val working: Boolean = false,
+        val wrongPassphrase: Boolean = false,
+    ) : CloudBackupState
+
     /** The check (or the choice in [Conflict]) failed; it is retried automatically and by [CloudBackup.retry]. */
     data class CheckFailed(val error: CloudBackupError) : CloudBackupState
 
@@ -31,9 +43,10 @@ sealed interface CloudBackupState {
 }
 
 /**
- * Automatic backup of the whole data set (the backup JSON) to the signed-in account. One copy per account:
- * each upload replaces the previous one. Before the first upload of a session, and before every upload,
- * the cloud copy is checked: if another device changed it, the user decides which data wins.
+ * Automatic backup of the whole data set (the backup JSON) to the signed-in account, encrypted with a key only
+ * the user's passphrase opens. One copy per account: each upload replaces the previous one. Before the first
+ * upload of a session, and before every upload, the cloud copy is checked: if another device changed it, the
+ * user decides which data wins.
  */
 interface CloudBackup {
     val state: StateFlow<CloudBackupState>
@@ -51,6 +64,17 @@ interface CloudBackup {
 
     /** In [CloudBackupState.Active]: uploads now instead of waiting for the next change. */
     fun backUpNow()
+
+    /** In [CloudBackupState.NeedsPassphrase]: creates the passphrase, or opens the cloud copy with it. */
+    fun submitPassphrase(passphrase: String)
+
+    /** In [CloudBackupState.NeedsPassphrase] with `unlock`: replaces the cloud copy with this device's data,
+     *  encrypted under a new [passphrase]. For a forgotten passphrase. */
+    fun startOver(passphrase: String)
+
+    /** In [CloudBackupState.Active]: the cloud copy will open with [passphrase] from the next upload on, which
+     *  is requested right away. The old passphrase is not needed: this device holds the key. */
+    suspend fun changePassphrase(passphrase: String)
 
     /**
      * Deletes the cloud copy and then the account, after checking [password] ([AuthRepository.deleteAccount]).

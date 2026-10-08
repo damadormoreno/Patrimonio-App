@@ -51,7 +51,7 @@ class FirestoreBackupApiTest {
         val api = api { respondJson("{}") }
         val json = "{\"name\":\"" + "á".repeat(1_000) + "\"}"
 
-        api.upload("uid-1", "id-1", CloudBackupDocument("rev-1", SAVED_AT, records = 7, json))
+        api.upload("uid-1", "id-1", CloudBackupDocument("rev-1", SAVED_AT, records = 7, WRAPPED_KEY, json))
 
         val request = requests.single()
         assertEquals(HttpMethod.Patch, request.method)
@@ -70,6 +70,14 @@ class FirestoreBackupApiTest {
         assertEquals("7", fields.getValue("records").jsonObject.getValue("integerValue").jsonPrimitive.content)
         assertEquals(2, chunks.size)
         assertEquals(json, chunks.joinToString(""))
+        fun string(field: String) = fields.getValue(field).jsonObject.getValue("stringValue").jsonPrimitive.content
+        assertEquals("key-1", string("keyId"))
+        assertEquals("c2FsdA==", string("kdfSalt"))
+        assertEquals("d3JhcHBlZA==", string("wrappedKey"))
+        assertEquals(
+            "600000",
+            fields.getValue("kdfIterations").jsonObject.getValue("integerValue").jsonPrimitive.content,
+        )
     }
 
     @Test
@@ -77,6 +85,8 @@ class FirestoreBackupApiTest {
         val api = api {
             respondJson(
                 """{"name":"x","fields":{"revision":{"stringValue":"rev-1"},"records":{"integerValue":"7"},""" +
+                    """"keyId":{"stringValue":"key-1"},"kdfSalt":{"stringValue":"c2FsdA=="},""" +
+                    """"kdfIterations":{"integerValue":"600000"},"wrappedKey":{"stringValue":"d3JhcHBlZA=="},""" +
                     """"savedAt":{"timestampValue":"2026-10-08T09:00:00.123456Z"}}}""",
             )
         }
@@ -84,9 +94,9 @@ class FirestoreBackupApiTest {
         val document = api.fetch("uid-1", "id-1", withData = false)
 
         val savedAt = Instant.parse("2026-10-08T09:00:00.123456Z")
-        assertEquals(CloudBackupDocument("rev-1", savedAt, records = 7, json = null), document)
+        assertEquals(CloudBackupDocument("rev-1", savedAt, records = 7, WRAPPED_KEY, data = null), document)
         assertEquals(
-            listOf("revision", "savedAt", "records"),
+            listOf("revision", "savedAt", "records", "keyId", "kdfSalt", "kdfIterations", "wrappedKey"),
             requests.single().url.parameters.getAll("mask.fieldPaths"),
         )
         assertEquals("Bearer id-1", requests.single().headers[HttpHeaders.Authorization])
@@ -104,9 +114,10 @@ class FirestoreBackupApiTest {
 
         val document = api.fetch("uid-1", "id-1", withData = true)
 
-        assertEquals("{\"a\":1}", document?.json)
-        // Copies from before the record count have none.
+        assertEquals("{\"a\":1}", document?.data)
+        // Copies from before the record count and the encryption have neither.
         assertNull(document?.records)
+        assertNull(document?.key)
         assertTrue(requests.single().url.parameters.getAll("mask.fieldPaths").isNullOrEmpty())
     }
 
@@ -163,7 +174,7 @@ class FirestoreBackupApiTest {
         val api = api { respondJson("{}") }
 
         val error = assertFailsWith<CloudBackupException> {
-            api.upload("uid-1", "id-1", CloudBackupDocument("r", SAVED_AT, records = 1, "x".repeat(950_000)))
+            api.upload("uid-1", "id-1", CloudBackupDocument("r", SAVED_AT, 1, WRAPPED_KEY, "x".repeat(950_000)))
         }
 
         assertEquals(CloudBackupError.TOO_LARGE, error.error)
@@ -184,5 +195,6 @@ class FirestoreBackupApiTest {
 
     private companion object {
         val SAVED_AT: Instant = Instant.parse("2026-10-08T09:00:00Z")
+        val WRAPPED_KEY = WrappedDataKey("key-1", salt = "c2FsdA==", iterations = 600_000, wrapped = "d3JhcHBlZA==")
     }
 }

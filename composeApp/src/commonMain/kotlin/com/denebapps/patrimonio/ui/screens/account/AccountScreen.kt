@@ -187,14 +187,34 @@ private fun SignedInContent(state: AccountUiState, viewModel: AccountViewModel) 
 
 private enum class ConflictChoice { USE_CLOUD, KEEP_LOCAL }
 
-/** The automatic backup: when it last saved, or the choice to make when the cloud holds other data. */
+/**
+ * The automatic backup: the passphrase to create or type, the choice to make when the cloud holds other data,
+ * or when it last saved.
+ */
 @Composable
 private fun CloudBackupSection(cloud: CloudBackupState, viewModel: AccountViewModel) {
     val colors = LocalAppColors.current
     val zone = remember { TimeZone.currentSystemDefault() }
     var confirm by rememberSaveable { mutableStateOf<ConflictChoice?>(null) }
+    var changingPassphrase by rememberSaveable { mutableStateOf(false) }
 
-    if (cloud is CloudBackupState.Conflict) {
+    if (cloud is CloudBackupState.NeedsPassphrase && !cloud.unlock) {
+        Paragraph(
+            "Tus datos se cifran en este móvil antes de subir a la nube: nadie más puede leerlos, ni siquiera " +
+                "nosotros. Elige una frase de cifrado; te la pediremos al iniciar sesión en otro móvil.",
+        )
+        Paragraph(
+            "Si la olvidas no se puede recuperar la copia de la nube, aunque tus datos de este móvil no se pierden.",
+            muted = true,
+        )
+        NewPassphraseForm(
+            buttonText = "Activar la copia cifrada",
+            working = cloud.working,
+            onSubmit = viewModel::onSubmitPassphrase,
+        )
+    } else if (cloud is CloudBackupState.NeedsPassphrase) {
+        UnlockForm(cloud, viewModel)
+    } else if (cloud is CloudBackupState.Conflict) {
         Text(
             text = "Esta cuenta ya tiene una copia en la nube con otros datos, guardada el " +
                 "${formatBackupTime(cloud.cloudSavedAt, zone)}. ¿Con cuáles te quedas?",
@@ -224,10 +244,27 @@ private fun CloudBackupSection(cloud: CloudBackupState, viewModel: AccountViewMo
                 cloud is CloudBackupState.CheckFailed ->
                     SettingsRow(title = "Reintentar", onClick = viewModel::onRetryCloud, showDivider = false)
                 cloud is CloudBackupState.Active && !cloud.backingUp ->
-                    SettingsRow(title = "Guardar ahora", onClick = viewModel::onBackUpNow, showDivider = false)
-                cloud is CloudBackupState.Active -> SettingsRow(title = "Guardando…", showDivider = false)
+                    SettingsRow(title = "Guardar ahora", onClick = viewModel::onBackUpNow)
+                cloud is CloudBackupState.Active -> SettingsRow(title = "Guardando…")
+            }
+            if (cloud is CloudBackupState.Active) {
+                SettingsRow(
+                    title = "Cambiar frase de cifrado",
+                    onClick = { changingPassphrase = true },
+                    showDivider = false,
+                )
             }
         }
+    }
+
+    if (changingPassphrase) {
+        ChangePassphraseDialog(
+            onConfirm = { passphrase ->
+                changingPassphrase = false
+                viewModel.onChangePassphrase(passphrase)
+            },
+            onDismiss = { changingPassphrase = false },
+        )
     }
 
     when (confirm) {
@@ -268,13 +305,169 @@ private fun CloudBackupSection(cloud: CloudBackupState, viewModel: AccountViewMo
     }
 }
 
+/** The cloud copy is encrypted and this device has no key: the passphrase, or starting over without it. */
+@Composable
+private fun UnlockForm(cloud: CloudBackupState.NeedsPassphrase, viewModel: AccountViewModel) {
+    val colors = LocalAppColors.current
+    var passphrase by remember { mutableStateOf("") }
+    var forgotten by rememberSaveable { mutableStateOf(false) }
+    var confirmStartOver by remember { mutableStateOf<String?>(null) }
+
+    if (!forgotten) {
+        Paragraph("Tu copia de la nube está cifrada. Escribe tu frase de cifrado para abrirla.")
+        TextField(
+            value = passphrase,
+            onValueChange = { passphrase = it },
+            label = "Frase de cifrado",
+            leadingIcon = AppIcons.lock,
+            isPassword = true,
+            modifier = Modifier.padding(top = 12.dp),
+        )
+        if (cloud.wrongPassphrase) {
+            Text(
+                text = "Esa frase no abre la copia.",
+                color = colors.expense,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        PrimaryButton(
+            text = if (cloud.working) "Abriendo…" else "Abrir la copia",
+            onClick = { viewModel.onSubmitPassphrase(passphrase) },
+            enabled = passphrase.isNotEmpty() && !cloud.working,
+            modifier = Modifier.padding(top = 14.dp),
+        )
+        TextLink(
+            text = "He olvidado la frase",
+            onClick = { forgotten = true },
+            modifier = Modifier.padding(top = 14.dp),
+        )
+    } else {
+        Paragraph(
+            "Sin la frase, la copia de la nube no se puede abrir. Puedes empezar de cero: la copia se sustituye " +
+                "por los datos de este móvil, cifrados con una frase nueva.",
+        )
+        NewPassphraseForm(
+            buttonText = "Empezar de cero",
+            working = cloud.working,
+            onSubmit = { confirmStartOver = it },
+        )
+        TextLink(
+            text = "Volver a probar con mi frase",
+            onClick = { forgotten = false },
+            modifier = Modifier.padding(top = 14.dp),
+        )
+    }
+
+    confirmStartOver?.let { newPassphrase ->
+        AlertDialog(
+            onDismissRequest = { confirmStartOver = null },
+            title = { Text("¿Empezar de cero?") },
+            text = { Text("La copia de la nube se borra y se sustituye por los datos de este móvil.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmStartOver = null
+                        viewModel.onStartOver(newPassphrase)
+                    },
+                ) { Text("Empezar de cero") }
+            },
+            dismissButton = { TextButton(onClick = { confirmStartOver = null }) { Text("Cancelar") } },
+        )
+    }
+}
+
+/** A new passphrase typed twice; [onSubmit] gets it once it is long enough and both match. */
+@Composable
+private fun NewPassphraseForm(buttonText: String, working: Boolean, onSubmit: (String) -> Unit) {
+    var passphrase by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
+    val problem = passphraseProblem(passphrase, confirmation)
+
+    PassphraseFields(passphrase, { passphrase = it }, confirmation, { confirmation = it }, problem)
+    PrimaryButton(
+        text = if (working) "Preparando el cifrado…" else buttonText,
+        onClick = { onSubmit(passphrase) },
+        enabled = problem == null && !working,
+        modifier = Modifier.padding(top = 14.dp),
+    )
+}
+
+@Composable
+private fun ChangePassphraseDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var passphrase by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
+    val problem = passphraseProblem(passphrase, confirmation)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Cambiar frase de cifrado") },
+        text = {
+            Column {
+                Text("La copia de la nube se abrirá con la frase nueva. No hace falta la anterior.")
+                PassphraseFields(passphrase, { passphrase = it }, confirmation, { confirmation = it }, problem)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(passphrase) }, enabled = problem == null) { Text("Cambiar") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
+}
+
+@Composable
+private fun PassphraseFields(
+    passphrase: String,
+    onPassphraseChange: (String) -> Unit,
+    confirmation: String,
+    onConfirmationChange: (String) -> Unit,
+    problem: String?,
+) {
+    TextField(
+        value = passphrase,
+        onValueChange = onPassphraseChange,
+        label = "Frase de cifrado (mínimo $MIN_PASSPHRASE_LENGTH caracteres)",
+        leadingIcon = AppIcons.lock,
+        isPassword = true,
+        modifier = Modifier.padding(top = 12.dp),
+    )
+    TextField(
+        value = confirmation,
+        onValueChange = onConfirmationChange,
+        label = "Repite la frase",
+        leadingIcon = AppIcons.lock,
+        isPassword = true,
+        modifier = Modifier.padding(top = 10.dp),
+    )
+    // Only once both fields have something, so the hint does not nag while typing the first one.
+    if (problem != null && passphrase.isNotEmpty() && confirmation.isNotEmpty()) {
+        Text(
+            text = problem,
+            color = LocalAppColors.current.muted,
+            fontSize = 13.sp,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun Paragraph(text: String, muted: Boolean = false) {
+    val colors = LocalAppColors.current
+    Text(
+        text = text,
+        color = if (muted) colors.muted else colors.ink2,
+        fontSize = if (muted) 13.sp else 14.sp,
+        lineHeight = if (muted) 18.sp else 20.sp,
+        modifier = Modifier.padding(bottom = 6.dp),
+    )
+}
+
 private fun cloudSubtitle(cloud: CloudBackupState, zone: TimeZone): String = when (cloud) {
     CloudBackupState.SignedOut, CloudBackupState.Checking -> "Comprobando la copia de la nube…"
     CloudBackupState.Resolving -> "Aplicando tu elección…"
-    is CloudBackupState.Conflict -> ""
+    is CloudBackupState.Conflict, is CloudBackupState.NeedsPassphrase -> ""
     is CloudBackupState.CheckFailed -> cloudMessageFor(cloud.error)
     is CloudBackupState.Active -> cloud.failure?.let { "No se pudo guardar la última copia. ${cloudMessageFor(it)}" }
-        ?: "Última copia: ${formatBackupTime(cloud.lastBackupAt, zone)}. Se guarda sola con cada cambio."
+        ?: "Última copia: ${formatBackupTime(cloud.lastBackupAt, zone)}. Cifrada y se guarda sola con cada cambio."
 }
 
 /** Firebase asks for a recent sign-in before deleting an account, so the dialog asks for the password. */
