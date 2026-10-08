@@ -30,12 +30,14 @@ import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.domain.repository.SubscriptionRepository
 import com.denebapps.patrimonio.ui.screens.account.AccountViewModel
 import com.denebapps.patrimonio.ui.screens.history.NetWorthHistoryViewModel
+import com.denebapps.patrimonio.ui.screens.lock.LockViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.AddPatrimonioSheetViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.GruposViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.PatrimonioViewModel
 import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
 import com.denebapps.patrimonio.ui.screens.settings.BackupViewModel
+import com.denebapps.patrimonio.ui.screens.settings.SecurityViewModel
 import com.denebapps.patrimonio.ui.screens.settings.SettingsViewModel
 import com.denebapps.patrimonio.ui.screens.subscriptions.SubscriptionSheetViewModel
 import com.denebapps.patrimonio.ui.screens.subscriptions.SubscriptionsViewModel
@@ -294,6 +296,8 @@ class KoinModuleTest {
         assertNotNull(koin.get<SavingsGoalsViewModel>())
         assertNotNull(koin.get<ProfileViewModel>())
         assertNotNull(koin.get<AccountViewModel>())
+        assertNotNull(koin.get<LockViewModel>())
+        assertNotNull(koin.get<SecurityViewModel>())
         assertSame(koin.get<CloudBackup>(), koin.get<CloudBackup>())
     }
 
