@@ -7,6 +7,14 @@ Firebase App Distribution:
 - **Cada push a una PR con la etiqueta `preview`**, para probar un cambio antes de mergearlo.
 - **A mano**: Actions → Preview → *Run workflow*.
 
+## Qué corre en Actions
+
+- **CI** (`ci.yml`) en cada PR que toca código (no en `docs/` ni en `.md`): Android (ktlint, tests y la
+  build minificada) e iOS (compilación Kotlin/Native), en paralelo. No se repite al mergear: lo mergeado
+  es lo que ya pasó en la PR, y la preview de `main` lo vuelve a compilar.
+- **En local**, antes de hacer push: `scripts/check.sh` (lo mismo que CI; iOS solo en un Mac) o
+  `scripts/check.sh --fast` (ktlint y tests).
+
 La app de preview se instala **al lado** de la de Android Studio: id `com.denebapps.patrimonio.preview`,
 nombre «Patrimonio β» y datos propios. Cada build actualiza la anterior sin perder datos, porque
 siempre se firma con la misma clave. Las notas de la versión llevan el título de la PR, el número de

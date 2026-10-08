@@ -1,9 +1,12 @@
 name: CI
 
+# PRs that change code, and on demand. A merge to main is not re-checked: it is what the PR already ran,
+# and the preview build of main compiles it again. scripts/check.sh runs the same checks locally.
 on:
   pull_request:
-  push:
-    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
   workflow_dispatch:
 
 concurrency:
@@ -34,9 +37,6 @@ jobs:
 
       - name: Unit tests (JVM + Robolectric/Room)
         run: ./gradlew :composeApp:testDebugUnitTest
-
-      - name: Assemble debug APK
-        run: ./gradlew :composeApp:assembleDebug
 
       # The preview build is minified like the store build (R8), signed here with the debug key. R8 fails
       # the build on classes referenced but missing; it then writes the rules it suggests.
@@ -81,8 +81,8 @@ jobs:
 
   ios:
     name: iOS · Kotlin/Native compile
-    # macOS minutes bill at 10x on private repos; the triggers above already limit runs to PRs
-    # and pushes to main.
+    # Catches what only Kotlin/Native sees, such as an expect without its iOS actual. Runs next to the
+    # Android job, so it adds no waiting.
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
