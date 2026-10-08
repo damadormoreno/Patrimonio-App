@@ -155,13 +155,20 @@ android {
     }
 
     buildTypes {
-        // A debug build installed next to the Android Studio one: own id, data and name (the
+        // R8 shrinks and obfuscates the store build. It breaks at run time, not at compile time, so the
+        // preview build below is minified the same way: what reaches the phone is what reaches the store.
+        getByName("release") {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        // The release build installed next to the Android Studio one: own id, data and name (the
         // "Patrimonio β" label lives in src/androidPreview/res, the KMP folder for this build type).
         create("preview") {
-            initWith(getByName("debug"))
+            initWith(getByName("release"))
             applicationIdSuffix = ".preview"
             versionNameSuffix = "-preview"
-            matchingFallbacks += "debug"
+            matchingFallbacks += "release"
             signingConfig = signingConfigs.findByName("preview") ?: signingConfigs.getByName("debug")
         }
     }

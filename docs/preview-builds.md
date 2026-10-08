@@ -14,6 +14,17 @@ build y el commit.
 
 Mientras falten secrets, el workflow solo deja un aviso y no hace nada más (`main` sigue en verde).
 
+## Minificada como la de tienda (R8)
+
+La variante `preview` parte de `release`: **R8 activado** (código y recursos) y no depurable. R8 falla en
+tiempo de ejecución, no al compilar, así que lo que se prueba en el móvil es lo mismo que irá a la tienda.
+
+- Reglas propias en `composeApp/proguard-rules.pro`: solo las que haya pedido un fallo real, con comentario.
+- El CI compila la variante minificada en cada PR. Si R8 echa en falta clases, el check muestra las reglas
+  que sugiere en una anotación «R8 missing rules».
+- Cada build sube su `mapping.txt` como artefacto (`r8-mapping-build-N` en *Preview*, 90 días) para
+  desofuscar trazas con `retrace`.
+
 ## Configuración (una vez)
 
 ### 1. Firebase
