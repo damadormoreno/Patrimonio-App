@@ -82,6 +82,15 @@ jobs:
           VERSION_CODE: ${{ github.run_number }}
         run: ./gradlew :composeApp:assemblePreview
 
+      # The build is minified (R8): this file turns its stack traces back into readable ones.
+      - name: Upload R8 mapping
+        uses: actions/upload-artifact@v4
+        with:
+          name: r8-mapping-build-${{ github.run_number }}
+          path: composeApp/build/outputs/mapping/preview/mapping.txt
+          if-no-files-found: error
+          retention-days: 90
+
       # PR titles and commit messages are user input: they reach the script only through env vars.
       - name: Release notes
         env:
