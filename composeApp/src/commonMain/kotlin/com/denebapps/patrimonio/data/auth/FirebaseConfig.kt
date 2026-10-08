@@ -11,5 +11,5 @@ internal object FirebaseConfig {
 
     /** The "Web client" OAuth ID Firebase creates when the Google provider is enabled; Google ID tokens must be
      *  issued for it. Blank: Sign in with Google is not offered. Not a secret either. */
-    const val GOOGLE_WEB_CLIENT_ID = ""
+    const val GOOGLE_WEB_CLIENT_ID = "301814694875-g5og1somdueurc9gqg69rp4ltuc1iftl.apps.googleusercontent.com"
 }

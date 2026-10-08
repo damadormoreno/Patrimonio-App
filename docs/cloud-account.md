@@ -24,9 +24,11 @@ podido completar».
 
 1. **Authentication → Método de inicio de sesión → Agregar proveedor → Google** → Habilitar, elegir el
    correo de asistencia y Guardar. Firebase crea a la vez el cliente OAuth «Web client» en Google Cloud.
-2. Su ID va en `FirebaseConfig.GOOGLE_WEB_CLIENT_ID`. Se puede leer sin entrar en Google Cloud:
-   `https://www.googleapis.com/identitytoolkit/v3/relyingparty/getProjectConfig?key=<API_KEY>` →
-   `idpConfig[].clientId` del proveedor `google.com`. Mientras esté vacío, la app no enseña el botón.
+2. Su ID va en `FirebaseConfig.GOOGLE_WEB_CLIENT_ID`. Se puede leer sin entrar en Google Cloud: es el
+   `client_id` del `authUri` que devuelve
+   `POST https://identitytoolkit.googleapis.com/v1/accounts:createAuthUri?key=<API_KEY>` con
+   `{"providerId":"google.com","continueUri":"http://localhost"}`. Mientras esté vacío, la app no enseña
+   el botón.
 3. **Configuración del proyecto → General → Tus apps** → en cada app Android, **Agregar huella digital**
    con la SHA-1 y la SHA-256 del certificado que firma esa build:
    - `com.denebapps.patrimonio.preview`: el keystore de preview. El workflow de preview las escribe en el
