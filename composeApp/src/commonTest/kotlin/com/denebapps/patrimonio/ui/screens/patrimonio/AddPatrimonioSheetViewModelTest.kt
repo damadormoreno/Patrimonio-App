@@ -1,14 +1,21 @@
 package com.denebapps.patrimonio.ui.screens.patrimonio
 
+import com.denebapps.patrimonio.domain.calc.AccountUsage
+import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.Currency
+import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.RATE_SCALE
+import com.denebapps.patrimonio.domain.model.SavingsGoal
+import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
+import com.denebapps.patrimonio.testing.FakeAccountGroupRepository
 import com.denebapps.patrimonio.testing.FakeAssetRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeLiabilityRepository
+import com.denebapps.patrimonio.testing.FakeSavingsGoalRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -43,13 +50,19 @@ class AddPatrimonioSheetViewModelTest {
         liabilityRepository: FakeLiabilityRepository = FakeLiabilityRepository(),
         fxRepository: FakeFxRepository = FakeFxRepository(rates),
         idProvider: () -> String = { "generated-id" },
+        editingItemId: String? = null,
+        goals: FakeSavingsGoalRepository = FakeSavingsGoalRepository(),
+        accountGroups: FakeAccountGroupRepository = FakeAccountGroupRepository(),
     ) = AddPatrimonioSheetViewModel(
         assetRepository = assetRepository,
         liabilityRepository = liabilityRepository,
         fxRepository = fxRepository,
+        savingsGoalRepository = goals,
+        accountGroupRepository = accountGroups,
         idProvider = idProvider,
         initialIsLiability = isLiability,
         initialGroupId = groupId,
+        editingItemId = editingItemId,
     )
 
     @Test
@@ -129,17 +142,21 @@ class AddPatrimonioSheetViewModelTest {
     }
 
     @Test
-    fun `save is disabled when the value does not parse to a positive amount`() = runTest(dispatcher) {
+    fun `save is disabled when the value does not parse, and a zero balance is valid`() = runTest(dispatcher) {
         val vm = viewModel()
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
         vm.onGroupSelect(Asset.AssetGroup.BANK.name)
         vm.onNameChange("Cuenta nómina")
+        vm.onAmountChange("12,3,4")
+        advanceUntilIdle()
+        assertFalse(vm.state.value.canSave)
+
+        // An emptied account or a paid-off loan is still worth keeping.
         vm.onAmountChange("0,00")
         advanceUntilIdle()
-
-        assertFalse(vm.state.value.canSave)
+        assertTrue(vm.state.value.canSave)
         job.cancel()
     }
 
@@ -170,6 +187,144 @@ class AddPatrimonioSheetViewModelTest {
         assertNull(vm.state.value.eurHint)
         job.cancel()
     }
+
+    @Test
+    fun `editing an asset loads it, keeps its kind and updates it in place`() = runTest(dispatcher) {
+        val assets = FakeAssetRepository(listOf(asset("a1", subtitle = "IBAN ES12")))
+        val vm = viewModel(assetRepository = assets, editingItemId = "a1")
+        var events = 0
+        val eventsJob = launch { vm.navigateBack.collect { events++ } }
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        val loaded = vm.state.value
+        assertTrue(loaded.isEditing)
+        assertEquals("Nómina", loaded.name)
+        assertEquals("1234,50", loaded.amountText)
+        assertEquals(Currency.USD, loaded.currency)
+        assertEquals(Asset.AssetGroup.BANK.name, loaded.selectedGroupId)
+        assertNull(loaded.deleteWarning)
+
+        vm.onModeChange(true)
+        vm.onGroupSelect(Asset.AssetGroup.INVEST.name)
+        vm.onNameChange(" Broker ")
+        vm.onAmountChange("0")
+        vm.onCurrencyChange(Currency.EUR)
+        advanceUntilIdle()
+        assertFalse(vm.state.value.isLiability)
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(
+                Asset(
+                    id = "a1",
+                    group = Asset.AssetGroup.INVEST,
+                    name = "Broker",
+                    subtitle = "IBAN ES12",
+                    amount = CurrencyAmount(Money.ZERO, Currency.EUR),
+                ),
+            ),
+            assets.list(),
+        )
+        assertEquals(1, events)
+        job.cancel()
+        eventsJob.cancel()
+    }
+
+    @Test
+    fun `editing a liability updates it and deleting removes it`() = runTest(dispatcher) {
+        val loan = Liability(
+            id = "l1",
+            group = Liability.LiabilityGroup.LOAN,
+            name = "Coche",
+            subtitle = null,
+            amount = CurrencyAmount(Money(500_000), Currency.EUR),
+        )
+        val liabilities = FakeLiabilityRepository(listOf(loan))
+        val vm = viewModel(isLiability = true, liabilityRepository = liabilities, editingItemId = "l1")
+        var events = 0
+        val eventsJob = launch { vm.navigateBack.collect { events++ } }
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        vm.onAmountChange("4.500,00")
+        vm.onSave()
+        advanceUntilIdle()
+        assertEquals(Money(450_000), liabilities.list().single().amount.amount)
+
+        vm.onDelete()
+        advanceUntilIdle()
+        assertTrue(liabilities.list().isEmpty())
+        assertEquals(2, events)
+        job.cancel()
+        eventsJob.cancel()
+    }
+
+    @Test
+    fun `deleting an asset warns about the goals and groups it leaves`() = runTest(dispatcher) {
+        val vm = viewModel(
+            assetRepository = FakeAssetRepository(listOf(asset("a1"))),
+            editingItemId = "a1",
+            goals = FakeSavingsGoalRepository(listOf(goal("Colchón", setOf("a1")), goal("Viaje", setOf("a1")))),
+            accountGroups = FakeAccountGroupRepository(
+                listOf(
+                    AccountGroup.allAccounts(),
+                    AccountGroup("g1", "Ahorro", showBalance = true, sortOrder = 1, memberAssetIds = setOf("a1")),
+                ),
+            ),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(
+            "Está en las metas «Colchón» y «Viaje» y en el grupo «Ahorro»; se quitará de ellos.",
+            vm.state.value.deleteWarning,
+        )
+        job.cancel()
+    }
+
+    @Test
+    fun `the delete warning reads well for a single goal or group`() {
+        assertEquals(
+            "Está en la meta «Colchón»; se quitará de él.",
+            deleteWarningFor(AccountUsage(goalNames = listOf("Colchón"))),
+        )
+        assertEquals(
+            "Está en los grupos «A», «B» y «C»; se quitará de ellos.",
+            deleteWarningFor(AccountUsage(groupNames = listOf("A", "B", "C"))),
+        )
+        assertNull(deleteWarningFor(AccountUsage()))
+    }
+
+    @Test
+    fun `editing an item that no longer exists just goes back`() = runTest(dispatcher) {
+        val vm = viewModel(editingItemId = "gone")
+        var events = 0
+        val eventsJob = launch { vm.navigateBack.collect { events++ } }
+        advanceUntilIdle()
+
+        assertEquals(1, events)
+        eventsJob.cancel()
+    }
+
+    private fun asset(id: String, subtitle: String? = null) = Asset(
+        id = id,
+        group = Asset.AssetGroup.BANK,
+        name = "Nómina",
+        subtitle = subtitle,
+        amount = CurrencyAmount(Money(123_450), Currency.USD),
+    )
+
+    private fun goal(name: String, assetIds: Set<String>) = SavingsGoal(
+        id = "goal-$name",
+        name = name,
+        target = CurrencyAmount(Money(100_000), Currency.EUR),
+        targetDate = null,
+        linkedAssetIds = assetIds,
+        lifecycle = SavingsGoalLifecycle.OPEN,
+        progress = Money.ZERO,
+    )
 
     @Test
     fun `saving an asset inserts it via the asset repository and emits navigateBack`() = runTest(dispatcher) {

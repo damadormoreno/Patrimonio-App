@@ -49,6 +49,13 @@ class AmountParsingTest {
     }
 
     @Test
+    fun `zero amount is valid when allowed, for balances`() {
+        assertEquals(0L, parseAmountToMinor("0,00", Currency.EUR, allowZero = true))
+        assertEquals(0L, parseAmountToMinor("0", Currency.JPY, allowZero = true))
+        assertNull(parseAmountToMinor("", Currency.EUR, allowZero = true))
+    }
+
+    @Test
     fun `non-numeric text is invalid`() {
         assertNull(parseAmountToMinor("abc", Currency.EUR))
     }

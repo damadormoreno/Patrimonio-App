@@ -289,7 +289,7 @@ class KoinModuleTest {
         assertNotNull(koin.get<SubscriptionSheetViewModel> { parametersOf(null) })
         assertNotNull(koin.get<PatrimonioViewModel>())
         assertNotNull(koin.get<NetWorthHistoryViewModel>())
-        assertNotNull(koin.get<AddPatrimonioSheetViewModel> { parametersOf(false, null) })
+        assertNotNull(koin.get<AddPatrimonioSheetViewModel> { parametersOf(false, null, null) })
         assertNotNull(koin.get<GruposViewModel>())
         assertNotNull(koin.get<SavingsGoalsViewModel>())
         assertNotNull(koin.get<ProfileViewModel>())

@@ -41,13 +41,14 @@ object Account
 @Serializable
 object NetWorthHistory
 
-/** Add-only Patrimonio item form (spec: Add Patrimonio Item Form). [isLiability] is the mode the
+/** Patrimonio item form (spec: Add Patrimonio Item Form); with [itemId] it edits that asset or liability
+ *  ([isLiability] says which) instead of creating one. [isLiability] is the mode the
  *  route is opened with — the FAB uses the active Activos/Pasivos toggle, a per-group add affordance
  *  uses that card's mode — but the user MAY still switch mode inside the form. [groupId] prefills the
  *  group selection when opened from a per-group add affordance; `null` from the FAB / "Nuevo
  *  activo/pasivo" CTA. */
 @Serializable
-data class AddPatrimonio(val isLiability: Boolean = false, val groupId: String? = null)
+data class AddPatrimonio(val isLiability: Boolean = false, val groupId: String? = null, val itemId: String? = null)
 
 /** Account-groups list (spec: Account Groups List, Group Edit and Delete). */
 @Serializable

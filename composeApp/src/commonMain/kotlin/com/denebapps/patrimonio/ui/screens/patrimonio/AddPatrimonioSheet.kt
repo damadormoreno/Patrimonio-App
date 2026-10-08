@@ -19,16 +19,19 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,7 +51,7 @@ import com.denebapps.patrimonio.ui.theme.LocalAppColors
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
 
-/** Full-height add-only Patrimonio item destination, styled with the
+/** Full-height Patrimonio item destination (new item, or editing [itemId] with a delete action), styled with the
  *  [com.denebapps.patrimonio.ui.components.BottomSheet] visual language but rendered as a normal
  *  `composable<AddPatrimonio>` entry (design.md Decision: sheets as full pushed destinations). Ports
  *  `design-reference/patrimonio.jsx`'s `AddPatrimonioSheet` minus its optional "Detalle" field, which
@@ -61,11 +64,13 @@ fun AddPatrimonioSheet(
     isLiability: Boolean,
     groupId: String?,
     modifier: Modifier = Modifier,
+    itemId: String? = null,
     onNavigateBack: () -> Unit = {},
-    viewModel: AddPatrimonioSheetViewModel = koinViewModel(parameters = { parametersOf(isLiability, groupId) }),
+    viewModel: AddPatrimonioSheetViewModel = koinViewModel(parameters = { parametersOf(isLiability, groupId, itemId) }),
 ) {
     val state by viewModel.state.collectAsState()
     val colors = LocalAppColors.current
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.navigateBack.collect { onNavigateBack() }
@@ -89,7 +94,12 @@ fun AddPatrimonioSheet(
         )
 
         TopBar(
-            title = if (state.isLiability) "Nuevo pasivo" else "Nuevo activo",
+            title = when {
+                state.isEditing && state.isLiability -> "Editar pasivo"
+                state.isEditing -> "Editar activo"
+                state.isLiability -> "Nuevo pasivo"
+                else -> "Nuevo activo"
+            },
             canSave = state.canSave,
             onCancel = onNavigateBack,
             onSave = viewModel::onSave,
@@ -102,7 +112,10 @@ fun AddPatrimonioSheet(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 8.dp),
         ) {
-            ModeSegmented(isLiability = state.isLiability, onModeChange = viewModel::onModeChange)
+            // An edited item keeps its kind: assets and liabilities are stored apart.
+            if (!state.isEditing) {
+                ModeSegmented(isLiability = state.isLiability, onModeChange = viewModel::onModeChange)
+            }
 
             GroupSection(
                 options = state.groupOptions,
@@ -137,8 +150,51 @@ fun AddPatrimonioSheet(
                 modifier = Modifier.padding(top = 4.dp),
             )
 
+            if (state.isEditing) {
+                Text(
+                    text = if (state.isLiability) "Borrar pasivo" else "Borrar activo",
+                    color = colors.expense,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 28.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = { confirmDelete = true },
+                        )
+                        .padding(vertical = 12.dp),
+                )
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("¿Borrar «${state.name.trim()}»?") },
+            text = {
+                Text(
+                    listOfNotNull(
+                        if (state.isLiability) "Se quitará de tus pasivos." else "Se quitará de tu patrimonio.",
+                        state.deleteWarning,
+                    ).joinToString(" "),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDelete = false
+                        viewModel.onDelete()
+                    },
+                ) { Text("Borrar", color = colors.expense) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } },
+        )
     }
 }
 

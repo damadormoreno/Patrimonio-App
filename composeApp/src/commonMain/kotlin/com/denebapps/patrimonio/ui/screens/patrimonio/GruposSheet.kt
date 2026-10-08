@@ -3,6 +3,7 @@ package com.denebapps.patrimonio.ui.screens.patrimonio
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,7 +50,8 @@ import org.koin.compose.viewmodel.koinViewModel
  *  normal `composable<Grupos>` entry (design.md Decision: sheets as full pushed destinations). Ports
  *  `design-reference/grupos.jsx`'s `GruposSheet`. Expand/edit/popover states are purely local Compose
  *  state (the JSX component's `expanded`/`editing`/`plusOpen` `useState`s) — [GruposViewModel] only
- *  owns repository-derived data plus the NuevoGrupo form (design.md Decision 1).
+ *  owns repository-derived data plus the NuevoGrupo form (design.md Decision 1). Tapping or long-pressing
+ *  an account of an expanded group, or its pencil while editing, calls [onEditAsset] with its id.
  */
 @Composable
 fun GruposSheet(
@@ -58,6 +60,7 @@ fun GruposSheet(
     onNewGroup: () -> Unit = {},
     onEditGroup: (String) -> Unit = {},
     onNewAsset: () -> Unit = {},
+    onEditAsset: (String) -> Unit = {},
     viewModel: GruposViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -154,6 +157,7 @@ fun GruposSheet(
                         onEdit = { onEditGroup(group.id) },
                         onDelete = { viewModel.onDeleteGroup(group.id) },
                         onMove = { up -> viewModel.onMoveGroup(group.id, up) },
+                        onEditMember = onEditAsset,
                     )
                 }
             }
@@ -267,6 +271,7 @@ private fun GrupoRow(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onMove: (up: Boolean) -> Unit,
+    onEditMember: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAppColors.current
@@ -377,7 +382,14 @@ private fun GrupoRow(
                 } else {
                     group.members.forEach { member ->
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .combinedClickable(
+                                    onClickLabel = "Editar",
+                                    onLongClick = { onEditMember(member.id) },
+                                    onClick = { onEditMember(member.id) },
+                                )
+                                .padding(vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
@@ -406,6 +418,14 @@ private fun GrupoRow(
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Medium,
                             )
+                            if (editing) {
+                                RowActionButton(
+                                    icon = AppIcons.pencil,
+                                    contentDescription = "Editar ${member.name}",
+                                    tint = colors.ink2,
+                                    onClick = { onEditMember(member.id) },
+                                )
+                            }
                         }
                     }
                 }
