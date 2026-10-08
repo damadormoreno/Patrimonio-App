@@ -1,10 +1,9 @@
 name: Preview
 
-# Sends an installable Android build to Firebase App Distribution: every push to main, and every push
-# to a PR labelled "preview" (to try a change on the phone before merging). Setup: docs/preview-builds.md.
+# Sends an installable Android build to Firebase App Distribution: every push to a PR labelled "preview"
+# (to try a change on the phone before merging), and on demand (Actions → Preview → Run workflow, e.g.
+# on main). Not on every merge, to save Actions minutes. Setup: docs/preview-builds.md.
 on:
-  push:
-    branches: [main]
   pull_request:
     types: [labeled, synchronize]
   workflow_dispatch:

@@ -3,9 +3,22 @@
 El workflow `.github/workflows/preview.yml` genera la variante `preview` de Android y la sube a
 Firebase App Distribution:
 
-- **Cada push a `main`** (cada PR mergeada).
 - **Cada push a una PR con la etiqueta `preview`**, para probar un cambio antes de mergearlo.
-- **A mano**: Actions → Preview → *Run workflow*.
+- **A mano**: Actions → Preview → *Run workflow* (por ejemplo sobre `main`).
+
+No se lanza en cada merge a `main` para ahorrar minutos de Actions: lo mergeado es lo que ya se probó en
+la PR.
+
+## Minutos de Actions
+
+El repo es privado: los minutos son limitados y los de macOS cuentan ×10. Por eso:
+
+- **CI** (`ci.yml`) solo corre en PRs que tocan código (no en `docs/` ni en `.md`), y no se repite al
+  mergear. El job de Android hace ktlint, los tests y la build minificada.
+- **iOS** solo se compila a mano (Actions → CI → *Run workflow* sobre la rama): una ejecución son unos
+  30 minutos facturados.
+- **En local**, antes de hacer push: `scripts/check.sh` (lo mismo que CI y, en un Mac, también iOS) o
+  `scripts/check.sh --fast` (ktlint y tests).
 
 La app de preview se instala **al lado** de la de Android Studio: id `com.denebapps.patrimonio.preview`,
 nombre «Patrimonio β» y datos propios. Cada build actualiza la anterior sin perder datos, porque
