@@ -47,6 +47,7 @@ import com.denebapps.patrimonio.ui.components.SettingsCard
 import com.denebapps.patrimonio.ui.components.SettingsRow
 import com.denebapps.patrimonio.ui.components.SettingsSection
 import com.denebapps.patrimonio.ui.icons.AppIcons
+import com.denebapps.patrimonio.ui.screens.account.AccountViewModel
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 import com.denebapps.patrimonio.ui.theme.LocalAppShapes
 import io.github.vinceglb.filekit.dialogs.compose.rememberFilePickerLauncher
@@ -60,11 +61,14 @@ import org.koin.compose.viewmodel.koinViewModel
 fun SettingsScreen(
     onOpenProfile: () -> Unit,
     modifier: Modifier = Modifier,
+    onOpenAccount: () -> Unit = {},
     viewModel: SettingsViewModel = koinViewModel(),
     backupViewModel: BackupViewModel = koinViewModel(),
+    accountViewModel: AccountViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
     val backupStatus by backupViewModel.status.collectAsState()
+    val accountState by accountViewModel.state.collectAsState()
 
     // FileKit hands back a platform file handle (SAF Uri / NSURL); the ViewModel only ever sees
     // the read/write lambdas. A null result means the user cancelled the dialog.
@@ -84,7 +88,9 @@ fun SettingsScreen(
     SettingsContent(
         state = state,
         backupStatus = backupStatus,
+        accountEmail = accountState.user?.email,
         onOpenProfile = onOpenProfile,
+        onOpenAccount = onOpenAccount,
         onThemeModeSelect = viewModel::onThemeModeSelect,
         onRemindersToggle = { enabled ->
             if (enabled) requestNotifications() else viewModel.onRemindersEnabledChange(false)
@@ -116,7 +122,9 @@ fun SettingsScreen(
 private fun SettingsContent(
     state: SettingsUiState,
     backupStatus: BackupStatus,
+    accountEmail: String?,
     onOpenProfile: () -> Unit,
+    onOpenAccount: () -> Unit,
     onThemeModeSelect: (ThemeMode) -> Unit,
     onRemindersToggle: (Boolean) -> Unit,
     onReminderLeadDaysSelect: (Int) -> Unit,
@@ -149,7 +157,29 @@ private fun SettingsContent(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp),
         ) {
-            ProfileCard(state, onOpenProfile)
+            ProfileCard(state, accountEmail, onOpenProfile)
+            SettingsSection(title = "Cuenta", modifier = Modifier.padding(top = 12.dp))
+            SettingsCard {
+                SettingsRow(
+                    title = accountEmail ?: "Iniciar sesión o crear cuenta",
+                    subtitle = if (accountEmail != null) {
+                        "Sesión iniciada"
+                    } else {
+                        "Opcional · para guardar tus datos en la nube"
+                    },
+                    leading = { SettingsIcon(AppIcons.cloud) },
+                    trailing = {
+                        Icon(
+                            imageVector = AppIcons.chevronR,
+                            contentDescription = null,
+                            tint = colors.muted,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    onClick = onOpenAccount,
+                    showDivider = false,
+                )
+            }
             SettingsSection(title = "Apariencia", modifier = Modifier.padding(top = 12.dp))
             SettingsCard {
                 ThemePicker(selected = state.themeMode, onSelect = onThemeModeSelect)
@@ -302,7 +332,7 @@ private fun BackupResultDialog(status: BackupStatus, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun ProfileCard(state: SettingsUiState, onClick: () -> Unit) {
+private fun ProfileCard(state: SettingsUiState, accountEmail: String?, onClick: () -> Unit) {
     val colors = LocalAppColors.current
     val shape = RoundedCornerShape(16.dp)
 
@@ -335,7 +365,7 @@ private fun ProfileCard(state: SettingsUiState, onClick: () -> Unit) {
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "Cuenta local · offline",
+                text = accountEmail ?: "Cuenta local · offline",
                 color = colors.muted,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(top = 2.dp),

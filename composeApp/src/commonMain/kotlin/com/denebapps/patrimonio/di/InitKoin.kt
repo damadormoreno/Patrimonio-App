@@ -9,7 +9,7 @@ import org.koin.dsl.KoinAppDeclaration
 import org.koin.mp.KoinPlatform
 
 /**
- * Starts Koin with [dbModule] + [dataModule] + [fxModule]. Idempotent double-start guard
+ * Starts Koin with [dbModule] + [dataModule] + [fxModule] + [authModule]. Idempotent double-start guard
  * (design.md: "Koin init") — safe to call more than once (e.g. iOS `MainViewController` on every
  * recomposition preview build, or hot reload).
  *
@@ -23,7 +23,7 @@ fun initKoin(appDeclaration: KoinAppDeclaration = {}) {
     if (KoinPlatform.getKoinOrNull() != null) return
     val koin = startKoin {
         appDeclaration()
-        modules(dbModule, dataModule, fxModule, presentationModule)
+        modules(dbModule, dataModule, fxModule, authModule, presentationModule)
     }.koin
     koin.get<CoroutineScope>().launch {
         runCatching { koin.get<FxRepository>().refreshIfStale() }

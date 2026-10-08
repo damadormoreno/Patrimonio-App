@@ -23,6 +23,7 @@ import com.denebapps.patrimonio.ui.components.HeaderIconBtn
 import com.denebapps.patrimonio.ui.components.TabBar
 import com.denebapps.patrimonio.ui.components.TabItem
 import com.denebapps.patrimonio.ui.icons.AppIcons
+import com.denebapps.patrimonio.ui.screens.account.AccountScreen
 import com.denebapps.patrimonio.ui.screens.history.NetWorthHistoryScreen
 import com.denebapps.patrimonio.ui.screens.patrimonio.AddPatrimonioSheet
 import com.denebapps.patrimonio.ui.screens.patrimonio.GruposSheet
@@ -127,9 +128,13 @@ fun MainScaffold() {
                 )
             }
             composable<Settings> {
-                SettingsScreen(onOpenProfile = { mainNavController.navigate(Profile) })
+                SettingsScreen(
+                    onOpenProfile = { mainNavController.navigate(Profile) },
+                    onOpenAccount = { mainNavController.navigate(Account) },
+                )
             }
             composable<Profile> { PerfilScreen(onBack = { mainNavController.popBackStack() }) }
+            composable<Account> { AccountScreen(onBack = { mainNavController.popBackStack() }) }
             composable<NetWorthHistory> { NetWorthHistoryScreen(onBack = { mainNavController.popBackStack() }) }
             composable<AddPatrimonio> { backStackEntry ->
                 val route = backStackEntry.toRoute<AddPatrimonio>()
