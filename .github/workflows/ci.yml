@@ -81,8 +81,10 @@ jobs:
 
   ios:
     name: iOS · Kotlin/Native compile
-    # Catches what only Kotlin/Native sees, such as an expect without its iOS actual. Runs next to the
-    # Android job, so it adds no waiting.
+    # Catches what only Kotlin/Native sees, such as an expect without its iOS actual. Only on demand
+    # (Actions → CI → Run workflow) while iOS is on hold: macOS runners take minutes to start. Turn it back
+    # on for PRs when the iOS app is worked on again.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
