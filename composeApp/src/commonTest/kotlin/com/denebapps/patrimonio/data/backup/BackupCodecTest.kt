@@ -16,9 +16,13 @@ class BackupCodecTest {
     private val groupGoal =
         SavingsGoalBackup("goal-2", "Colchón", 100_000, "EUR", null, emptyList(), "OPEN", "g1", createdAtEpochMs = 2)
 
+    private val watches = AccountTypeBackup("t1", "ASSET", "Relojes", "⌚", "GOLD", 0)
+    private val watch = AssetBackup("a3", "t1", "Rolex", null, 900_000, "EUR", emoji = "⌚")
+
     private val full = BackupDocument(
         exportedAt = "2026-10-06T10:00:00Z",
-        assets = listOf(asset, usdAsset),
+        accountTypes = listOf(watches),
+        assets = listOf(asset, usdAsset, watch),
         liabilities = listOf(LiabilityBackup("l1", "MORTGAGE", "Hipoteca", null, 10_000_000, "EUR")),
         accountGroups = listOf(AccountGroupBackup("g1", "Día a día", showBalance = true, sortOrder = 0)),
         accountGroupMembers = listOf(AccountGroupMemberBackup("g1", "a1")),
@@ -63,7 +67,7 @@ class BackupCodecTest {
         val json = BackupCodec.encode(BackupDocument(exportedAt = "2026-10-06T10:00:00Z"))
 
         assertTrue(""""format": "patrimonio-backup"""" in json, json)
-        assertTrue(""""version": 5""" in json, json)
+        assertTrue(""""version": 6""" in json, json)
     }
 
     @Test
@@ -182,10 +186,10 @@ class BackupCodecTest {
     @Test
     fun `newer format version is rejected with an update hint`() {
         val error = assertFailsWith<InvalidBackupException> {
-            BackupCodec.decode("""{"format":"patrimonio-backup","version":6,"exportedAt":"x"}""")
+            BackupCodec.decode("""{"format":"patrimonio-backup","version":7,"exportedAt":"x"}""")
         }
 
-        assertTrue("v6" in error.message.orEmpty())
+        assertTrue("v7" in error.message.orEmpty())
     }
 
     @Test
@@ -202,6 +206,34 @@ class BackupCodecTest {
         assertTrue("estado" in reasonFor(full.copy(savingsGoals = listOf(goal.copy(lifecycle = "PAUSED")))))
         val badKind = full.savingsGoalLinkEvents.map { it.copy(kind = "MOVE") }
         assertTrue("vínculo" in reasonFor(full.copy(savingsGoalLinkEvents = badKind)))
+    }
+
+    @Test
+    fun `custom types are kept and their accounts must use one of the right kind`() {
+        val decoded = BackupCodec.decode(BackupCodec.encode(full))
+        assertEquals(listOf(watches), decoded.accountTypes)
+        assertEquals("⌚", decoded.assets.single { it.id == "a3" }.emoji)
+
+        val liabilityType = watches.copy(kind = "LIABILITY")
+        assertTrue("tipo desconocido" in reasonFor(full.copy(accountTypes = listOf(liabilityType))))
+        assertTrue("tipo desconocido" in reasonFor(full.copy(accountTypes = emptyList())))
+        assertTrue("activos ni de pasivos" in reasonFor(full.copy(accountTypes = listOf(watches.copy(kind = "X")))))
+        assertTrue("color" in reasonFor(full.copy(accountTypes = listOf(watches.copy(color = "PINK")))))
+        assertTrue("emoji" in reasonFor(full.copy(accountTypes = listOf(watches.copy(emoji = " ")))))
+        assertTrue("duplicado" in reasonFor(full.copy(accountTypes = listOf(watches, watches))))
+    }
+
+    @Test
+    fun `a version 5 backup has no custom types nor emojis and its built-in types still read`() {
+        val json = BackupCodec.encode(BackupDocument(exportedAt = "2026-10-06T10:00:00Z", assets = listOf(asset)))
+            .replace(""""version": 6""", """"version": 5""")
+            .replace(Regex(""",\s*"emoji": null"""), "")
+            .replace(Regex(""",\s*"accountTypes": \[\s*]"""), "")
+
+        val decoded = BackupCodec.decode(json)
+
+        assertEquals(listOf(asset), decoded.assets)
+        assertEquals(emptyList(), decoded.accountTypes)
     }
 
     @Test

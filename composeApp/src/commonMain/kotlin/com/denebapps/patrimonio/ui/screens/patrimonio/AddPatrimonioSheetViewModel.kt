@@ -18,6 +18,7 @@ import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.ui.components.amountInputText
+import com.denebapps.patrimonio.ui.components.typeLabel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -73,9 +74,8 @@ private data class FormFields(
  * Mode defaults to
  * [initialIsLiability] — the mode the route was opened with, from the FAB (Activos/Pasivos toggle)
  * or a per-group add affordance — but stays user-switchable per spec; switching mode clears
- * [FormFields.selectedGroupId] since [Asset.AssetGroup]/[Liability.LiabilityGroup] are disjoint
- * enums. [initialGroupId] prefills selection when opened from a per-group add affordance
- * (design.md Data Flow: `group "+" -> AddPatrimonio(groupId=…)`). Save creates the asset or
+ * [FormFields.selectedGroupId] since asset and liability types are disjoint. [initialGroupId] prefills
+ * selection when opened from a per-group add affordance (design.md Data Flow: `group "+" -> AddPatrimonio(groupId=…)`). Save creates the asset or
  * liability via the matching repository using [idProvider] for the new String id (Room primary
  * keys for both entities are caller-supplied), then emits one [navigateBack] event.
  */
@@ -105,6 +105,9 @@ class AddPatrimonioSheetViewModel(
 
     /** The edited item's subtitle, which the form does not show but must keep. */
     private var editingSubtitle: String? = null
+
+    /** Kept as is on save: the form does not edit it (yet). */
+    private var editingEmoji: String? = null
     private val deleteWarning = MutableStateFlow<String?>(null)
 
     init {
@@ -160,10 +163,11 @@ class AddPatrimonioSheetViewModel(
             if (f.isLiability) {
                 val liability = Liability(
                     id = id,
-                    group = Liability.LiabilityGroup.valueOf(groupId),
+                    group = groupId,
                     name = name,
                     subtitle = editingSubtitle,
                     amount = amount,
+                    emoji = editingEmoji,
                 )
                 if (editingItemId != null) {
                     liabilityRepository.update(liability)
@@ -173,10 +177,11 @@ class AddPatrimonioSheetViewModel(
             } else {
                 val asset = Asset(
                     id = id,
-                    group = Asset.AssetGroup.valueOf(groupId),
+                    group = groupId,
                     name = name,
                     subtitle = editingSubtitle,
                     amount = amount,
+                    emoji = editingEmoji,
                 )
                 if (editingItemId != null) assetRepository.update(asset) else assetRepository.insert(asset)
             }
@@ -197,17 +202,19 @@ class AddPatrimonioSheetViewModel(
         val fields = if (form.value.isLiability) {
             liabilityRepository.list().find { it.id == id }?.let { liability ->
                 editingSubtitle = liability.subtitle
-                formFields(true, liability.group.name, liability.name, liability.amount)
+                editingEmoji = liability.emoji
+                formFields(true, liability.group, liability.name, liability.amount)
             }
         } else {
             assetRepository.list().find { it.id == id }?.let { asset ->
                 editingSubtitle = asset.subtitle
+                editingEmoji = asset.emoji
                 val usage = accountUsage(
                     goals = savingsGoalRepository.observeAll().first(),
                     groups = accountGroupRepository.observeAll().first(),
                 )[id]
                 deleteWarning.value = usage?.let(::deleteWarningFor)
-                formFields(false, asset.group.name, asset.name, asset.amount)
+                formFields(false, asset.group, asset.name, asset.amount)
             }
         }
         // Gone meanwhile (deleted elsewhere): nothing to edit.
@@ -259,31 +266,10 @@ private fun quoted(noun: String, names: List<String>): String {
     return "en $noun $list"
 }
 
-private fun assetGroupOptions(): List<GroupOptionUi> = Asset.AssetGroup.entries.map {
-    GroupOptionUi(it.name, assetGroupLabelFor(it))
-}
+private fun assetGroupOptions(): List<GroupOptionUi> = Asset.AssetGroup.entries.map { GroupOptionUi(it, typeLabel(it)) }
 
-private fun liabilityGroupOptions(): List<GroupOptionUi> = Liability.LiabilityGroup.entries.map {
-    GroupOptionUi(it.name, liabilityGroupLabelFor(it))
-}
-
-/** Labels ported 1:1 from `design-reference/shared.jsx`'s `ASSET_GROUPS` (matches
- *  [PatrimonioViewModel]'s private `assetGroupLabel`, duplicated here since the enum→label mapping
- *  is presentation-layer and each sheet/screen owns its own). */
-private fun assetGroupLabelFor(group: Asset.AssetGroup): String = when (group) {
-    Asset.AssetGroup.BANK -> "Cuentas bancarias"
-    Asset.AssetGroup.INVEST -> "Inversión"
-    Asset.AssetGroup.REALESTATE -> "Inmuebles"
-    Asset.AssetGroup.CRYPTO -> "Cripto"
-    Asset.AssetGroup.CASH -> "Efectivo"
-}
-
-/** Labels ported 1:1 from `design-reference/shared.jsx`'s `LIAB_GROUPS`. */
-private fun liabilityGroupLabelFor(group: Liability.LiabilityGroup): String = when (group) {
-    Liability.LiabilityGroup.MORTGAGE -> "Hipotecas"
-    Liability.LiabilityGroup.LOAN -> "Préstamos"
-    Liability.LiabilityGroup.CARD -> "Tarjetas"
-}
+private fun liabilityGroupOptions(): List<GroupOptionUi> =
+    Liability.LiabilityGroup.entries.map { GroupOptionUi(it, typeLabel(it)) }
 
 /** `null` when [currency] is EUR or [amountMinor] failed to parse; otherwise `"≈ X,XX € al cambio"`. */
 private fun eurHintFor(currency: Currency, amountMinor: Long?, rates: FxRates): String? {

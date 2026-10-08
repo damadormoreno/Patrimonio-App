@@ -43,9 +43,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.Currency
-import com.denebapps.patrimonio.domain.model.Liability
+import com.denebapps.patrimonio.ui.components.typeIcon
+import com.denebapps.patrimonio.ui.components.typeTone
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 import org.koin.compose.viewmodel.koinViewModel
@@ -518,36 +518,11 @@ private fun CurrencyDropdown(value: Currency, onChange: (Currency) -> Unit) {
     }
 }
 
-/** Icon/tone lookup by [GroupOptionUi.id] (the [Asset.AssetGroup]/[Liability.LiabilityGroup] enum
- *  `.name`), ported 1:1 from `design-reference/shared.jsx`'s `ASSET_GROUPS`/`LIAB_GROUPS` — matches
- *  [PatrimonioScreen]'s private `groupIcon` lookup. */
-private fun groupTileIcon(groupId: String): ImageVector = when (groupId) {
-    Asset.AssetGroup.BANK.name -> AppIcons.bank
-    Asset.AssetGroup.INVEST.name -> AppIcons.trend
-    Asset.AssetGroup.REALESTATE.name -> AppIcons.building
-    Asset.AssetGroup.CRYPTO.name -> AppIcons.coins
-    Asset.AssetGroup.CASH.name -> AppIcons.wallet
-    Liability.LiabilityGroup.MORTGAGE.name -> AppIcons.house
-    Liability.LiabilityGroup.LOAN.name -> AppIcons.briefcase
-    Liability.LiabilityGroup.CARD.name -> AppIcons.card
-    else -> AppIcons.folder
-}
+/** Icon/tone of the type tile [GroupOptionUi.id] ([typeIcon]/[typeTone]). */
+private fun groupTileIcon(groupId: String): ImageVector = typeIcon(groupId)
 
 @Composable
-private fun groupTileTone(groupId: String): Color {
-    val colors = LocalAppColors.current
-    return when (groupId) {
-        Asset.AssetGroup.BANK.name -> colors.catTrans
-        Asset.AssetGroup.INVEST.name -> colors.catSalary
-        Asset.AssetGroup.REALESTATE.name -> colors.catHome
-        Asset.AssetGroup.CRYPTO.name -> colors.catFun
-        Asset.AssetGroup.CASH.name -> colors.catOther
-        Liability.LiabilityGroup.MORTGAGE.name -> colors.catRest
-        Liability.LiabilityGroup.LOAN.name -> colors.catSubs
-        Liability.LiabilityGroup.CARD.name -> colors.catFood
-        else -> colors.catOther
-    }
-}
+private fun groupTileTone(groupId: String): Color = typeTone(groupId)
 
 /** Accepts digits and at most one decimal comma (period is coerced to comma), matching
  *  `parseAmountToMinor`'s expected input format. */

@@ -10,7 +10,8 @@ import kotlinx.serialization.Serializable
  * defaults to null so a version 1 file still decodes. Version 3 added [subscriptions], which defaults
  * to empty for older files. Version 4 turned savings goal ids into UUID strings and added
  * [SavingsGoalBackup.createdAtEpochMs]; version 5 replaced the single `linkedAssetId` with
- * [SavingsGoalBackup.linkedAssetIds]. [BackupCodec] upgrades older files on read.
+ * [SavingsGoalBackup.linkedAssetIds]; version 6 added the user's [accountTypes] and each account's
+ * `emoji`, both empty in older files. [BackupCodec] upgrades older files on read.
  *
  * Enum-like fields hold the domain enum `name`s and currencies their ISO code; amounts are minor
  * units, dates epoch days, timestamps epoch milliseconds.
@@ -29,6 +30,18 @@ data class BackupDocument(
     val savingsGoalAllocationEvents: List<SavingsGoalAllocationEventBackup> = emptyList(),
     val savingsGoalLinkEvents: List<SavingsGoalLinkEventBackup> = emptyList(),
     val subscriptions: List<SubscriptionBackup> = emptyList(),
+    val accountTypes: List<AccountTypeBackup> = emptyList(),
+)
+
+/** A custom account type; [kind] and [color] are enum names. Accounts point at it from their `group`. */
+@Serializable
+data class AccountTypeBackup(
+    val id: String,
+    val kind: String,
+    val name: String,
+    val emoji: String,
+    val color: String,
+    val position: Int,
 )
 
 @Serializable
@@ -39,6 +52,7 @@ data class AssetBackup(
     val subtitle: String? = null,
     val amountMinor: Long,
     val currency: String,
+    val emoji: String? = null,
 )
 
 @Serializable
@@ -49,6 +63,7 @@ data class LiabilityBackup(
     val subtitle: String? = null,
     val amountMinor: Long,
     val currency: String,
+    val emoji: String? = null,
 )
 
 @Serializable

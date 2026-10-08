@@ -2,6 +2,7 @@ package com.denebapps.patrimonio.data.backup
 
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
 import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
+import com.denebapps.patrimonio.data.db.entity.AccountTypeEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.LiabilityEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
@@ -14,13 +15,17 @@ import com.denebapps.patrimonio.data.db.entity.SubscriptionEntity
 // Entity <-> backup DTO mapping. 1:1 today; this is where a future schema or format change gets
 // absorbed so neither side leaks into the other.
 
-internal fun AssetEntity.toBackup() = AssetBackup(id, group, name, subtitle, amountMinor, currency)
+internal fun AssetEntity.toBackup() = AssetBackup(id, group, name, subtitle, amountMinor, currency, emoji)
 
-internal fun AssetBackup.toEntity() = AssetEntity(id, group, name, subtitle, amountMinor, currency)
+internal fun AssetBackup.toEntity() = AssetEntity(id, group, name, subtitle, amountMinor, currency, emoji)
 
-internal fun LiabilityEntity.toBackup() = LiabilityBackup(id, group, name, subtitle, amountMinor, currency)
+internal fun LiabilityEntity.toBackup() = LiabilityBackup(id, group, name, subtitle, amountMinor, currency, emoji)
 
-internal fun LiabilityBackup.toEntity() = LiabilityEntity(id, group, name, subtitle, amountMinor, currency)
+internal fun LiabilityBackup.toEntity() = LiabilityEntity(id, group, name, subtitle, amountMinor, currency, emoji)
+
+internal fun AccountTypeEntity.toBackup() = AccountTypeBackup(id, kind, name, emoji, color, position)
+
+internal fun AccountTypeBackup.toEntity() = AccountTypeEntity(id, kind, name, emoji, color, position)
 
 internal fun AccountGroupEntity.toBackup() = AccountGroupBackup(id, name, showBalance, sortOrder)
 

@@ -12,7 +12,7 @@ import kotlin.test.assertEquals
 class AccountGroupTest {
     private val rates = FxRates(emptyMap())
 
-    private fun asset(id: String, group: Asset.AssetGroup, minorUnits: Long) =
+    private fun asset(id: String, group: String, minorUnits: Long) =
         Asset(id, group, "asset-$id", null, CurrencyAmount(Money(minorUnits), Currency.EUR))
 
     @Test

@@ -104,6 +104,7 @@ object AppIcons {
             "cart" -> cart
             "utensils" -> utensils
             "car" -> car
+            "umbrella" -> umbrella
             "house" -> house
             "music" -> music
             "spark" -> spark
@@ -322,6 +323,10 @@ object AppIcons {
         get() = icon("plusMin", "M12 6v12M6 12h12")
 
     // ── grupos.jsx extras ───────────────────────────────────────────────
+    // Pension plans (not in the design reference): an umbrella, saving for later.
+    val umbrella: ImageVector
+        get() = icon("umbrella", "M3 12a9 9 0 0 1 18 0zM12 3v1.5M12 12v6.5a2 2 0 0 0 4 0")
+
     val folder: ImageVector
         get() = icon(
             "folder",

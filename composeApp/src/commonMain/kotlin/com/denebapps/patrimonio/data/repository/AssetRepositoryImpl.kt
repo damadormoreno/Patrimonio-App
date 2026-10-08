@@ -60,6 +60,7 @@ class AssetRepositoryImpl(
                 subtitle = entity.subtitle,
                 amountMinor = entity.amountMinor,
                 currency = entity.currency,
+                emoji = entity.emoji,
             )
             if (updated == 0) throw AssetNotFoundException(entity.id)
             refreshSnapshot()
@@ -100,17 +101,19 @@ class AssetRepositoryImpl(
 
 private fun toDomain(entity: AssetEntity): Asset = Asset(
     id = entity.id,
-    group = Asset.AssetGroup.valueOf(entity.group),
+    group = entity.group,
     name = entity.name,
     subtitle = entity.subtitle,
     amount = CurrencyAmount(Money(entity.amountMinor), Currency.valueOf(entity.currency)),
+    emoji = entity.emoji,
 )
 
 private fun toEntity(asset: Asset): AssetEntity = AssetEntity(
     id = asset.id,
-    group = asset.group.name,
+    group = asset.group,
     name = asset.name,
     subtitle = asset.subtitle,
     amountMinor = asset.amount.amount.minorUnits,
     currency = asset.amount.currency.code,
+    emoji = asset.emoji,
 )

@@ -28,7 +28,8 @@ interface AssetDao {
             name = :name,
             subtitle = :subtitle,
             amountMinor = :amountMinor,
-            currency = :currency
+            currency = :currency,
+            emoji = :emoji
         WHERE id = :id
         """,
     )
@@ -39,7 +40,12 @@ interface AssetDao {
         subtitle: String?,
         amountMinor: Long,
         currency: String,
+        emoji: String?,
     ): Int
+
+    /** Moves every account of type [from] to type [to] (when the custom type [from] is deleted). */
+    @Query("UPDATE assets SET `group` = :to WHERE `group` = :from")
+    suspend fun changeType(from: String, to: String): Int
 
     @Query(
         """

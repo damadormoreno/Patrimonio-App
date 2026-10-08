@@ -51,9 +51,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.denebapps.patrimonio.domain.calc.AccountAssignment
-import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.Currency
-import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.ui.components.EmptyState
 import com.denebapps.patrimonio.ui.components.FabContentBottomSpacing
@@ -62,6 +60,8 @@ import com.denebapps.patrimonio.ui.components.Pill
 import com.denebapps.patrimonio.ui.components.PillTone
 import com.denebapps.patrimonio.ui.components.ScreenHeader
 import com.denebapps.patrimonio.ui.components.SectionRow
+import com.denebapps.patrimonio.ui.components.typeIcon
+import com.denebapps.patrimonio.ui.components.typeTone
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalRowUi
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsUiState
@@ -682,7 +682,7 @@ private fun UsageIcon(icon: ImageVector, description: String) {
 private fun AccountFilterBar(
     state: PatrimonioUiState,
     onAssignmentChange: (AccountAssignment) -> Unit,
-    onTypeToggle: (Asset.AssetGroup) -> Unit,
+    onTypeToggle: (String) -> Unit,
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -983,37 +983,11 @@ private fun SavingsGoalsEmptyState(onNewGoal: () -> Unit, modifier: Modifier = M
     }
 }
 
-/** Icon/tone lookup by [GroupShareUi.groupId]/[PatrimonioGroupUi.groupId] (the [Asset.AssetGroup]
- *  or [Liability.LiabilityGroup] enum `.name`), ported 1:1 from `design-reference/shared.jsx`'s
- *  `ASSET_GROUPS`/`LIAB_GROUPS`. Falls back to [AppIcons.folder]/[colors.catOther] for unknown ids
- *  (defensive only — every closed-enum name is covered above). */
-private fun groupIcon(groupId: String): ImageVector = when (groupId) {
-    Asset.AssetGroup.BANK.name -> AppIcons.bank
-    Asset.AssetGroup.INVEST.name -> AppIcons.trend
-    Asset.AssetGroup.REALESTATE.name -> AppIcons.building
-    Asset.AssetGroup.CRYPTO.name -> AppIcons.coins
-    Asset.AssetGroup.CASH.name -> AppIcons.wallet
-    Liability.LiabilityGroup.MORTGAGE.name -> AppIcons.house
-    Liability.LiabilityGroup.LOAN.name -> AppIcons.briefcase
-    Liability.LiabilityGroup.CARD.name -> AppIcons.card
-    else -> AppIcons.folder
-}
+/** Icon/tone of [GroupShareUi.groupId]/[PatrimonioGroupUi.groupId], a type id ([typeIcon]/[typeTone]). */
+private fun groupIcon(groupId: String): ImageVector = typeIcon(groupId)
 
 @Composable
-private fun groupTone(groupId: String): Color {
-    val colors = LocalAppColors.current
-    return when (groupId) {
-        Asset.AssetGroup.BANK.name -> colors.catTrans
-        Asset.AssetGroup.INVEST.name -> colors.catSalary
-        Asset.AssetGroup.REALESTATE.name -> colors.catHome
-        Asset.AssetGroup.CRYPTO.name -> colors.catFun
-        Asset.AssetGroup.CASH.name -> colors.catOther
-        Liability.LiabilityGroup.MORTGAGE.name -> colors.catRest
-        Liability.LiabilityGroup.LOAN.name -> colors.catSubs
-        Liability.LiabilityGroup.CARD.name -> colors.catFood
-        else -> colors.catOther
-    }
-}
+private fun groupTone(groupId: String): Color = typeTone(groupId)
 
 /** `null` when [previous] is zero (matches [com.denebapps.patrimonio.ui.screens.home.HomeViewModel]'s
  *  `computeDelta` zero-guard convention). */
