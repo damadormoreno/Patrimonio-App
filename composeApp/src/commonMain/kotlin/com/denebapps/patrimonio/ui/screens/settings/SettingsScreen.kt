@@ -37,6 +37,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.denebapps.patrimonio.domain.repository.CloudBackupState
 import com.denebapps.patrimonio.domain.repository.RenewalReminderSettings
 import com.denebapps.patrimonio.domain.repository.ThemeMode
 import com.denebapps.patrimonio.resources.Res
@@ -89,6 +90,7 @@ fun SettingsScreen(
         state = state,
         backupStatus = backupStatus,
         accountEmail = accountState.user?.email,
+        accountCloud = accountState.cloud,
         onOpenProfile = onOpenProfile,
         onOpenAccount = onOpenAccount,
         onThemeModeSelect = viewModel::onThemeModeSelect,
@@ -123,6 +125,7 @@ private fun SettingsContent(
     state: SettingsUiState,
     backupStatus: BackupStatus,
     accountEmail: String?,
+    accountCloud: CloudBackupState,
     onOpenProfile: () -> Unit,
     onOpenAccount: () -> Unit,
     onThemeModeSelect: (ThemeMode) -> Unit,
@@ -163,7 +166,7 @@ private fun SettingsContent(
                 SettingsRow(
                     title = accountEmail ?: "Iniciar sesión o crear cuenta",
                     subtitle = if (accountEmail != null) {
-                        "Sesión iniciada"
+                        accountSubtitle(accountCloud)
                     } else {
                         "Opcional · para guardar tus datos en la nube"
                     },
@@ -507,4 +510,12 @@ private fun SettingsIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, 
             modifier = Modifier.size(16.dp),
         )
     }
+}
+
+private fun accountSubtitle(cloud: CloudBackupState): String = when (cloud) {
+    is CloudBackupState.Conflict -> "Elige qué datos usar"
+    is CloudBackupState.Active ->
+        if (cloud.failure != null) "No se pudo guardar la última copia" else "Copia en la nube activada"
+    is CloudBackupState.CheckFailed -> "La copia en la nube no está al día"
+    else -> "Sesión iniciada"
 }

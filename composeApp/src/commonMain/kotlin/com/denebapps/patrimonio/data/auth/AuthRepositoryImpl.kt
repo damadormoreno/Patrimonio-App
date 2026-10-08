@@ -45,9 +45,10 @@ class AuthRepositoryImpl(
         store.clear()
     }
 
-    override suspend fun deleteAccount(password: String) {
+    override suspend fun deleteAccount(password: String, beforeDelete: suspend () -> Unit) {
         val session = store.observe().first() ?: throw AuthException(AuthError.NOT_SIGNED_IN)
         val fresh = api.signIn(session.email, password)
+        beforeDelete()
         api.deleteAccount(fresh.idToken)
         store.clear()
     }

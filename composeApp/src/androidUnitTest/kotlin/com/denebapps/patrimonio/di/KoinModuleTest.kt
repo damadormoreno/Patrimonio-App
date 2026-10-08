@@ -19,6 +19,7 @@ import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.BackupRepository
+import com.denebapps.patrimonio.domain.repository.CloudBackup
 import com.denebapps.patrimonio.domain.repository.CreateSavingsGoal
 import com.denebapps.patrimonio.domain.repository.DataMaintenanceRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
@@ -293,6 +294,7 @@ class KoinModuleTest {
         assertNotNull(koin.get<SavingsGoalsViewModel>())
         assertNotNull(koin.get<ProfileViewModel>())
         assertNotNull(koin.get<AccountViewModel>())
+        assertSame(koin.get<CloudBackup>(), koin.get<CloudBackup>())
     }
 
     private fun startTestKoin(vararg additionalModules: Module): Koin {

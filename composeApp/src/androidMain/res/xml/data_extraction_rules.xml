@@ -3,8 +3,10 @@
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="file" path="patrimonio-auth.preferences_pb" />
+        <exclude domain="file" path="patrimonio-cloud.preferences_pb" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="patrimonio-auth.preferences_pb" />
+        <exclude domain="file" path="patrimonio-cloud.preferences_pb" />
     </device-transfer>
 </data-extraction-rules>
