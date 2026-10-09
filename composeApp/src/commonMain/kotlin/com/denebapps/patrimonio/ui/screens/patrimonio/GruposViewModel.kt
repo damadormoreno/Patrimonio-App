@@ -8,14 +8,18 @@ import com.denebapps.patrimonio.domain.calc.groupTotal
 import com.denebapps.patrimonio.domain.calc.toEur
 import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.Asset
+import com.denebapps.patrimonio.domain.model.CustomAccountType
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.repository.AccountGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
+import com.denebapps.patrimonio.domain.repository.AccountTypeRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
+import com.denebapps.patrimonio.ui.components.TypeLook
+import com.denebapps.patrimonio.ui.components.typeLook
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,7 +39,14 @@ private const val GRUPOS_STOP_TIMEOUT_MS = 5_000L
 
 /** One member row inside an [AccountGroupRowUi]'s expanded content (spec: Account Groups List).
  *  [group] drives the icon lookup ([PatrimonioScreen]/[AddPatrimonioSheet] precedent). */
-data class GruposMemberUi(val id: String, val name: String, val amountEur: Money, val group: String)
+data class GruposMemberUi(
+    val id: String,
+    val name: String,
+    val amountEur: Money,
+    val group: String,
+    val type: TypeLook = typeLook(group),
+    val emoji: String? = null,
+)
 
 /** One expandable group row (spec: Account Groups List, Group Edit and Delete). [total]/[members]
  *  are ALWAYS computed from the group's resolved membership regardless of [showBalance] — the sheet
@@ -59,6 +70,8 @@ data class AssetChecklistItemUi(
     val subtitle: String?,
     val group: String,
     val selected: Boolean,
+    val type: TypeLook = typeLook(group),
+    val emoji: String? = null,
     /** Open goals that follow the account and the other groups that hold it. */
     val goalNames: List<String> = emptyList(),
     val groupNames: List<String> = emptyList(),
@@ -83,6 +96,7 @@ private data class GruposData(
     val accountGroups: List<AccountGroup>,
     val rates: FxRates,
     val goals: List<SavingsGoal> = emptyList(),
+    val customTypes: Map<String, CustomAccountType> = emptyMap(),
 )
 
 /** NuevoGrupo form fields, kept separate from repo-derived [GruposData] (design.md Decision 1:
@@ -114,6 +128,7 @@ class GruposViewModel(
     private val accountGroupRepository: AccountGroupRepository,
     private val savingsGoalRepository: SavingsGoalRepository,
     fxRepository: FxRepository,
+    accountTypeRepository: AccountTypeRepository,
     private val editingGroupId: String? = null,
     private val idProvider: () -> String = ::newAccountGroupId,
 ) : ViewModel() {
@@ -132,7 +147,10 @@ class GruposViewModel(
         accountGroupRepository.observeAll(),
         fxRepository.observeRates(),
         savingsGoalRepository.observeAll(),
-    ) { assets, accountGroups, rates, goals -> GruposData(assets, accountGroups, rates, goals) }
+        accountTypeRepository.observeAll(),
+    ) { assets, accountGroups, rates, goals, types ->
+        GruposData(assets, accountGroups, rates, goals, types.associateBy { it.id })
+    }
 
     val state: StateFlow<GruposUiState> = combine(
         dataFlow,
@@ -257,6 +275,7 @@ class GruposViewModel(
         pendingDeletion: GroupDeletionConfirmationUi?,
     ): GruposUiState {
         val (assets, accountGroups, rates, goals) = data
+        val customTypes = data.customTypes
 
         val movableIds = accountGroups.map { it.id }.filter { it != AccountGroup.ALL_ACCOUNTS_ID }
         val groups = accountGroups.map { group ->
@@ -268,7 +287,10 @@ class GruposViewModel(
                 builtin = group.id == AccountGroup.ALL_ACCOUNTS_ID,
                 showBalance = group.showBalance,
                 total = groupTotal(group, assets, rates),
-                members = members.map { GruposMemberUi(it.id, it.name, it.amount.toEur(rates), it.group) },
+                members = members.map {
+                    val type = typeLook(it.group, customTypes)
+                    GruposMemberUi(it.id, it.name, it.amount.toEur(rates), it.group, type, it.emoji)
+                },
                 canMoveUp = position > 0,
                 canMoveDown = position in 0 until movableIds.lastIndex,
             )
@@ -282,6 +304,8 @@ class GruposViewModel(
                 subtitle = asset.subtitle,
                 group = asset.group,
                 selected = asset.id in form.selectedAssetIds,
+                type = typeLook(asset.group, customTypes),
+                emoji = asset.emoji,
                 goalNames = usage[asset.id]?.goalNames.orEmpty(),
                 groupNames = usage[asset.id]?.groupNames.orEmpty(),
             )
