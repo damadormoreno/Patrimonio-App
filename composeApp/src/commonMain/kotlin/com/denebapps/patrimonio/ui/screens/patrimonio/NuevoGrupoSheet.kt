@@ -26,7 +26,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,6 +39,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.denebapps.patrimonio.ui.components.AccountUsageTags
+import com.denebapps.patrimonio.ui.components.NoSearchResults
+import com.denebapps.patrimonio.ui.components.SEARCH_THRESHOLD
+import com.denebapps.patrimonio.ui.components.SearchField
+import com.denebapps.patrimonio.ui.components.matchesSearch
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 import org.koin.compose.viewmodel.koinViewModel
@@ -56,6 +63,7 @@ fun NuevoGrupoSheet(
 ) {
     val state by viewModel.state.collectAsState()
     val colors = LocalAppColors.current
+    var query by rememberSaveable { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         viewModel.navigateBack.collect { onNavigateBack() }
@@ -104,6 +112,16 @@ fun NuevoGrupoSheet(
                 modifier = Modifier.padding(bottom = 10.dp),
             )
 
+            if (state.assetChecklist.size >= SEARCH_THRESHOLD) {
+                SearchField(
+                    query = query,
+                    onQueryChange = { query = it },
+                    placeholder = "Buscar cuenta",
+                    modifier = Modifier.padding(bottom = 10.dp),
+                )
+            }
+            // Hidden rows keep their selection: the count and total below still include them.
+            val visible = state.assetChecklist.filter { matchesSearch(query, it.name, it.subtitle) }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -111,9 +129,10 @@ fun NuevoGrupoSheet(
                     .border(1.dp, colors.line, RoundedCornerShape(16.dp))
                     .padding(horizontal = 14.dp),
             ) {
-                state.assetChecklist.forEach { item ->
+                visible.forEach { item ->
                     AssetChecklistRow(item = item, onToggle = { viewModel.onAssetToggle(item.id) })
                 }
+                if (visible.isEmpty()) NoSearchResults(query)
             }
 
             Row(
