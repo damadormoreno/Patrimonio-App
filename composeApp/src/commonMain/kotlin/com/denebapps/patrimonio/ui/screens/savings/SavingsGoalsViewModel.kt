@@ -3,10 +3,12 @@ package com.denebapps.patrimonio.ui.screens.savings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.denebapps.patrimonio.domain.calc.AccountUsage
+import com.denebapps.patrimonio.domain.calc.SavingsGoalPace
 import com.denebapps.patrimonio.domain.calc.accountUsage
 import com.denebapps.patrimonio.domain.calc.goalNamesByLinkedGroup
 import com.denebapps.patrimonio.domain.calc.goalsSharingLinkedBalance
 import com.denebapps.patrimonio.domain.calc.parseAmountToMinor
+import com.denebapps.patrimonio.domain.calc.savingsGoalPace
 import com.denebapps.patrimonio.domain.calc.trackedBalance
 import com.denebapps.patrimonio.domain.calc.tracksLinkedBalance
 import com.denebapps.patrimonio.domain.model.AccountGroup
@@ -34,7 +36,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.datetime.Clock
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.todayIn
 import kotlin.math.roundToInt
 
 private const val SAVINGS_GOALS_STOP_TIMEOUT_MS = 5_000L
@@ -61,6 +66,9 @@ data class SavingsGoalRowUi(
     val linkedTargetLabel: String? = null,
     /** The tracked balance needs an exchange rate that is not available; [progress] shows zero. */
     val balanceUnavailable: Boolean = false,
+    /** Remaining amount or surplus against [target] and, for open goals with a target date, the
+     *  monthly pace or that the date has passed. Null when [balanceUnavailable]: the gap is unknown. */
+    val pace: SavingsGoalPace? = null,
 )
 
 /** Several open goals follow the balance of the same assets or group ([targetLabel], as in
@@ -155,6 +163,8 @@ class SavingsGoalsViewModel(
     private val assetRepository: AssetRepository,
     accountGroupRepository: AccountGroupRepository,
     fxRepository: FxRepository,
+    private val clock: Clock,
+    private val zoneProvider: () -> TimeZone,
     initialGoalId: String? = null,
     initialWithdraw: Boolean = false,
 ) : ViewModel() {
@@ -365,7 +375,8 @@ class SavingsGoalsViewModel(
         val (goals, assets, groups, rates) = data
 
         val targetNames = assets.associate { it.id to it.name } + groups.associate { it.id to it.name }
-        val rows = goals.map { goal -> goal.toRowUi(assets, groups, rates, targetNames) }
+        val today = clock.todayIn(zoneProvider())
+        val rows = goals.map { goal -> goal.toRowUi(assets, groups, rates, targetNames, today) }
         val sharedBalanceNotices = goalsSharingLinkedBalance(goals).map { sharing ->
             SharedBalanceNoticeUi(
                 targetLabel = linkedTargetLabel(sharing.targetIds.mapNotNull(targetNames::get).sorted()).orEmpty(),
@@ -419,16 +430,31 @@ class SavingsGoalsViewModel(
 }
 
 /** A goal that tracks a linked balance shows that balance as its progress (zero when it cannot be
- *  computed); any other goal shows its own allocations. */
+ *  computed); any other goal shows its own allocations. A closed goal no longer saves towards its
+ *  date, so its pace ignores the target date. */
 private fun SavingsGoal.toRowUi(
     assets: List<Asset>,
     groups: List<AccountGroup>,
     rates: FxRates,
     targetNames: Map<String, String>,
+    today: LocalDate,
 ): SavingsGoalRowUi {
     val balance = trackedBalance(this, assets, groups, rates)
     val linkedTargetIds = linkedAssetIds + listOfNotNull(linkedGroupId)
     val shown = if (tracksLinkedBalance) balance ?: Money.ZERO else progress
+    val balanceUnavailable = tracksLinkedBalance && balance == null
+    val closed = lifecycle != SavingsGoalLifecycle.OPEN
+    val pace = if (balanceUnavailable) {
+        null
+    } else {
+        savingsGoalPace(
+            target = target.amount,
+            progress = shown,
+            currency = target.currency,
+            targetDate = if (closed) null else targetDate,
+            today = today,
+        )
+    }
     return SavingsGoalRowUi(
         id = id,
         name = name,
@@ -436,12 +462,13 @@ private fun SavingsGoal.toRowUi(
         progress = shown,
         progressPct = progressPercentage(shown, target.amount),
         targetReached = shown >= target.amount,
-        closed = lifecycle != SavingsGoalLifecycle.OPEN,
+        closed = closed,
         linkedAssetIds = linkedAssetIds,
         linkedGroupId = linkedGroupId,
         tracksBalance = tracksLinkedBalance,
         linkedTargetLabel = linkedTargetLabel(linkedTargetIds.mapNotNull(targetNames::get).sorted()),
-        balanceUnavailable = tracksLinkedBalance && balance == null,
+        balanceUnavailable = balanceUnavailable,
+        pace = pace,
     )
 }
 

@@ -47,7 +47,7 @@ Rules:
 
 - [x] **T1 — Domain function + tests** (route: delegated writer; trigger: 2+ non-trivial files across T1–T3)
   Tests: no date, date passed, goal exceeded, last month, non-EUR currency (+ exact reach, JPY rounding).
-- [ ] **T2 — ViewModel wiring** (route: delegated writer): inject clock/zone, compute per row, DI + VM test updated.
+- [x] **T2 — ViewModel wiring** (route: delegated writer): inject clock/zone, compute per row, DI + VM test updated.
 - [ ] **T3 — UI copy + KDoc fix** (route: delegated writer): card and detail per scope above.
 
 ## Acceptance criteria
@@ -64,11 +64,17 @@ Rules:
 
 ## Progress / evidence
 
-- **T1** (commit `feat(savings): compute remaining amount and monthly pace for goals`): `savingsGoalPace(...)` in
+- **T1** (`db9a0e0`, `feat(savings): compute remaining amount and monthly pace for goals`): `savingsGoalPace(...)` in
   `domain/calc/SavingsGoalPace.kt` + `monthOfYearLabelEs` in `MonthLabels.kt`.
   RED: stub returning `Remaining(0, null)` → `SavingsGoalPaceTest` 11 tests, 11 failed.
   GREEN: `SavingsGoalPaceTest` 11/11 passed; `ktlintCheck` clean.
+- **T2** (commit `feat(savings): expose goal pace in savings goal rows`): `SavingsGoalsViewModel` takes
+  `clock` + `zoneProvider` (Koin `get()`), rows carry `pace: SavingsGoalPace?`; closed goals pass no target
+  date; unavailable balance → `null`.
+  RED: field stubbed to `null` → `SavingsGoalsViewModelTest` 24 tests, 2 failed (open goal monthly pace,
+  closed goal remaining/surplus); the unavailable-balance guard passed trivially against the stub.
+  GREEN: `SavingsGoalsViewModelTest` 24/24, `KoinModuleTest` 9/9 passed; `ktlintCheck` clean.
 
 ## Next step
 
-T2 — ViewModel wiring.
+T3 — UI copy + KDoc fix.

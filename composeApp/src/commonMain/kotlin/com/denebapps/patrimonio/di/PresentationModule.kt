@@ -95,6 +95,8 @@ val presentationModule = module {
             assetRepository = get(),
             accountGroupRepository = get(),
             fxRepository = get(),
+            clock = get(),
+            zoneProvider = get(),
             initialGoalId = params.getOrNull(),
             initialWithdraw = params.getOrNull() ?: false,
         )
