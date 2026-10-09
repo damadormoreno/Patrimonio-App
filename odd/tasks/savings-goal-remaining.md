@@ -48,7 +48,7 @@ Rules:
 - [x] **T1 — Domain function + tests** (route: delegated writer; trigger: 2+ non-trivial files across T1–T3)
   Tests: no date, date passed, goal exceeded, last month, non-EUR currency (+ exact reach, JPY rounding).
 - [x] **T2 — ViewModel wiring** (route: delegated writer): inject clock/zone, compute per row, DI + VM test updated.
-- [ ] **T3 — UI copy + KDoc fix** (route: delegated writer): card and detail per scope above.
+- [x] **T3 — UI copy + KDoc fix** (route: delegated writer): card and detail per scope above.
 
 ## Acceptance criteria
 
@@ -68,13 +68,20 @@ Rules:
   `domain/calc/SavingsGoalPace.kt` + `monthOfYearLabelEs` in `MonthLabels.kt`.
   RED: stub returning `Remaining(0, null)` → `SavingsGoalPaceTest` 11 tests, 11 failed.
   GREEN: `SavingsGoalPaceTest` 11/11 passed; `ktlintCheck` clean.
-- **T2** (commit `feat(savings): expose goal pace in savings goal rows`): `SavingsGoalsViewModel` takes
+- **T2** (`ac40ebd`, `feat(savings): expose goal pace in savings goal rows`): `SavingsGoalsViewModel` takes
   `clock` + `zoneProvider` (Koin `get()`), rows carry `pace: SavingsGoalPace?`; closed goals pass no target
   date; unavailable balance → `null`.
   RED: field stubbed to `null` → `SavingsGoalsViewModelTest` 24 tests, 2 failed (open goal monthly pace,
   closed goal remaining/surplus); the unavailable-balance guard passed trivially against the stub.
   GREEN: `SavingsGoalsViewModelTest` 24/24, `KoinModuleTest` 9/9 passed; `ktlintCheck` clean.
+- **T3** (commit `feat(savings): show remaining amount and monthly pace on goals`): card amount row shows
+  "Faltan …" / "Superada en …", pace line below the bar; detail shows "Faltan …" + pace line and
+  "Meta superada en … · N%". Shared `goalPaceCaption(goal)` (next to `trackedBalanceCaption`) builds
+  "≈ 317 €/mes hasta marzo de 2027" / "Fecha superada" with whole units; `SavingsGoalProgressBar` KDoc fixed.
+  RED: `goalPaceCaption` stubbed to `null` → `SavingsGoalsViewModelTest` 26 tests, 2 failed.
+  GREEN: `testDebugUnitTest` 504 tests, 0 failures; `ktlintCheck` exit 0; `compileKotlinIosArm64` exit 0.
+  Composables have no UI tests in this repo; copy is covered through `goalPaceCaption` + VM pace tests.
 
 ## Next step
 
-T3 — UI copy + KDoc fix.
+All tasks done. Manual visual check of card/detail on device, then PR (user decision).

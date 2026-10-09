@@ -7,6 +7,7 @@ import com.denebapps.patrimonio.domain.calc.SavingsGoalPace
 import com.denebapps.patrimonio.domain.calc.accountUsage
 import com.denebapps.patrimonio.domain.calc.goalNamesByLinkedGroup
 import com.denebapps.patrimonio.domain.calc.goalsSharingLinkedBalance
+import com.denebapps.patrimonio.domain.calc.monthOfYearLabelEs
 import com.denebapps.patrimonio.domain.calc.parseAmountToMinor
 import com.denebapps.patrimonio.domain.calc.savingsGoalPace
 import com.denebapps.patrimonio.domain.calc.trackedBalance
@@ -26,6 +27,7 @@ import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.domain.repository.UpdateSavingsGoal
 import com.denebapps.patrimonio.ui.components.amountInputText
+import com.denebapps.patrimonio.ui.components.currencySymbol
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -492,4 +494,24 @@ fun trackedBalanceCaption(goal: SavingsGoalRowUi): String? = when {
     !goal.tracksBalance -> null
     goal.balanceUnavailable -> "Sin tipo de cambio para calcular el saldo de ${goal.linkedTargetLabel.orEmpty()}"
     else -> "Sigue el saldo de ${goal.linkedTargetLabel.orEmpty()}"
+}
+
+/** The date-based pace line shared by the goal card and detail: "≈ 317 €/mes hasta marzo de 2027" or
+ *  "Fecha superada". Null when nothing is missing, the goal has no target date, it is closed, or its
+ *  balance is unavailable. */
+fun goalPaceCaption(goal: SavingsGoalRowUi): String? {
+    val remaining = goal.pace as? SavingsGoalPace.Remaining ?: return null
+    return when (val pace = remaining.pace) {
+        null -> null
+        SavingsGoalPace.Pace.DatePassed -> "Fecha superada"
+        is SavingsGoalPace.Pace.Monthly ->
+            "≈ ${formatWholeUnits(pace.amount, goal.target.currency)}/mes hasta ${monthOfYearLabelEs(pace.until)}"
+    }
+}
+
+/** "1.234 €": [money] in whole units of [currency] (any minor units are dropped), `.` thousands separator. */
+private fun formatWholeUnits(money: Money, currency: Currency): String {
+    val unit = (1..currency.decimals).fold(1L) { acc, _ -> acc * 10 }
+    val grouped = (money.minorUnits / unit).toString().reversed().chunked(3).joinToString(".").reversed()
+    return "$grouped ${currencySymbol(currency)}"
 }

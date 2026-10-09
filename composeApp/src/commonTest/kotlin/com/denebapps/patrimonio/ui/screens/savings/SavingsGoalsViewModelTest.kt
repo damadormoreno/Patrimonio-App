@@ -228,6 +228,66 @@ class SavingsGoalsViewModelTest {
     }
 
     @Test
+    fun `the pace caption shows the monthly amount in whole units until the target month`() {
+        val monthly = SavingsGoalPace.Pace.Monthly(amount = Money(634_00), until = YearMonth(2027, 3))
+        assertEquals(
+            "≈ 634 €/mes hasta marzo de 2027",
+            goalPaceCaption(paceRow(SavingsGoalPace.Remaining(Money(3_800_00), monthly))),
+        )
+        assertEquals(
+            "≈ 63.334 €/mes hasta marzo de 2027",
+            goalPaceCaption(
+                paceRow(SavingsGoalPace.Remaining(Money(380_000_00), monthly.copy(amount = Money(63_334_00)))),
+            ),
+        )
+        assertEquals(
+            "≈ 84 $/mes hasta enero de 2027",
+            goalPaceCaption(
+                paceRow(
+                    SavingsGoalPace.Remaining(
+                        Money(500_01),
+                        SavingsGoalPace.Pace.Monthly(amount = Money(84_00), until = YearMonth(2027, 1)),
+                    ),
+                    currency = Currency.USD,
+                ),
+            ),
+        )
+        assertEquals(
+            "≈ 16.667 ¥/mes hasta marzo de 2027",
+            goalPaceCaption(
+                paceRow(
+                    SavingsGoalPace.Remaining(Money(100_001), monthly.copy(amount = Money(16_667))),
+                    currency = Currency.JPY,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `the pace caption flags a passed date and is absent otherwise`() {
+        assertEquals(
+            "Fecha superada",
+            goalPaceCaption(paceRow(SavingsGoalPace.Remaining(Money(10_00), SavingsGoalPace.Pace.DatePassed))),
+        )
+        assertNull(goalPaceCaption(paceRow(SavingsGoalPace.Remaining(Money(10_00), pace = null))))
+        assertNull(goalPaceCaption(paceRow(SavingsGoalPace.Reached(surplus = Money(5_00)))))
+        assertNull(goalPaceCaption(paceRow(pace = null)))
+    }
+
+    private fun paceRow(pace: SavingsGoalPace?, currency: Currency = Currency.EUR) = SavingsGoalRowUi(
+        id = "goal-1",
+        name = "Goal goal-1",
+        target = CurrencyAmount(Money(100_00), currency),
+        progress = Money.ZERO,
+        progressPct = 0,
+        targetReached = false,
+        closed = false,
+        linkedAssetIds = emptySet(),
+        linkedGroupId = null,
+        pace = pace,
+    )
+
+    @Test
     fun `every asset is linkable whatever the goal currency`() = runTest(dispatcher) {
         val vm = viewModel(
             assets = FakeAssetRepository(
