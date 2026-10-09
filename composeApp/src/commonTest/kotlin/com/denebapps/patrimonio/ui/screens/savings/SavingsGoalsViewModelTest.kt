@@ -1,5 +1,7 @@
 package com.denebapps.patrimonio.ui.screens.savings
 
+import com.denebapps.patrimonio.domain.calc.SavingsGoalPace
+import com.denebapps.patrimonio.domain.calc.fixedClock
 import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.Currency
@@ -9,6 +11,7 @@ import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
+import com.denebapps.patrimonio.domain.model.YearMonth
 import com.denebapps.patrimonio.testing.FakeAccountGroupRepository
 import com.denebapps.patrimonio.testing.FakeAssetRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
@@ -23,6 +26,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -58,11 +62,12 @@ class SavingsGoalsViewModelTest {
         linkedAssetIds: Set<String> = emptySet(),
         linkedGroupId: String? = null,
         lifecycle: SavingsGoalLifecycle = SavingsGoalLifecycle.OPEN,
+        targetDate: LocalDate? = null,
     ) = SavingsGoal(
         id = id,
         name = "Goal $id",
         target = CurrencyAmount(Money(targetMinor), currency),
-        targetDate = null,
+        targetDate = targetDate,
         linkedAssetIds = linkedAssetIds,
         lifecycle = lifecycle,
         progress = Money(progressMinor),
@@ -89,6 +94,8 @@ class SavingsGoalsViewModelTest {
         assetRepository = assets,
         accountGroupRepository = groups,
         fxRepository = fx,
+        clock = fixedClock("2026-10-09T10:00:00Z"),
+        zoneProvider = { TimeZone.UTC },
         initialGoalId = initialGoalId,
         initialWithdraw = initialWithdraw,
     )
@@ -125,6 +132,160 @@ class SavingsGoalsViewModelTest {
         assertFalse(row.closed)
         job.cancel()
     }
+
+    @Test
+    fun `an open goal with a target date exposes the remaining amount and the monthly pace`() = runTest(dispatcher) {
+        val vm = viewModel(
+            goals = FakeSavingsGoalRepository(
+                listOf(
+                    goal(
+                        id = "goal-1",
+                        targetMinor = 5_000_00,
+                        progressMinor = 1_200_00,
+                        targetDate = LocalDate(2027, 3, 15),
+                    ),
+                ),
+            ),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        // Clock is fixed at 2026-10-09: October through March is 6 months; 3.800 € / 6 → 634 €.
+        assertEquals(
+            SavingsGoalPace.Remaining(
+                Money(3_800_00),
+                SavingsGoalPace.Pace.Monthly(amount = Money(634_00), until = YearMonth(2027, 3)),
+            ),
+            vm.state.value.goals.single().pace,
+        )
+        job.cancel()
+    }
+
+    @Test
+    fun `a closed goal keeps its remaining amount or surplus but drops the date pace`() = runTest(dispatcher) {
+        val vm = viewModel(
+            goals = FakeSavingsGoalRepository(
+                listOf(
+                    goal(
+                        id = "goal-1",
+                        targetMinor = 100_00,
+                        progressMinor = 40_00,
+                        lifecycle = SavingsGoalLifecycle.CANCELLED,
+                        targetDate = LocalDate(2027, 3, 15),
+                    ),
+                    goal(
+                        id = "goal-2",
+                        targetMinor = 100_00,
+                        progressMinor = 40_00,
+                        lifecycle = SavingsGoalLifecycle.CLOSED,
+                        targetDate = LocalDate(2026, 1, 1),
+                    ),
+                    goal(
+                        id = "goal-3",
+                        targetMinor = 100_00,
+                        progressMinor = 110_00,
+                        lifecycle = SavingsGoalLifecycle.CLOSED,
+                        targetDate = LocalDate(2026, 1, 1),
+                    ),
+                ),
+            ),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        val rows = vm.state.value.goals.associateBy { it.id }
+        assertEquals(SavingsGoalPace.Remaining(Money(60_00), pace = null), rows.getValue("goal-1").pace)
+        assertEquals(SavingsGoalPace.Remaining(Money(60_00), pace = null), rows.getValue("goal-2").pace)
+        assertEquals(SavingsGoalPace.Reached(surplus = Money(10_00)), rows.getValue("goal-3").pace)
+        job.cancel()
+    }
+
+    @Test
+    fun `a goal whose tracked balance is unavailable exposes no pace`() = runTest(dispatcher) {
+        val vm = viewModel(
+            goals = FakeSavingsGoalRepository(
+                listOf(
+                    goal(
+                        id = "goal-1",
+                        targetMinor = 100_00,
+                        progressMinor = 0,
+                        linkedAssetIds = setOf("a1"),
+                        targetDate = LocalDate(2026, 1, 1),
+                    ),
+                ),
+            ),
+            assets = FakeAssetRepository(listOf(asset("a1", Currency.USD, minor = 50_00))),
+            // An unusable USD rate: the EUR goal cannot convert the USD balance.
+            fx = FakeFxRepository(FxRates(mapOf(Currency.USD to 0L))),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        val row = vm.state.value.goals.single()
+        assertTrue(row.balanceUnavailable)
+        assertNull(row.pace)
+        job.cancel()
+    }
+
+    @Test
+    fun `the pace caption shows the monthly amount in whole units until the target month`() {
+        val monthly = SavingsGoalPace.Pace.Monthly(amount = Money(634_00), until = YearMonth(2027, 3))
+        assertEquals(
+            "≈ 634 €/mes hasta marzo de 2027",
+            goalPaceCaption(paceRow(SavingsGoalPace.Remaining(Money(3_800_00), monthly))),
+        )
+        assertEquals(
+            "≈ 63.334 €/mes hasta marzo de 2027",
+            goalPaceCaption(
+                paceRow(SavingsGoalPace.Remaining(Money(380_000_00), monthly.copy(amount = Money(63_334_00)))),
+            ),
+        )
+        assertEquals(
+            "≈ 84 $/mes hasta enero de 2027",
+            goalPaceCaption(
+                paceRow(
+                    SavingsGoalPace.Remaining(
+                        Money(500_01),
+                        SavingsGoalPace.Pace.Monthly(amount = Money(84_00), until = YearMonth(2027, 1)),
+                    ),
+                    currency = Currency.USD,
+                ),
+            ),
+        )
+        assertEquals(
+            "≈ 16.667 ¥/mes hasta marzo de 2027",
+            goalPaceCaption(
+                paceRow(
+                    SavingsGoalPace.Remaining(Money(100_001), monthly.copy(amount = Money(16_667))),
+                    currency = Currency.JPY,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `the pace caption flags a passed date and is absent otherwise`() {
+        assertEquals(
+            "Fecha superada",
+            goalPaceCaption(paceRow(SavingsGoalPace.Remaining(Money(10_00), SavingsGoalPace.Pace.DatePassed))),
+        )
+        assertNull(goalPaceCaption(paceRow(SavingsGoalPace.Remaining(Money(10_00), pace = null))))
+        assertNull(goalPaceCaption(paceRow(SavingsGoalPace.Reached(surplus = Money(5_00)))))
+        assertNull(goalPaceCaption(paceRow(pace = null)))
+    }
+
+    private fun paceRow(pace: SavingsGoalPace?, currency: Currency = Currency.EUR) = SavingsGoalRowUi(
+        id = "goal-1",
+        name = "Goal goal-1",
+        target = CurrencyAmount(Money(100_00), currency),
+        progress = Money.ZERO,
+        progressPct = 0,
+        targetReached = false,
+        closed = false,
+        linkedAssetIds = emptySet(),
+        linkedGroupId = null,
+        pace = pace,
+    )
 
     @Test
     fun `every asset is linkable whatever the goal currency`() = runTest(dispatcher) {

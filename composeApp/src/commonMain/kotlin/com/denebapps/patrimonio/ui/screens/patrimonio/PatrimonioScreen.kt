@@ -51,6 +51,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.denebapps.patrimonio.domain.calc.AccountAssignment
+import com.denebapps.patrimonio.domain.calc.SavingsGoalPace
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.ui.components.EmptyState
@@ -67,6 +68,7 @@ import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalRowUi
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsUiState
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
 import com.denebapps.patrimonio.ui.screens.savings.SharedBalanceNoticeUi
+import com.denebapps.patrimonio.ui.screens.savings.goalPaceCaption
 import com.denebapps.patrimonio.ui.screens.savings.trackedBalanceCaption
 import com.denebapps.patrimonio.ui.theme.AppShadows
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
@@ -929,8 +931,34 @@ private fun SavingsGoalRow(goal: SavingsGoalRowUi, onClick: () -> Unit, modifier
                 color = colors.muted,
                 fontSize = 12.sp,
             )
+            Spacer(Modifier.weight(1f))
+            when (val pace = goal.pace) {
+                is SavingsGoalPace.Remaining -> Text(
+                    text = "Faltan ${formatItemAmount(pace.remaining, goal.target.currency)}",
+                    color = colors.muted,
+                    fontSize = 11.5.sp,
+                )
+                is SavingsGoalPace.Reached -> if (pace.surplus > Money.ZERO) {
+                    Text(
+                        text = "Superada en ${formatItemAmount(pace.surplus, goal.target.currency)}",
+                        color = colors.income,
+                        fontSize = 11.5.sp,
+                    )
+                }
+                null -> Unit
+            }
         }
         SavingsGoalProgressBar(pct = goal.progressPct, modifier = Modifier.padding(top = 8.dp))
+        goalPaceCaption(goal)?.let { caption ->
+            Text(
+                text = caption,
+                color = colors.muted,
+                fontSize = 11.5.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
         trackedBalanceCaption(goal)?.let { caption ->
             Text(
                 text = caption,
@@ -944,8 +972,8 @@ private fun SavingsGoalRow(goal: SavingsGoalRowUi, onClick: () -> Unit, modifier
     }
 }
 
-/** [pct] MAY exceed 100 (overfunding) — the fill width is visually clamped to the bar's bounds, but
- *  the numeric `%` shown alongside it (in [SavingsGoalRow]'s amount row) is never clamped. */
+/** [pct] MAY exceed 100 (overfunding): the fill is clamped to the bar's bounds and switches to the income
+ *  colour from 100. */
 @Composable
 private fun SavingsGoalProgressBar(pct: Int, modifier: Modifier = Modifier) {
     val colors = LocalAppColors.current

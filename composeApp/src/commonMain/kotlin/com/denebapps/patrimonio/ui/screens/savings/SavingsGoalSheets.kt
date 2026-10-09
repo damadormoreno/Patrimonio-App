@@ -46,6 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.denebapps.patrimonio.domain.calc.SavingsGoalPace
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.ui.components.AccountUsageTags
@@ -407,14 +408,36 @@ private fun GoalProgressSummary(goal: SavingsGoalRowUi, modifier: Modifier = Mod
                 fontSize = 13.sp,
             )
         }
+        val pace = goal.pace
         if (goal.targetReached) {
+            val surplus = (pace as? SavingsGoalPace.Reached)?.surplus ?: Money.ZERO
             Text(
-                text = "Meta alcanzada · ${goal.progressPct}%",
+                text = if (surplus > Money.ZERO) {
+                    "Meta superada en ${formatSavingsAmount(surplus, goal.target.currency)} · ${goal.progressPct}%"
+                } else {
+                    "Meta alcanzada · ${goal.progressPct}%"
+                },
                 color = colors.income,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(top = 4.dp),
             )
+        }
+        if (pace is SavingsGoalPace.Remaining) {
+            Text(
+                text = "Faltan ${formatSavingsAmount(pace.remaining, goal.target.currency)}",
+                color = colors.muted,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            goalPaceCaption(goal)?.let { caption ->
+                Text(
+                    text = caption,
+                    color = colors.muted,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
         }
     }
 }

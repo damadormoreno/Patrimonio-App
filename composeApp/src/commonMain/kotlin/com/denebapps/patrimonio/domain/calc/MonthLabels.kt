@@ -10,3 +10,6 @@ internal val MONTHS_ES = listOf(
 
 /** "{Spanish month} {year}" (e.g. "Mayo 2026"). */
 fun monthLabelEs(ym: YearMonth): String = "${MONTHS_ES[ym.month - 1]} ${ym.year}"
+
+/** Lowercase "{spanish month} de {year}" for running text (e.g. "marzo de 2027"). */
+fun monthOfYearLabelEs(ym: YearMonth): String = "${MONTHS_ES[ym.month - 1].lowercase()} de ${ym.year}"
