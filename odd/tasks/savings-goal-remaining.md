@@ -74,7 +74,7 @@ Rules:
   RED: field stubbed to `null` → `SavingsGoalsViewModelTest` 24 tests, 2 failed (open goal monthly pace,
   closed goal remaining/surplus); the unavailable-balance guard passed trivially against the stub.
   GREEN: `SavingsGoalsViewModelTest` 24/24, `KoinModuleTest` 9/9 passed; `ktlintCheck` clean.
-- **T3** (commit `feat(savings): show remaining amount and monthly pace on goals`): card amount row shows
+- **T3** (`6b35ea5`, `feat(savings): show remaining amount and monthly pace on goals`): card amount row shows
   "Faltan …" / "Superada en …", pace line below the bar; detail shows "Faltan …" + pace line and
   "Meta superada en … · N%". Shared `goalPaceCaption(goal)` (next to `trackedBalanceCaption`) builds
   "≈ 317 €/mes hasta marzo de 2027" / "Fecha superada" with whole units; `SavingsGoalProgressBar` KDoc fixed.
