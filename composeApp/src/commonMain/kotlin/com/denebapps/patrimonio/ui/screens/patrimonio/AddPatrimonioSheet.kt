@@ -121,6 +121,12 @@ fun AddPatrimonioSheet(
                 ModeSegmented(isLiability = state.isLiability, onModeChange = viewModel::onModeChange)
             }
 
+            NameSection(
+                name = state.name,
+                isLiability = state.isLiability,
+                onNameChange = viewModel::onNameChange,
+            )
+
             GroupSection(
                 options = state.groupOptions,
                 selectedId = state.selectedGroupId,
@@ -132,12 +138,6 @@ fun AddPatrimonioSheet(
                 emoji = state.emoji,
                 type = state.groupOptions.firstOrNull { it.id == state.selectedGroupId }?.type,
                 onClick = { choosingEmoji = true },
-            )
-
-            NameSection(
-                name = state.name,
-                isLiability = state.isLiability,
-                onNameChange = viewModel::onNameChange,
             )
 
             AmountSection(
