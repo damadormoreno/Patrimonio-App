@@ -84,20 +84,20 @@ class AddPatrimonioSheetViewModelTest {
 
     @Test
     fun `per-group add prefills the group selection`() = runTest(dispatcher) {
-        val vm = viewModel(isLiability = true, groupId = Liability.LiabilityGroup.CARD.name)
+        val vm = viewModel(isLiability = true, groupId = Liability.LiabilityGroup.CARD)
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
-        assertEquals(Liability.LiabilityGroup.CARD.name, vm.state.value.selectedGroupId)
+        assertEquals(Liability.LiabilityGroup.CARD, vm.state.value.selectedGroupId)
         job.cancel()
     }
 
     @Test
     fun `switching mode clears the previously selected group`() = runTest(dispatcher) {
-        val vm = viewModel(isLiability = false, groupId = Asset.AssetGroup.BANK.name)
+        val vm = viewModel(isLiability = false, groupId = Asset.AssetGroup.BANK)
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
-        assertEquals(Asset.AssetGroup.BANK.name, vm.state.value.selectedGroupId)
+        assertEquals(Asset.AssetGroup.BANK, vm.state.value.selectedGroupId)
 
         vm.onModeChange(true)
         advanceUntilIdle()
@@ -118,7 +118,7 @@ class AddPatrimonioSheetViewModelTest {
         advanceUntilIdle()
         assertFalse(vm.state.value.canSave)
 
-        vm.onGroupSelect(Asset.AssetGroup.BANK.name)
+        vm.onGroupSelect(Asset.AssetGroup.BANK)
         advanceUntilIdle()
         assertTrue(vm.state.value.canSave)
         job.cancel()
@@ -130,7 +130,7 @@ class AddPatrimonioSheetViewModelTest {
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
-        vm.onGroupSelect(Asset.AssetGroup.BANK.name)
+        vm.onGroupSelect(Asset.AssetGroup.BANK)
         vm.onAmountChange("100,00")
         advanceUntilIdle()
         assertFalse(vm.state.value.canSave)
@@ -147,7 +147,7 @@ class AddPatrimonioSheetViewModelTest {
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
-        vm.onGroupSelect(Asset.AssetGroup.BANK.name)
+        vm.onGroupSelect(Asset.AssetGroup.BANK)
         vm.onNameChange("Cuenta nómina")
         vm.onAmountChange("12,3,4")
         advanceUntilIdle()
@@ -202,11 +202,11 @@ class AddPatrimonioSheetViewModelTest {
         assertEquals("Nómina", loaded.name)
         assertEquals("1234,50", loaded.amountText)
         assertEquals(Currency.USD, loaded.currency)
-        assertEquals(Asset.AssetGroup.BANK.name, loaded.selectedGroupId)
+        assertEquals(Asset.AssetGroup.BANK, loaded.selectedGroupId)
         assertNull(loaded.deleteWarning)
 
         vm.onModeChange(true)
-        vm.onGroupSelect(Asset.AssetGroup.INVEST.name)
+        vm.onGroupSelect(Asset.AssetGroup.INVEST)
         vm.onNameChange(" Broker ")
         vm.onAmountChange("0")
         vm.onCurrencyChange(Currency.EUR)
@@ -335,7 +335,7 @@ class AddPatrimonioSheetViewModelTest {
         val eventsJob = launch { vm.navigateBack.collect { events++ } }
         advanceUntilIdle()
 
-        vm.onGroupSelect(Asset.AssetGroup.BANK.name)
+        vm.onGroupSelect(Asset.AssetGroup.BANK)
         vm.onNameChange("Cuenta nómina")
         vm.onAmountChange("1.500,00")
         advanceUntilIdle()
@@ -364,7 +364,7 @@ class AddPatrimonioSheetViewModelTest {
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
-        vm.onGroupSelect(Liability.LiabilityGroup.CARD.name)
+        vm.onGroupSelect(Liability.LiabilityGroup.CARD)
         vm.onNameChange("Visa")
         vm.onAmountChange("250,00")
         advanceUntilIdle()
@@ -391,7 +391,7 @@ class AddPatrimonioSheetViewModelTest {
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
-        vm.onGroupSelect(Asset.AssetGroup.BANK.name)
+        vm.onGroupSelect(Asset.AssetGroup.BANK)
         // Keyboard autocomplete commonly leaves a trailing space after the last word.
         vm.onNameChange("  Cuenta corriente ")
         vm.onAmountChange("100,00")
@@ -415,7 +415,7 @@ class AddPatrimonioSheetViewModelTest {
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
-        vm.onGroupSelect(Liability.LiabilityGroup.LOAN.name)
+        vm.onGroupSelect(Liability.LiabilityGroup.LOAN)
         vm.onNameChange("Préstamo coche ")
         vm.onAmountChange("8.200,00")
         advanceUntilIdle()

@@ -27,6 +27,8 @@ import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
+import com.denebapps.patrimonio.ui.components.typeChipLabel
+import com.denebapps.patrimonio.ui.components.typeLabel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -44,8 +46,7 @@ private const val PATRIMONIO_STOP_TIMEOUT_MS = 5_000L
 enum class PatrimonioView { ACTIVOS, PASIVOS }
 
 /** One composition-bar segment / legend entry (spec: Composition Bar by Group). [groupId] is the
- *  underlying [Asset.AssetGroup]/[Liability.LiabilityGroup] enum `.name` — the UI layer resolves
- *  icon/tone from it. */
+ *  account type id — the UI layer resolves icon/tone from it. */
 data class GroupShareUi(val groupId: String, val label: String, val total: Money, val sharePct: Int)
 
 /** One member item row inside a [PatrimonioGroupUi] card. [amount]/[currency] are the item's
@@ -75,7 +76,7 @@ data class PatrimonioGroupUi(
 )
 
 /** One asset-type chip of the account filter. */
-data class TypeFilterOptionUi(val group: Asset.AssetGroup, val label: String, val selected: Boolean)
+data class TypeFilterOptionUi(val group: String, val label: String, val selected: Boolean)
 
 /** Total (EUR) and number of the accounts the active filter shows. */
 data class FilterSummaryUi(val total: Money, val count: Int)
@@ -176,7 +177,7 @@ class PatrimonioViewModel(
         filter.value = filter.value.copy(assignment = assignment)
     }
 
-    fun onTypeFilterToggle(type: Asset.AssetGroup) {
+    fun onTypeFilterToggle(type: String) {
         val types = filter.value.types
         filter.value = filter.value.copy(types = if (type in types) types - type else types + type)
     }
@@ -214,15 +215,10 @@ class PatrimonioViewModel(
         } else {
             when (selectedView) {
                 PatrimonioView.ACTIVOS -> assetsByGroup(assets, rates).map {
-                    GroupShareUi(it.group.name, assetGroupLabel(it.group), it.total, percentage(it.total, viewTotal))
+                    GroupShareUi(it.group, typeLabel(it.group), it.total, percentage(it.total, viewTotal))
                 }
                 PatrimonioView.PASIVOS -> liabilitiesByGroup(liabilities, rates).map {
-                    GroupShareUi(
-                        it.group.name,
-                        liabilityGroupLabel(it.group),
-                        it.total,
-                        percentage(it.total, viewTotal),
-                    )
+                    GroupShareUi(it.group, typeLabel(it.group), it.total, percentage(it.total, viewTotal))
                 }
             }
         }
@@ -238,8 +234,8 @@ class PatrimonioViewModel(
                 // A type chip alone keeps whole groups; only a partially hidden group reads "2 de 5".
                 val partial = visible.size < items.size
                 PatrimonioGroupUi(
-                    groupId = groupTotal.group.name,
-                    label = assetGroupLabel(groupTotal.group),
+                    groupId = groupTotal.group,
+                    label = typeLabel(groupTotal.group),
                     items = visible.map { it.toItemUi(usage[it.id]) },
                     itemCountLabel = if (partial) {
                         "${visible.size} de ${itemCountLabel(items.size)}"
@@ -254,8 +250,8 @@ class PatrimonioViewModel(
             PatrimonioView.PASIVOS -> liabilitiesByGroup(liabilities, rates).map { groupTotal ->
                 val items = liabilities.filter { it.group == groupTotal.group }
                 PatrimonioGroupUi(
-                    groupId = groupTotal.group.name,
-                    label = liabilityGroupLabel(groupTotal.group),
+                    groupId = groupTotal.group,
+                    label = typeLabel(groupTotal.group),
                     items = items.map { it.toItemUi() },
                     itemCountLabel = itemCountLabel(items.size),
                     sharePct = percentage(groupTotal.total, viewTotal),
@@ -301,18 +297,12 @@ private fun eurTotal(assets: List<Asset>, rates: FxRates): Money =
     assets.fold(Money.ZERO) { acc, asset -> acc + asset.amount.toEur(rates) }
 
 /** One chip per type the user has, plus any selected type that no longer has accounts so it can be
- *  unselected; in the enum's order. */
+ *  unselected; built-in types in their order, then any other. */
 private fun typeFilterOptions(assets: List<Asset>, filter: AccountFilter): List<TypeFilterOptionUi> {
     val present = assets.mapTo(mutableSetOf()) { it.group } + filter.types
-    return Asset.AssetGroup.entries
-        .filter { it in present }
+    val builtin = Asset.AssetGroup.entries
+    return (builtin.filter { it in present } + (present - builtin.toSet()).sorted())
         .map { TypeFilterOptionUi(it, typeChipLabel(it), it in filter.types) }
-}
-
-/** Shorter than [assetGroupLabel] so the chips fit in a row. */
-private fun typeChipLabel(group: Asset.AssetGroup): String = when (group) {
-    Asset.AssetGroup.BANK -> "Bancos"
-    else -> assetGroupLabel(group)
 }
 
 private fun itemCountLabel(count: Int): String = if (count == 1) "1 elemento" else "$count elementos"
@@ -321,20 +311,4 @@ private fun percentage(value: Money, total: Money): Int = if (total.minorUnits <
     0
 } else {
     (value.minorUnits.toDouble() * 100.0 / total.minorUnits.toDouble()).roundToInt()
-}
-
-/** Labels ported 1:1 from `design-reference/shared.jsx`'s `ASSET_GROUPS`. */
-private fun assetGroupLabel(group: Asset.AssetGroup): String = when (group) {
-    Asset.AssetGroup.BANK -> "Cuentas bancarias"
-    Asset.AssetGroup.INVEST -> "Inversión"
-    Asset.AssetGroup.REALESTATE -> "Inmuebles"
-    Asset.AssetGroup.CRYPTO -> "Cripto"
-    Asset.AssetGroup.CASH -> "Efectivo"
-}
-
-/** Labels ported 1:1 from `design-reference/shared.jsx`'s `LIAB_GROUPS`. */
-private fun liabilityGroupLabel(group: Liability.LiabilityGroup): String = when (group) {
-    Liability.LiabilityGroup.MORTGAGE -> "Hipotecas"
-    Liability.LiabilityGroup.LOAN -> "Préstamos"
-    Liability.LiabilityGroup.CARD -> "Tarjetas"
 }

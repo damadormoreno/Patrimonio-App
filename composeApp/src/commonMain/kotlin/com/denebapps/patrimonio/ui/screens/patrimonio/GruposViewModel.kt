@@ -35,7 +35,7 @@ private const val GRUPOS_STOP_TIMEOUT_MS = 5_000L
 
 /** One member row inside an [AccountGroupRowUi]'s expanded content (spec: Account Groups List).
  *  [group] drives the icon lookup ([PatrimonioScreen]/[AddPatrimonioSheet] precedent). */
-data class GruposMemberUi(val id: String, val name: String, val amountEur: Money, val group: Asset.AssetGroup)
+data class GruposMemberUi(val id: String, val name: String, val amountEur: Money, val group: String)
 
 /** One expandable group row (spec: Account Groups List, Group Edit and Delete). [total]/[members]
  *  are ALWAYS computed from the group's resolved membership regardless of [showBalance] — the sheet
@@ -57,7 +57,7 @@ data class AssetChecklistItemUi(
     val id: String,
     val name: String,
     val subtitle: String?,
-    val group: Asset.AssetGroup,
+    val group: String,
     val selected: Boolean,
     /** Open goals that follow the account and the other groups that hold it. */
     val goalNames: List<String> = emptyList(),

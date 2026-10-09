@@ -9,6 +9,7 @@ import com.denebapps.patrimonio.data.lock.DataStoreLockStore
 import com.denebapps.patrimonio.data.lock.PinHasher
 import com.denebapps.patrimonio.data.platform.PlatformContext
 import com.denebapps.patrimonio.data.repository.AccountGroupRepositoryImpl
+import com.denebapps.patrimonio.data.repository.AccountTypeRepositoryImpl
 import com.denebapps.patrimonio.data.repository.AssetRepositoryImpl
 import com.denebapps.patrimonio.data.repository.BackupRepositoryImpl
 import com.denebapps.patrimonio.data.repository.DataMaintenanceRepositoryImpl
@@ -18,6 +19,7 @@ import com.denebapps.patrimonio.data.repository.NetWorthSnapshotUpserter
 import com.denebapps.patrimonio.data.repository.SavingsGoalRepositoryImpl
 import com.denebapps.patrimonio.data.repository.SubscriptionRepositoryImpl
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
+import com.denebapps.patrimonio.domain.repository.AccountTypeRepository
 import com.denebapps.patrimonio.domain.repository.AppLock
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.BackupRepository
@@ -89,6 +91,7 @@ val dataModule = module {
         )
     }
     single<SubscriptionRepository> { SubscriptionRepositoryImpl(subscriptionDao = get(), seedingGate = get()) }
+    single<AccountTypeRepository> { AccountTypeRepositoryImpl(get()) }
     single<PreferencesRepository> { PreferencesRepositoryImpl(dataStoreFilePath(get<PlatformContext>())) }
     single<DataMaintenanceRepository> { DataMaintenanceRepositoryImpl(get()) }
     single<AppLock> {

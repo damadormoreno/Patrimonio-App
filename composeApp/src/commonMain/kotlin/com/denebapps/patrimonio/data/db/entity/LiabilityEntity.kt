@@ -12,4 +12,6 @@ data class LiabilityEntity(
     val subtitle: String?,
     val amountMinor: Long,
     val currency: String,
+    /** Added in schema 6; null = the type's icon. */
+    val emoji: String? = null,
 )

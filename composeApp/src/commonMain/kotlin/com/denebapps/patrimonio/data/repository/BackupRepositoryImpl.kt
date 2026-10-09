@@ -42,6 +42,7 @@ class BackupRepositoryImpl(
                 savingsGoalAllocationEvents = goals.listAllAllocationEvents().map { it.toBackup() },
                 savingsGoalLinkEvents = goals.listAllLinkEvents().map { it.toBackup() },
                 subscriptions = appDatabase.subscriptionDao().list().map { it.toBackup() },
+                accountTypes = appDatabase.accountTypeDao().list().map { it.toBackup() },
             )
         }
         return BackupCodec.encode(document)
@@ -52,6 +53,7 @@ class BackupRepositoryImpl(
         seedingGate.await()
         appDatabase.writeTransaction {
             appDatabase.clearFinancialTables()
+            document.accountTypes.forEach { appDatabase.accountTypeDao().insert(it.toEntity()) }
             document.assets.forEach { appDatabase.assetDao().insert(it.toEntity()) }
             document.liabilities.forEach { appDatabase.liabilityDao().insert(it.toEntity()) }
             document.accountGroups.forEach { appDatabase.accountGroupDao().insertGroup(it.toEntity()) }

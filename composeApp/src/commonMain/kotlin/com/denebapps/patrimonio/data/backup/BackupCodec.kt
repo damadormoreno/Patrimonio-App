@@ -1,6 +1,7 @@
 package com.denebapps.patrimonio.data.backup
 
 import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalAdd
+import com.denebapps.patrimonio.domain.model.AccountKind
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.BillingCycle
 import com.denebapps.patrimonio.domain.model.Currency
@@ -8,6 +9,7 @@ import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
+import com.denebapps.patrimonio.domain.model.TypeColor
 import com.denebapps.patrimonio.domain.repository.InvalidBackupException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalArithmeticOverflowException
 import kotlinx.serialization.json.Json
@@ -30,14 +32,15 @@ import kotlin.uuid.Uuid
  * hand-edited or corrupted file is rejected with a readable reason instead of failing half-way
  * through an import or crashing a later read.
  *
- * Writes [VERSION] (5). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
+ * Writes [VERSION] (6). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
  * group-link fields, which default to null, v1/v2 files lack subscriptions, which default to empty,
- * v1–v3 files have numeric goal ids, which [upgradeLegacyGoalIds] replaces before decoding, and v1–v4
- * files link a goal to one `linkedAssetId`, which [upgradeSingleLinkedAsset] turns into a list.
+ * v1–v3 files have numeric goal ids, which [upgradeLegacyGoalIds] replaces before decoding, v1–v4
+ * files link a goal to one `linkedAssetId`, which [upgradeSingleLinkedAsset] turns into a list, and
+ * v1–v5 files have no custom account types nor emojis, which default to empty.
  */
 object BackupCodec {
     const val FORMAT = "patrimonio-backup"
-    const val VERSION = 5
+    const val VERSION = 6
 
     private val json = Json {
         prettyPrint = true
@@ -129,8 +132,8 @@ private fun randomGoalId(): String = Uuid.random().toString()
 
 private fun invalid(reason: String): Nothing = throw InvalidBackupException(reason)
 
-private val ASSET_GROUPS = Asset.AssetGroup.entries.map { it.name }.toSet()
-private val LIABILITY_GROUPS = Liability.LiabilityGroup.entries.map { it.name }.toSet()
+private val ACCOUNT_KINDS = AccountKind.entries.map { it.name }.toSet()
+private val TYPE_COLORS = TypeColor.entries.map { it.name }.toSet()
 private val CURRENCIES = Currency.entries.map { it.name }.toSet()
 private val LIFECYCLES = SavingsGoalLifecycle.entries.map { it.name }.toSet()
 private val LINK_KINDS = SavingsGoalLinkEventKind.entries.map { it.name }.toSet()
@@ -138,10 +141,22 @@ private val BILLING_CYCLES = BillingCycle.entries.map { it.name }.toSet()
 private val YEAR_MONTH = Regex("""\d{4}-(0[1-9]|1[0-2])""")
 
 private fun BackupDocument.validate() {
+    requireUnique("tipo de cuenta", accountTypes.map { it.id })
+    accountTypes.forEach { type ->
+        if (type.id.isBlank()) invalid("Hay un tipo de cuenta sin id.")
+        if (type.kind !in ACCOUNT_KINDS) invalid("El tipo '${type.name}' no es ni de activos ni de pasivos.")
+        if (type.name.isBlank()) invalid("Hay un tipo de cuenta sin nombre.")
+        if (type.emoji.isBlank()) invalid("El tipo '${type.name}' no tiene emoji.")
+        if (type.color !in TYPE_COLORS) invalid("El tipo '${type.name}' tiene un color desconocido: ${type.color}.")
+    }
+    val customTypes = accountTypes.groupBy({ it.kind }, { it.id })
+    val assetTypes = Asset.AssetGroup.entries.toSet() + customTypes[AccountKind.ASSET.name].orEmpty()
+    val liabilityTypes = Liability.LiabilityGroup.entries.toSet() + customTypes[AccountKind.LIABILITY.name].orEmpty()
+
     requireUnique("activo", assets.map { it.id })
     assets.forEach { asset ->
         if (asset.id.isBlank()) invalid("Hay un activo sin id.")
-        if (asset.group !in ASSET_GROUPS) {
+        if (asset.group !in assetTypes) {
             invalid("El activo '${asset.name}' tiene un tipo desconocido: ${asset.group}.")
         }
         if (asset.currency !in CURRENCIES) {
@@ -152,7 +167,7 @@ private fun BackupDocument.validate() {
     requireUnique("pasivo", liabilities.map { it.id })
     liabilities.forEach { liability ->
         if (liability.id.isBlank()) invalid("Hay un pasivo sin id.")
-        if (liability.group !in LIABILITY_GROUPS) {
+        if (liability.group !in liabilityTypes) {
             invalid("El pasivo '${liability.name}' tiene un tipo desconocido: ${liability.group}.")
         }
         if (liability.currency !in CURRENCIES) {

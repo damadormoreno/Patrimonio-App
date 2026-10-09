@@ -47,7 +47,7 @@ class PatrimonioViewModelTest {
     @AfterTest
     fun tearDown() = Dispatchers.resetMain()
 
-    private fun asset(id: String, group: Asset.AssetGroup, name: String, minor: Long) = Asset(
+    private fun asset(id: String, group: String, name: String, minor: Long) = Asset(
         id = id,
         group = group,
         name = name,
@@ -55,7 +55,7 @@ class PatrimonioViewModelTest {
         amount = CurrencyAmount(Money(minor), Currency.EUR),
     )
 
-    private fun liability(id: String, group: Liability.LiabilityGroup, name: String, minor: Long) = Liability(
+    private fun liability(id: String, group: String, name: String, minor: Long) = Liability(
         id = id,
         group = group,
         name = name,

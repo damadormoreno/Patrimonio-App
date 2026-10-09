@@ -41,7 +41,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.denebapps.patrimonio.domain.model.Asset
+import com.denebapps.patrimonio.ui.components.typeIcon
+import com.denebapps.patrimonio.ui.components.typeTone
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 import org.koin.compose.viewmodel.koinViewModel
@@ -462,27 +463,11 @@ private fun RowActionButton(
     }
 }
 
-/** Icon/tone lookup by [Asset.AssetGroup], duplicated per-file per the established convention
- *  ([AddPatrimonioSheetViewModel]'s `assetGroupLabelFor` precedent). */
-internal fun assetGroupIcon(group: Asset.AssetGroup): ImageVector = when (group) {
-    Asset.AssetGroup.BANK -> AppIcons.bank
-    Asset.AssetGroup.INVEST -> AppIcons.trend
-    Asset.AssetGroup.REALESTATE -> AppIcons.building
-    Asset.AssetGroup.CRYPTO -> AppIcons.coins
-    Asset.AssetGroup.CASH -> AppIcons.wallet
-}
+/** The account's type icon and colour ([typeIcon]/[typeTone]). */
+internal fun assetGroupIcon(group: String): ImageVector = typeIcon(group)
 
 @Composable
-internal fun assetGroupTone(group: Asset.AssetGroup): Color {
-    val colors = LocalAppColors.current
-    return when (group) {
-        Asset.AssetGroup.BANK -> colors.catTrans
-        Asset.AssetGroup.INVEST -> colors.catSalary
-        Asset.AssetGroup.REALESTATE -> colors.catHome
-        Asset.AssetGroup.CRYPTO -> colors.catFun
-        Asset.AssetGroup.CASH -> colors.catOther
-    }
-}
+internal fun assetGroupTone(group: String): Color = typeTone(group)
 
 /** EUR formatting matching [PatrimonioScreen]'s private `formatMoneyEs`, duplicated per-file. */
 internal fun formatMoneyEsGrupos(money: com.denebapps.patrimonio.domain.model.Money): String {

@@ -238,6 +238,38 @@ class AppDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun `migration 5 to 6 adds custom account types and an empty emoji to every account`() {
+        helper.createDatabase(5).use { connection ->
+            listOf(
+                "INSERT INTO assets (id, `group`, name, subtitle, amountMinor, currency) " +
+                    "VALUES ('a1', 'BANK', 'Cuenta', NULL, 150000, 'EUR')",
+                "INSERT INTO liabilities (id, `group`, name, subtitle, amountMinor, currency) " +
+                    "VALUES ('l1', 'CARD', 'Visa', NULL, 30000, 'EUR')",
+            ).forEach(connection::execSQL)
+        }
+
+        helper.runMigrationsAndValidate(6, emptyList()).use { connection ->
+            connection.prepare("SELECT `group`, emoji FROM assets").use { rows ->
+                assertTrue(rows.step())
+                assertEquals("BANK", rows.getText(0))
+                assertTrue(rows.isNull(1))
+            }
+            connection.prepare("SELECT `group`, emoji FROM liabilities").use { rows ->
+                assertTrue(rows.step())
+                assertEquals("CARD", rows.getText(0))
+                assertTrue(rows.isNull(1))
+            }
+            assertEquals(0L, connection.count("account_types"))
+            connection.execSQL(
+                "INSERT INTO account_types (id, kind, name, emoji, color, position) " +
+                    "VALUES ('t1', 'ASSET', 'Relojes', '⌚', 'GOLD', 0)",
+            )
+            connection.execSQL("UPDATE assets SET `group` = 't1', emoji = '🏦' WHERE id = 'a1'")
+            assertEquals(1L, connection.count("account_types"))
+        }
+    }
+
     /** Version 1 data: an asset, two groups (one with a member), two goals (one linked to the asset),
      *  allocation events and one link event. */
     private fun SQLiteConnection.seedVersion1() {

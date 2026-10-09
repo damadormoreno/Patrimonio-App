@@ -48,6 +48,5 @@ class AccountFilterTest {
         assertTrue(AccountFilter(types = setOf(Asset.AssetGroup.CASH)).isActive)
     }
 
-    private fun asset(id: String, group: Asset.AssetGroup) =
-        Asset(id, group, id, null, CurrencyAmount(Money(100), Currency.EUR))
+    private fun asset(id: String, group: String) = Asset(id, group, id, null, CurrencyAmount(Money(100), Currency.EUR))
 }

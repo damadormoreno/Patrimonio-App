@@ -6,6 +6,7 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.RoomDatabaseConstructor
 import com.denebapps.patrimonio.data.db.dao.AccountGroupDao
+import com.denebapps.patrimonio.data.db.dao.AccountTypeDao
 import com.denebapps.patrimonio.data.db.dao.AssetDao
 import com.denebapps.patrimonio.data.db.dao.FxRateDao
 import com.denebapps.patrimonio.data.db.dao.LiabilityDao
@@ -14,6 +15,7 @@ import com.denebapps.patrimonio.data.db.dao.SavingsGoalDao
 import com.denebapps.patrimonio.data.db.dao.SubscriptionDao
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
 import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
+import com.denebapps.patrimonio.data.db.entity.AccountTypeEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.FxRateEntity
 import com.denebapps.patrimonio.data.db.entity.LiabilityEntity
@@ -37,10 +39,16 @@ import com.denebapps.patrimonio.data.db.entity.SubscriptionEntity
         SavingsGoalLinkEventEntity::class,
         SavingsGoalAssetEntity::class,
         SubscriptionEntity::class,
+        AccountTypeEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
+    // 5 -> 6 only adds the custom account types table and the accounts' nullable emoji column.
+    autoMigrations = [
+        AutoMigration(from = 1, to = 2),
+        AutoMigration(from = 2, to = 3),
+        AutoMigration(from = 5, to = 6),
+    ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -57,6 +65,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun savingsGoalDao(): SavingsGoalDao
 
     abstract fun subscriptionDao(): SubscriptionDao
+
+    abstract fun accountTypeDao(): AccountTypeDao
 }
 
 // The Room KSP compiler generates the `actual` implementation of this object for every target

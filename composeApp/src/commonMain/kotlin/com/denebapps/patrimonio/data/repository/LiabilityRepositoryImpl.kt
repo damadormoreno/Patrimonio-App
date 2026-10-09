@@ -60,17 +60,19 @@ class LiabilityRepositoryImpl(
 
 private fun toDomain(entity: LiabilityEntity): Liability = Liability(
     id = entity.id,
-    group = Liability.LiabilityGroup.valueOf(entity.group),
+    group = entity.group,
     name = entity.name,
     subtitle = entity.subtitle,
     amount = CurrencyAmount(Money(entity.amountMinor), Currency.valueOf(entity.currency)),
+    emoji = entity.emoji,
 )
 
 private fun toEntity(liability: Liability): LiabilityEntity = LiabilityEntity(
     id = liability.id,
-    group = liability.group.name,
+    group = liability.group,
     name = liability.name,
     subtitle = liability.subtitle,
     amountMinor = liability.amount.amount.minorUnits,
     currency = liability.amount.currency.code,
+    emoji = liability.emoji,
 )

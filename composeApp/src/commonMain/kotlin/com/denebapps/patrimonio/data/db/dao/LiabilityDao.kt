@@ -25,6 +25,10 @@ interface LiabilityDao {
     @Query("DELETE FROM liabilities WHERE id = :id")
     suspend fun deleteById(id: String)
 
+    /** Moves every liability of type [from] to type [to] (when the custom type [from] is deleted). */
+    @Query("UPDATE liabilities SET `group` = :to WHERE `group` = :from")
+    suspend fun changeType(from: String, to: String): Int
+
     /** Wipes the whole table — only called by `clearFinancialTables` inside its FK-ordered
      *  clear-all transaction. */
     @Query("DELETE FROM liabilities")

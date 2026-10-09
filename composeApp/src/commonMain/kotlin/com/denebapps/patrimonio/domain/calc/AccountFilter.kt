@@ -6,12 +6,12 @@ import com.denebapps.patrimonio.domain.model.Asset
 enum class AccountAssignment { ALL, IN_GOALS, IN_GROUPS, UNASSIGNED }
 
 /**
- * The Patrimonio account filter: by assignment and by asset type ([types] empty means every type). Both
+ * The Patrimonio account filter: by assignment and by asset type id ([types] empty means every type). Both
  * apply at once, so "investments followed by a goal" is [AccountAssignment.IN_GOALS] plus `INVEST`.
  */
 data class AccountFilter(
     val assignment: AccountAssignment = AccountAssignment.ALL,
-    val types: Set<Asset.AssetGroup> = emptySet(),
+    val types: Set<String> = emptySet(),
 ) {
     val isActive: Boolean
         get() = assignment != AccountAssignment.ALL || types.isNotEmpty()

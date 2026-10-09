@@ -53,7 +53,7 @@ class NetWorthSnapshotUpserter(
 
 private fun assetToDomain(entity: com.denebapps.patrimonio.data.db.entity.AssetEntity): Asset = Asset(
     id = entity.id,
-    group = Asset.AssetGroup.valueOf(entity.group),
+    group = entity.group,
     name = entity.name,
     subtitle = entity.subtitle,
     amount = CurrencyAmount(Money(entity.amountMinor), Currency.valueOf(entity.currency)),
@@ -61,7 +61,7 @@ private fun assetToDomain(entity: com.denebapps.patrimonio.data.db.entity.AssetE
 
 private fun liabilityToDomain(entity: com.denebapps.patrimonio.data.db.entity.LiabilityEntity): Liability = Liability(
     id = entity.id,
-    group = Liability.LiabilityGroup.valueOf(entity.group),
+    group = entity.group,
     name = entity.name,
     subtitle = entity.subtitle,
     amount = CurrencyAmount(Money(entity.amountMinor), Currency.valueOf(entity.currency)),
