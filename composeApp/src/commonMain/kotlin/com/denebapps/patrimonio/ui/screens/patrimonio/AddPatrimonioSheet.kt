@@ -44,8 +44,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.denebapps.patrimonio.domain.model.Currency
-import com.denebapps.patrimonio.ui.components.typeIcon
-import com.denebapps.patrimonio.ui.components.typeTone
+import com.denebapps.patrimonio.ui.components.EmojiPicker
+import com.denebapps.patrimonio.ui.components.TypeBadge
+import com.denebapps.patrimonio.ui.components.TypeEditorDialog
+import com.denebapps.patrimonio.ui.components.TypeLook
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 import org.koin.compose.viewmodel.koinViewModel
@@ -71,6 +73,8 @@ fun AddPatrimonioSheet(
     val state by viewModel.state.collectAsState()
     val colors = LocalAppColors.current
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    var creatingType by rememberSaveable { mutableStateOf(false) }
+    var choosingEmoji by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.navigateBack.collect { onNavigateBack() }
@@ -127,6 +131,13 @@ fun AddPatrimonioSheet(
                 options = state.groupOptions,
                 selectedId = state.selectedGroupId,
                 onSelect = viewModel::onGroupSelect,
+                onNewType = { creatingType = true },
+            )
+
+            EmojiSection(
+                emoji = state.emoji,
+                type = state.groupOptions.firstOrNull { it.id == state.selectedGroupId }?.type,
+                onClick = { choosingEmoji = true },
             )
 
             AmountSection(
@@ -173,6 +184,30 @@ fun AddPatrimonioSheet(
         }
     }
 
+    if (creatingType) {
+        TypeEditorDialog(
+            title = if (state.isLiability) "Nuevo tipo de pasivo" else "Nuevo tipo de activo",
+            onSave = { name, emoji, color ->
+                creatingType = false
+                viewModel.onCreateType(name, emoji, color)
+            },
+            onDismiss = { creatingType = false },
+        )
+    }
+    if (choosingEmoji) {
+        AlertDialog(
+            onDismissRequest = { choosingEmoji = false },
+            title = { Text("Emoji de la cuenta") },
+            text = {
+                EmojiPicker(
+                    selected = state.emoji,
+                    onSelect = viewModel::onEmojiChange,
+                    allowNone = true,
+                )
+            },
+            confirmButton = { TextButton(onClick = { choosingEmoji = false }) { Text("Hecho") } },
+        )
+    }
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
@@ -322,25 +357,85 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun GroupSection(options: List<GroupOptionUi>, selectedId: String?, onSelect: (String) -> Unit) {
+private fun GroupSection(
+    options: List<GroupOptionUi>,
+    selectedId: String?,
+    onSelect: (String) -> Unit,
+    onNewType: () -> Unit,
+) {
     SectionLabel("Tipo")
-    options.chunked(3).forEach { row ->
+    // The last tile creates a type of this kind.
+    (options.map { it as GroupOptionUi? } + null).chunked(3).forEach { row ->
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             row.forEach { option ->
-                GroupTile(
-                    option = option,
-                    selected = option.id == selectedId,
-                    onClick = { onSelect(option.id) },
-                    modifier = Modifier.weight(1f),
-                )
+                if (option != null) {
+                    GroupTile(
+                        option = option,
+                        selected = option.id == selectedId,
+                        onClick = { onSelect(option.id) },
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    NewTypeTile(onClick = onNewType, modifier = Modifier.weight(1f))
+                }
             }
             repeat(3 - row.size) { Spacer(modifier = Modifier.weight(1f)) }
         }
     }
     Spacer(modifier = Modifier.height(12.dp))
+}
+
+@Composable
+private fun NewTypeTile(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = LocalAppColors.current
+    Column(
+        modifier = modifier
+            .border(width = 1.dp, color = colors.line, shape = RoundedCornerShape(14.dp))
+            .clickable(onClickLabel = "Crear un tipo", onClick = onClick)
+            .padding(vertical = 12.dp, horizontal = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(
+            Modifier.size(36.dp).border(1.dp, colors.line, RoundedCornerShape(10.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(AppIcons.plus, contentDescription = null, tint = colors.ink2, modifier = Modifier.size(18.dp))
+        }
+        Text(text = "Nuevo tipo", color = colors.ink2, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+/** The account's own emoji; without one it shows its type's badge. */
+@Composable
+private fun EmojiSection(emoji: String, type: TypeLook?, onClick: () -> Unit) {
+    val colors = LocalAppColors.current
+    SectionLabel("Emoji (opcional)")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color = colors.surface2, shape = RoundedCornerShape(14.dp))
+            .border(width = 1.dp, color = colors.line, shape = RoundedCornerShape(14.dp))
+            .clickable(onClickLabel = "Elegir emoji", onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (type != null) {
+            TypeBadge(type, emoji = emoji.ifBlank { type.emoji }, size = 34.dp)
+        }
+        Text(
+            text = if (emoji.isBlank()) "Usar el del tipo" else "Cambiar emoji",
+            color = colors.ink2,
+            fontSize = 14.sp,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(AppIcons.chevronR, contentDescription = null, tint = colors.muted, modifier = Modifier.size(16.dp))
+    }
+    Spacer(modifier = Modifier.height(22.dp))
 }
 
 @Composable
@@ -362,17 +457,7 @@ private fun GroupTile(option: GroupOptionUi, selected: Boolean, onClick: () -> U
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Box(
-            Modifier.size(36.dp).background(groupTileTone(option.id), RoundedCornerShape(10.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = groupTileIcon(option.id),
-                contentDescription = null,
-                tint = colors.surface2,
-                modifier = Modifier.size(18.dp),
-            )
-        }
+        TypeBadge(option.type, size = 36.dp, cornerRadius = 10.dp)
         Text(
             text = option.label,
             color = colors.ink2,
@@ -517,12 +602,6 @@ private fun CurrencyDropdown(value: Currency, onChange: (Currency) -> Unit) {
         }
     }
 }
-
-/** Icon/tone of the type tile [GroupOptionUi.id] ([typeIcon]/[typeTone]). */
-private fun groupTileIcon(groupId: String): ImageVector = typeIcon(groupId)
-
-@Composable
-private fun groupTileTone(groupId: String): Color = typeTone(groupId)
 
 /** Accepts digits and at most one decimal comma (period is coerced to comma), matching
  *  `parseAmountToMinor`'s expected input format. */

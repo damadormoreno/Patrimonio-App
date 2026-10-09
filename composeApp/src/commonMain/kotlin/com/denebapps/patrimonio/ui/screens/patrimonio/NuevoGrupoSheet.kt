@@ -42,6 +42,7 @@ import com.denebapps.patrimonio.ui.components.AccountUsageTags
 import com.denebapps.patrimonio.ui.components.NoSearchResults
 import com.denebapps.patrimonio.ui.components.SEARCH_THRESHOLD
 import com.denebapps.patrimonio.ui.components.SearchField
+import com.denebapps.patrimonio.ui.components.TypeBadge
 import com.denebapps.patrimonio.ui.components.matchesSearch
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
@@ -311,17 +312,7 @@ private fun AssetChecklistRow(item: AssetChecklistItemUi, onToggle: () -> Unit) 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(
-            Modifier.size(30.dp).background(assetGroupTone(item.group), RoundedCornerShape(9.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = assetGroupIcon(item.group),
-                contentDescription = null,
-                tint = colors.surface2,
-                modifier = Modifier.size(15.dp),
-            )
-        }
+        TypeBadge(item.type, emoji = item.emoji ?: item.type.emoji, size = 30.dp)
         Column(Modifier.weight(1f)) {
             Text(
                 text = item.name,

@@ -60,8 +60,8 @@ import com.denebapps.patrimonio.ui.components.Pill
 import com.denebapps.patrimonio.ui.components.PillTone
 import com.denebapps.patrimonio.ui.components.ScreenHeader
 import com.denebapps.patrimonio.ui.components.SectionRow
-import com.denebapps.patrimonio.ui.components.typeIcon
-import com.denebapps.patrimonio.ui.components.typeTone
+import com.denebapps.patrimonio.ui.components.TypeBadge
+import com.denebapps.patrimonio.ui.components.toColor
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalRowUi
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsUiState
@@ -485,7 +485,7 @@ private fun StackedShare(groups: List<GroupShareUi>, modifier: Modifier = Modifi
                     modifier = Modifier
                         .weight(share.total.minorUnits.toFloat().coerceAtLeast(0.0001f))
                         .fillMaxHeight()
-                        .background(groupTone(share.groupId)),
+                        .background(share.type.color.toColor()),
                 )
             }
         }
@@ -495,7 +495,7 @@ private fun StackedShare(groups: List<GroupShareUi>, modifier: Modifier = Modifi
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Box(Modifier.size(8.dp).background(groupTone(share.groupId), RoundedCornerShape(2.dp)))
+                    Box(Modifier.size(8.dp).background(share.type.color.toColor(), RoundedCornerShape(2.dp)))
                     Text(text = share.label, color = colors.ink2, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     Text(text = "${share.sharePct}%", color = colors.muted, fontSize = 12.sp)
                 }
@@ -512,7 +512,7 @@ private fun PatrimonioGroupCard(
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAppColors.current
-    val tone = groupTone(group.groupId)
+    val tone = group.type.color.toColor()
 
     Column(
         modifier = modifier
@@ -528,14 +528,7 @@ private fun PatrimonioGroupCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Box(Modifier.size(32.dp).background(tone, RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
-                Icon(
-                    groupIcon(group.groupId),
-                    contentDescription = null,
-                    tint = colors.surface2,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
+            TypeBadge(group.type)
             Column(Modifier.weight(1f)) {
                 Text(group.label, color = colors.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 Text(
@@ -617,7 +610,11 @@ private fun PatrimonioItemRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.size(6.dp).background(tone, CircleShape))
+        if (item.emoji != null) {
+            Text(text = item.emoji, fontSize = 16.sp)
+        } else {
+            Box(Modifier.size(6.dp).background(tone, CircleShape))
+        }
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(
@@ -982,12 +979,6 @@ private fun SavingsGoalsEmptyState(onNewGoal: () -> Unit, modifier: Modifier = M
         AddPatrimonioCta(label = "Nueva meta", onClick = onNewGoal)
     }
 }
-
-/** Icon/tone of [GroupShareUi.groupId]/[PatrimonioGroupUi.groupId], a type id ([typeIcon]/[typeTone]). */
-private fun groupIcon(groupId: String): ImageVector = typeIcon(groupId)
-
-@Composable
-private fun groupTone(groupId: String): Color = typeTone(groupId)
 
 /** `null` when [previous] is zero (matches [com.denebapps.patrimonio.ui.screens.home.HomeViewModel]'s
  *  `computeDelta` zero-guard convention). */

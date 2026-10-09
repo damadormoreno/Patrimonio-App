@@ -13,8 +13,10 @@ import com.denebapps.patrimonio.domain.calc.monthLabelEs
 import com.denebapps.patrimonio.domain.calc.netWorth
 import com.denebapps.patrimonio.domain.calc.toEur
 import com.denebapps.patrimonio.domain.model.AccountGroup
+import com.denebapps.patrimonio.domain.model.AccountKind
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.Currency
+import com.denebapps.patrimonio.domain.model.CustomAccountType
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.Money
@@ -22,13 +24,15 @@ import com.denebapps.patrimonio.domain.model.NetWorthSnapshot
 import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.model.YearMonth
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
+import com.denebapps.patrimonio.domain.repository.AccountTypeRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
-import com.denebapps.patrimonio.ui.components.typeChipLabel
-import com.denebapps.patrimonio.ui.components.typeLabel
+import com.denebapps.patrimonio.ui.components.TypeLook
+import com.denebapps.patrimonio.ui.components.typeLook
+import com.denebapps.patrimonio.ui.components.typeOptions
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -47,7 +51,13 @@ enum class PatrimonioView { ACTIVOS, PASIVOS }
 
 /** One composition-bar segment / legend entry (spec: Composition Bar by Group). [groupId] is the
  *  account type id — the UI layer resolves icon/tone from it. */
-data class GroupShareUi(val groupId: String, val label: String, val total: Money, val sharePct: Int)
+data class GroupShareUi(
+    val groupId: String,
+    val label: String,
+    val total: Money,
+    val sharePct: Int,
+    val type: TypeLook = typeLook(groupId),
+)
 
 /** One member item row inside a [PatrimonioGroupUi] card. [amount]/[currency] are the item's
  *  ORIGINAL (non-EUR-converted) currency amount — the UI shows a currency badge when non-EUR. */
@@ -60,6 +70,8 @@ data class PatrimonioItemUi(
     /** The account is followed by an open goal / held by one of the user's groups (liabilities: never). */
     val inGoal: Boolean = false,
     val inGroup: Boolean = false,
+    /** The account's own emoji, shown before its name. */
+    val emoji: String? = null,
 )
 
 /** One per-group card (spec: Per-Group List Rows). */
@@ -73,6 +85,7 @@ data class PatrimonioGroupUi(
     /** The account filter hides some of the group's items: [items], [total] and [itemCountLabel] cover
      *  only the visible ones ("2 de 5 elementos") and [sharePct] is not shown. */
     val filtered: Boolean = false,
+    val type: TypeLook = typeLook(groupId),
 )
 
 /** One asset-type chip of the account filter. */
@@ -108,6 +121,7 @@ private data class PatrimonioData(
     val snapshots: List<NetWorthSnapshot>,
     val accountGroups: List<AccountGroup>,
     val rates: FxRates,
+    val customTypes: Map<String, CustomAccountType> = emptyMap(),
 )
 
 /**
@@ -125,6 +139,7 @@ class PatrimonioViewModel(
     accountGroupRepository: AccountGroupRepository,
     fxRepository: FxRepository,
     savingsGoalRepository: SavingsGoalRepository,
+    accountTypeRepository: AccountTypeRepository,
     private val clock: Clock,
     private val zoneProvider: () -> TimeZone,
     monthFlow: Flow<YearMonth>,
@@ -147,6 +162,8 @@ class PatrimonioViewModel(
         fxRepository.observeRates(),
     ) { assets, liabilities, snapshots, accountGroups, rates ->
         PatrimonioData(assets, liabilities, snapshots, accountGroups, rates)
+    }.combine(accountTypeRepository.observeAll()) { data, types ->
+        data.copy(customTypes = types.associateBy { it.id })
     }
 
     val state: StateFlow<PatrimonioUiState> = combine(
@@ -194,6 +211,7 @@ class PatrimonioViewModel(
         accountFilter: AccountFilter,
     ): PatrimonioUiState {
         val (assets, liabilities, snapshots, accountGroups, rates) = data
+        val customTypes = data.customTypes
         val totalAssets = assets.fold(Money.ZERO) { acc, a -> acc + a.amount.toEur(rates) }
         val totalLiabs = liabilities.fold(Money.ZERO) { acc, l -> acc + l.amount.toEur(rates) }
         val currentNetWorth = netWorth(assets, liabilities, rates)
@@ -215,10 +233,12 @@ class PatrimonioViewModel(
         } else {
             when (selectedView) {
                 PatrimonioView.ACTIVOS -> assetsByGroup(assets, rates).map {
-                    GroupShareUi(it.group, typeLabel(it.group), it.total, percentage(it.total, viewTotal))
+                    val type = typeLook(it.group, customTypes)
+                    GroupShareUi(it.group, type.label, it.total, percentage(it.total, viewTotal), type)
                 }
                 PatrimonioView.PASIVOS -> liabilitiesByGroup(liabilities, rates).map {
-                    GroupShareUi(it.group, typeLabel(it.group), it.total, percentage(it.total, viewTotal))
+                    val type = typeLook(it.group, customTypes)
+                    GroupShareUi(it.group, type.label, it.total, percentage(it.total, viewTotal), type)
                 }
             }
         }
@@ -235,7 +255,8 @@ class PatrimonioViewModel(
                 val partial = visible.size < items.size
                 PatrimonioGroupUi(
                     groupId = groupTotal.group,
-                    label = typeLabel(groupTotal.group),
+                    label = typeLook(groupTotal.group, customTypes).label,
+                    type = typeLook(groupTotal.group, customTypes),
                     items = visible.map { it.toItemUi(usage[it.id]) },
                     itemCountLabel = if (partial) {
                         "${visible.size} de ${itemCountLabel(items.size)}"
@@ -251,7 +272,8 @@ class PatrimonioViewModel(
                 val items = liabilities.filter { it.group == groupTotal.group }
                 PatrimonioGroupUi(
                     groupId = groupTotal.group,
-                    label = typeLabel(groupTotal.group),
+                    label = typeLook(groupTotal.group, customTypes).label,
+                    type = typeLook(groupTotal.group, customTypes),
                     items = items.map { it.toItemUi() },
                     itemCountLabel = itemCountLabel(items.size),
                     sharePct = percentage(groupTotal.total, viewTotal),
@@ -275,7 +297,7 @@ class PatrimonioViewModel(
             groupsCount = accountGroups.size,
             isEmpty = if (selectedView == PatrimonioView.ACTIVOS) assets.isEmpty() else liabilities.isEmpty(),
             filter = accountFilter,
-            typeFilterOptions = typeFilterOptions(assets, accountFilter),
+            typeFilterOptions = typeFilterOptions(assets, accountFilter, customTypes),
             filterSummary = FilterSummaryUi(eurTotal(visibleAssets, rates), visibleAssets.size).takeIf { filtering },
         )
     }
@@ -289,20 +311,25 @@ private fun Asset.toItemUi(usage: AccountUsage?) = PatrimonioItemUi(
     currency = amount.currency,
     inGoal = usage?.goalNames.orEmpty().isNotEmpty(),
     inGroup = usage?.groupNames.orEmpty().isNotEmpty(),
+    emoji = emoji,
 )
 
-private fun Liability.toItemUi() = PatrimonioItemUi(id, name, subtitle, amount.amount, amount.currency)
+private fun Liability.toItemUi() = PatrimonioItemUi(id, name, subtitle, amount.amount, amount.currency, emoji = emoji)
 
 private fun eurTotal(assets: List<Asset>, rates: FxRates): Money =
     assets.fold(Money.ZERO) { acc, asset -> acc + asset.amount.toEur(rates) }
 
 /** One chip per type the user has, plus any selected type that no longer has accounts so it can be
  *  unselected; built-in types in their order, then any other. */
-private fun typeFilterOptions(assets: List<Asset>, filter: AccountFilter): List<TypeFilterOptionUi> {
+private fun typeFilterOptions(
+    assets: List<Asset>,
+    filter: AccountFilter,
+    customTypes: Map<String, CustomAccountType>,
+): List<TypeFilterOptionUi> {
     val present = assets.mapTo(mutableSetOf()) { it.group } + filter.types
-    val builtin = Asset.AssetGroup.entries
-    return (builtin.filter { it in present } + (present - builtin.toSet()).sorted())
-        .map { TypeFilterOptionUi(it, typeChipLabel(it), it in filter.types) }
+    return typeOptions(AccountKind.ASSET, customTypes.values.toList())
+        .filter { it.id in present }
+        .map { TypeFilterOptionUi(it.id, it.chipLabel, it.id in filter.types) }
 }
 
 private fun itemCountLabel(count: Int): String = if (count == 1) "1 elemento" else "$count elementos"
