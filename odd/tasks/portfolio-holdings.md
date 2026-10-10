@@ -54,7 +54,7 @@ charts, XIRR/TWR, broker imports, crypto.
   Search (ISIN/ticker/name) and latest price; MockEngine tests for parsing, ISIN→SecId, failures.
 - [x] **T3 — Holdings persistence** (route: delegated writer). Domain model with scaled units, Room v8 +
   migration test, repository, price refresh policy, backup/clear-all/cloud keys.
-- [ ] **T4 — Net worth integration** (route: delegated writer). Snapshot upserter + Patrimonio totals and
+- [x] **T4 — Net worth integration** (route: delegated writer). Snapshot upserter + Patrimonio totals and
   "Cartera" composition share.
 - [ ] **T5 — Cartera tab UI** (route: delegated writer). List with total and per-holding value/price date,
   add sheet (search → pick → units or total; manual mode), delete, refresh.
@@ -109,7 +109,15 @@ One branch, one PR. The ~400-line heuristic does not apply (user decision, 2026-
   `BACKED_UP_TABLES` and cloud `RECORD_KEYS` include the table (price refreshes trigger cloud auto-upload).
   RED: calc+migration 37 tests/29 failed; persistence/backup 102 tests/30 failed (DAO test had no RED).
   GREEN (parent re-run): ktlint, 572 tests, assemble, iOS compile.
+- **T4** (commit below, `feat(portfolio): count the portfolio in net worth`): `NetWorthSnapshotUpserter` adds
+  `portfolioTotalEur` to `assetsMinor`; `PortfolioRepositoryImpl` refreshes the current-month snapshot inside
+  its write transactions (and once per price refresh that stored prices); `PatrimonioViewModel` includes
+  the portfolio in Activos and net worth, adds a "Cartera" composition share (`TypeColor.GREEN`, shared with
+  "Inversión" since all 8 colors are taken) and exposes `portfolio: PortfolioSummaryUi?` for T5; ACTIVOS is
+  no longer empty with only holdings. Clear-all already wipes snapshots (`netWorthDao().deleteAll()`).
+  RED: 53 tests, 15 failed (upserter, repository, ViewModel). GREEN (parent re-run): ktlint, 591 tests,
+  assemble, iOS compile.
 
 ## Next step
 
-T4 — net worth integration.
+T5 — Cartera tab UI.

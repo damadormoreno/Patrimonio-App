@@ -313,7 +313,7 @@ class KoinModuleTest {
 
     @Test
     fun `every presentation ViewModel resolves with all dependencies satisfied`() {
-        val koin = startTestKoin(fxModule, authModule, presentationModule)
+        val koin = startTestKoin(fxModule, quotesModule, authModule, presentationModule)
 
         assertNotNull(koin.get<AppViewModel>())
         assertNotNull(koin.get<SettingsViewModel>())

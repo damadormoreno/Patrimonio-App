@@ -58,6 +58,7 @@ val presentationModule = module {
             get(),
             get(),
             get(),
+            get(),
             clock,
             zoneProvider,
             currentMonthFlow(clock, zoneProvider),

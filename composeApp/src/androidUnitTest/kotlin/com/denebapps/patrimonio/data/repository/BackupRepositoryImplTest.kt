@@ -55,10 +55,14 @@ private data class TablesState(
 class BackupRepositoryImplTest {
     private val october2026 = BackupFixedClock(Instant.parse("2026-10-06T10:00:00Z"))
 
-    private fun upserterFor(db: AppDatabase) =
-        NetWorthSnapshotUpserter(db.assetDao(), db.liabilityDao(), db.fxRateDao(), db.netWorthDao(), october2026) {
-            TimeZone.UTC
-        }
+    private fun upserterFor(db: AppDatabase) = NetWorthSnapshotUpserter(
+        db.assetDao(),
+        db.liabilityDao(),
+        db.portfolioHoldingDao(),
+        db.fxRateDao(),
+        db.netWorthDao(),
+        october2026,
+    ) { TimeZone.UTC }
 
     private fun CoroutineScope.repositoryFor(db: AppDatabase) =
         BackupRepositoryImpl(db, upserterFor(db), testSeedingGate(db), october2026)

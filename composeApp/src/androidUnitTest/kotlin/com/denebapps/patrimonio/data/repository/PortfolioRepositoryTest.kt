@@ -2,6 +2,7 @@ package com.denebapps.patrimonio.data.repository
 
 import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.buildInMemoryTestDatabase
+import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
 import com.denebapps.patrimonio.data.db.testSeedingGate
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
@@ -27,6 +28,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -109,7 +111,23 @@ class PortfolioRepositoryTest {
         db: AppDatabase,
         source: QuoteSource = FakeQuoteSource(),
         clock: Clock = PortfolioFixedClock(NOW),
-    ) = PortfolioRepositoryImpl(db, db.portfolioHoldingDao(), source, testSeedingGate(db), clock)
+    ) = PortfolioRepositoryImpl(
+        db,
+        db.portfolioHoldingDao(),
+        source,
+        NetWorthSnapshotUpserter(
+            db.assetDao(),
+            db.liabilityDao(),
+            db.portfolioHoldingDao(),
+            db.fxRateDao(),
+            db.netWorthDao(),
+            clock,
+        ) { TimeZone.UTC },
+        testSeedingGate(db),
+        clock,
+    )
+
+    private suspend fun AppDatabase.snapshotAssets(): Long? = netWorthDao().find("2026-10")?.assetsMinor
 
     private fun PortfolioHolding.quotedValuation() = valuation as HoldingValuation.Quoted
 
@@ -375,6 +393,96 @@ class PortfolioRepositoryTest {
         assertEquals(0, result.refreshed)
         assertEquals(0, result.upToDate)
         assertEquals(emptyList(), source.calls)
+        db.close()
+    }
+
+    @Test
+    fun `adding a holding refreshes the current month snapshot`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repository = repositoryFor(db)
+
+        // 2.5 units at 10 EUR = 25.00 EUR; the manual one is 2,500.00 EUR.
+        repository.add(quoted("p1", lastQuote = lastQuote(10_000_000, HOUR_MS)))
+        assertEquals(25_00L, db.snapshotAssets())
+        repository.add(manual("m1"))
+
+        assertEquals(25_00L + 250_000L, db.snapshotAssets())
+        db.close()
+    }
+
+    @Test
+    fun `changing the units or the manual value refreshes the current month snapshot`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repository = repositoryFor(db)
+        repository.add(quoted("p1", lastQuote = lastQuote(10_000_000, HOUR_MS)))
+        repository.add(manual("m1"))
+
+        repository.updateUnits("p1", Units(4_000_000))
+        assertEquals(40_00L + 250_000L, db.snapshotAssets())
+        repository.updateManualValue("m1", CurrencyAmount(Money(100_000), Currency.EUR))
+
+        assertEquals(40_00L + 100_000L, db.snapshotAssets())
+        db.close()
+    }
+
+    @Test
+    fun `deleting a holding refreshes the current month snapshot`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repository = repositoryFor(db)
+        repository.add(manual("m1"))
+        repository.add(manual("m2"))
+
+        repository.delete("m1")
+
+        assertEquals(250_000L, db.snapshotAssets())
+        db.close()
+    }
+
+    @Test
+    fun `a failed delete leaves the snapshot alone`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repository = repositoryFor(db)
+        repository.add(manual("m1"))
+
+        assertFailsWith<PortfolioHoldingNotFoundException> { repository.delete("missing") }
+
+        assertEquals(250_000L, db.snapshotAssets())
+        db.close()
+    }
+
+    @Test
+    fun `a refresh that stores prices updates the snapshot once with the new values`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val source = FakeQuoteSource()
+        source.answer(ref("a")) { quote("a", 10_000_000) }
+        source.answer(ref("b")) { quote("b", 20_000_000) }
+        val repository = repositoryFor(db, source)
+        repository.add(quoted("a"))
+        repository.add(quoted("b"))
+        assertEquals(0L, db.snapshotAssets())
+
+        repository.refreshPrices(force = false)
+
+        // 2.5 units at 10 EUR plus 2.5 units at 20 EUR.
+        assertEquals(25_00L + 50_00L, db.snapshotAssets())
+        db.close()
+    }
+
+    @Test
+    fun `a refresh where every fetch fails does not write the snapshot`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val source = FakeQuoteSource()
+        source.answer(ref("broken")) { throw QuoteUnavailableException("provider down") }
+        val repository = repositoryFor(db, source)
+        repository.add(manual("m1"))
+        repository.add(quoted("broken"))
+        // Something else stored a different value: only a refresh that stores a price may recompute it.
+        db.netWorthDao().upsert(NetWorthSnapshotEntity("2026-10", 1L, 0L))
+
+        val result = repository.refreshPrices(force = true)
+
+        assertEquals(1, result.failures.size)
+        assertEquals(1L, db.snapshotAssets())
         db.close()
     }
 }

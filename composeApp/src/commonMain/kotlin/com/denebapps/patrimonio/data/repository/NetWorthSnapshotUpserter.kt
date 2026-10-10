@@ -4,7 +4,9 @@ import com.denebapps.patrimonio.data.db.dao.AssetDao
 import com.denebapps.patrimonio.data.db.dao.FxRateDao
 import com.denebapps.patrimonio.data.db.dao.LiabilityDao
 import com.denebapps.patrimonio.data.db.dao.NetWorthDao
+import com.denebapps.patrimonio.data.db.dao.PortfolioHoldingDao
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
+import com.denebapps.patrimonio.domain.calc.portfolioTotalEur
 import com.denebapps.patrimonio.domain.calc.toEur
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.Currency
@@ -19,13 +21,15 @@ import kotlinx.datetime.todayIn
 
 /**
  * Recomputes the current month's net-worth snapshot from the latest cached [FxRates] and upserts
- * it. MUST be called INSIDE the same DB write transaction as the triggering asset/liability
+ * it. The investment portfolio counts as assets: its total in EUR is added to `assetsMinor`, so the
+ * snapshot schema stays the same. MUST be called INSIDE the same DB write transaction as the triggering asset/liability
  * mutation (Decision #7) — never a separate post-commit step. Past months are never touched; only
  * the current [YearMonth] row (from the injected [clock]) is ever written.
  */
 class NetWorthSnapshotUpserter(
     private val assetDao: AssetDao,
     private val liabilityDao: LiabilityDao,
+    private val portfolioHoldingDao: PortfolioHoldingDao,
     private val fxRateDao: FxRateDao,
     private val netWorthDao: NetWorthDao,
     private val clock: Clock,
@@ -39,7 +43,8 @@ class NetWorthSnapshotUpserter(
         )
         val assets = assetDao.list().map(::assetToDomain)
         val liabilities = liabilityDao.list().map(::liabilityToDomain)
-        val assetsMinor = assets.fold(Money.ZERO) { acc, a -> acc + a.amount.toEur(rates) }
+        val portfolio = portfolioHoldingDao.list().map(::portfolioHoldingToDomain)
+        val assetsMinor = assets.fold(portfolioTotalEur(portfolio, rates)) { acc, a -> acc + a.amount.toEur(rates) }
         val liabsMinor = liabilities.fold(Money.ZERO) { acc, l -> acc + l.amount.toEur(rates) }
         netWorthDao.upsert(
             NetWorthSnapshotEntity(

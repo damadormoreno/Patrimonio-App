@@ -11,6 +11,7 @@ import com.denebapps.patrimonio.domain.calc.liabilitiesByGroup
 import com.denebapps.patrimonio.domain.calc.monthDelta
 import com.denebapps.patrimonio.domain.calc.monthLabelEs
 import com.denebapps.patrimonio.domain.calc.netWorth
+import com.denebapps.patrimonio.domain.calc.portfolioTotalEur
 import com.denebapps.patrimonio.domain.calc.toEur
 import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.AccountKind
@@ -21,7 +22,9 @@ import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.NetWorthSnapshot
+import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.SavingsGoal
+import com.denebapps.patrimonio.domain.model.TypeColor
 import com.denebapps.patrimonio.domain.model.YearMonth
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AccountTypeRepository
@@ -29,6 +32,7 @@ import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.ui.components.TypeLook
 import com.denebapps.patrimonio.ui.components.typeLook
@@ -48,6 +52,9 @@ private const val PATRIMONIO_STOP_TIMEOUT_MS = 5_000L
 
 /** Active stat toggle driving composition/list content (spec: Activos/Pasivos Stat Toggle). */
 enum class PatrimonioView { ACTIVOS, PASIVOS }
+
+/** Composition entry of the investment portfolio: it is not an account type, so it carries its own look. */
+private val PORTFOLIO_LOOK = TypeLook("portfolio", "Cartera", TypeColor.GREEN)
 
 /** One composition-bar segment / legend entry (spec: Composition Bar by Group). [groupId] is the
  *  account type id — the UI layer resolves icon/tone from it. */
@@ -94,6 +101,10 @@ data class TypeFilterOptionUi(val group: String, val label: String, val selected
 /** Total (EUR) and number of the accounts the active filter shows. */
 data class FilterSummaryUi(val total: Money, val count: Int)
 
+/** The investment portfolio as a block of the assets view: [total] in EUR (holdings with no value yet count as
+ *  zero) and how many [holdingCount] positions it has, with or without a value. */
+data class PortfolioSummaryUi(val total: Money, val holdingCount: Int)
+
 data class PatrimonioUiState(
     val monthLabel: String,
     val netWorth: Money,
@@ -113,6 +124,8 @@ data class PatrimonioUiState(
     val filter: AccountFilter = AccountFilter(),
     val typeFilterOptions: List<TypeFilterOptionUi> = emptyList(),
     val filterSummary: FilterSummaryUi? = null,
+    /** `null` while the user has no holdings. */
+    val portfolio: PortfolioSummaryUi? = null,
 )
 
 private data class PatrimonioData(
@@ -122,13 +135,14 @@ private data class PatrimonioData(
     val accountGroups: List<AccountGroup>,
     val rates: FxRates,
     val customTypes: Map<String, CustomAccountType> = emptyMap(),
+    val portfolio: List<PortfolioHolding> = emptyList(),
 )
 
 /**
  * Hero (net worth, delta, sparkline), activos/pasivos toggle, composition, and per-group lists
  * for the Patrimonio tab (design.md Data Flow). Combines [AssetRepository]/[LiabilityRepository]/
- * [NetWorthRepository]/[AccountGroupRepository]/[FxRepository] `Flow`s into a nested `combine` data
- * bundle (5-arity, per the `StatsViewModel.dataFlow` precedent), then combines that bundle with the
+ * [NetWorthRepository]/[AccountGroupRepository]/[FxRepository]/[PortfolioRepository] `Flow`s into a nested
+ * `combine` data bundle (5-arity, per the `StatsViewModel.dataFlow` precedent), then combines that bundle with the
  * savings goals (they tag the accounts they follow), the internal [view] toggle and the injected
  * [monthFlow] (design.md Decision 1 & 3).
  */
@@ -140,6 +154,7 @@ class PatrimonioViewModel(
     fxRepository: FxRepository,
     savingsGoalRepository: SavingsGoalRepository,
     accountTypeRepository: AccountTypeRepository,
+    portfolioRepository: PortfolioRepository,
     private val clock: Clock,
     private val zoneProvider: () -> TimeZone,
     monthFlow: Flow<YearMonth>,
@@ -164,6 +179,8 @@ class PatrimonioViewModel(
         PatrimonioData(assets, liabilities, snapshots, accountGroups, rates)
     }.combine(accountTypeRepository.observeAll()) { data, types ->
         data.copy(customTypes = types.associateBy { it.id })
+    }.combine(portfolioRepository.observeAll()) { data, holdings ->
+        data.copy(portfolio = holdings)
     }
 
     val state: StateFlow<PatrimonioUiState> = combine(
@@ -212,9 +229,11 @@ class PatrimonioViewModel(
     ): PatrimonioUiState {
         val (assets, liabilities, snapshots, accountGroups, rates) = data
         val customTypes = data.customTypes
-        val totalAssets = assets.fold(Money.ZERO) { acc, a -> acc + a.amount.toEur(rates) }
+        // The portfolio is a block of its own inside the assets: not an account, so no group, goal or filter.
+        val portfolioTotal = portfolioTotalEur(data.portfolio, rates)
+        val totalAssets = eurTotal(assets, rates) + portfolioTotal
         val totalLiabs = liabilities.fold(Money.ZERO) { acc, l -> acc + l.amount.toEur(rates) }
-        val currentNetWorth = netWorth(assets, liabilities, rates)
+        val currentNetWorth = netWorth(assets, liabilities, rates) + portfolioTotal
 
         // Most recent snapshot strictly before currentMonth (design.md Decision 3: reactive
         // delta, no suspend findMostRecentBefore call inside the combine pipeline).
@@ -232,9 +251,19 @@ class PatrimonioViewModel(
             emptyList()
         } else {
             when (selectedView) {
-                PatrimonioView.ACTIVOS -> assetsByGroup(assets, rates).map {
-                    val type = typeLook(it.group, customTypes)
-                    GroupShareUi(it.group, type.label, it.total, percentage(it.total, viewTotal), type)
+                PatrimonioView.ACTIVOS -> {
+                    val shares = assetsByGroup(assets, rates).map {
+                        val type = typeLook(it.group, customTypes)
+                        GroupShareUi(it.group, type.label, it.total, percentage(it.total, viewTotal), type)
+                    }
+                    val portfolioShare = GroupShareUi(
+                        PORTFOLIO_LOOK.id,
+                        PORTFOLIO_LOOK.label,
+                        portfolioTotal,
+                        percentage(portfolioTotal, viewTotal),
+                        PORTFOLIO_LOOK,
+                    ).takeIf { portfolioTotal.minorUnits > 0L }
+                    (shares + listOfNotNull(portfolioShare)).sortedByDescending { it.total.minorUnits }
                 }
                 PatrimonioView.PASIVOS -> liabilitiesByGroup(liabilities, rates).map {
                     val type = typeLook(it.group, customTypes)
@@ -295,10 +324,15 @@ class PatrimonioViewModel(
             composition = composition,
             groups = groups,
             groupsCount = accountGroups.size,
-            isEmpty = if (selectedView == PatrimonioView.ACTIVOS) assets.isEmpty() else liabilities.isEmpty(),
+            isEmpty = if (selectedView == PatrimonioView.ACTIVOS) {
+                assets.isEmpty() && data.portfolio.isEmpty()
+            } else {
+                liabilities.isEmpty()
+            },
             filter = accountFilter,
             typeFilterOptions = typeFilterOptions(assets, accountFilter, customTypes),
             filterSummary = FilterSummaryUi(eurTotal(visibleAssets, rates), visibleAssets.size).takeIf { filtering },
+            portfolio = PortfolioSummaryUi(portfolioTotal, data.portfolio.size).takeIf { data.portfolio.isNotEmpty() },
         )
     }
 }

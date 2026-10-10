@@ -50,17 +50,21 @@ class PortfolioRepositoryImpl(
     private val appDatabase: AppDatabase,
     private val dao: PortfolioHoldingDao,
     private val quoteSource: QuoteSource,
+    private val snapshotUpserter: NetWorthSnapshotUpserter,
     private val seedingGate: SeedingGate,
     private val clock: Clock,
 ) : PortfolioRepository {
     override fun observeAll(): Flow<List<PortfolioHolding>> = flow {
         seedingGate.await()
-        emitAll(dao.observeAll().map { rows -> rows.map(::toDomain) })
+        emitAll(dao.observeAll().map { rows -> rows.map(::portfolioHoldingToDomain) })
     }
 
     override suspend fun add(holding: PortfolioHolding) {
         seedingGate.await()
-        dao.insert(toEntity(holding))
+        appDatabase.writeTransaction {
+            dao.insert(toEntity(holding))
+            snapshotUpserter.refreshCurrentMonth()
+        }
     }
 
     override suspend fun updateUnits(id: String, units: Units) {
@@ -69,6 +73,7 @@ class PortfolioRepositoryImpl(
             val row = dao.find(id) ?: throw PortfolioHoldingNotFoundException(id)
             check(row.kind == HoldingKind.QUOTED.name) { "Holding '$id' is a manual holding and has no units" }
             dao.updateUnits(id, units.scaled)
+            snapshotUpserter.refreshCurrentMonth()
         }
     }
 
@@ -78,12 +83,16 @@ class PortfolioRepositoryImpl(
             val row = dao.find(id) ?: throw PortfolioHoldingNotFoundException(id)
             check(row.kind == HoldingKind.MANUAL.name) { "Holding '$id' is priced by a quote source, not by hand" }
             dao.updateManualValue(id, value.amount.minorUnits, value.currency.code, clock.now().toEpochMilliseconds())
+            snapshotUpserter.refreshCurrentMonth()
         }
     }
 
     override suspend fun delete(id: String) {
         seedingGate.await()
-        if (dao.delete(id) == 0) throw PortfolioHoldingNotFoundException(id)
+        appDatabase.writeTransaction {
+            if (dao.delete(id) == 0) throw PortfolioHoldingNotFoundException(id)
+            snapshotUpserter.refreshCurrentMonth()
+        }
     }
 
     override suspend fun refreshPrices(force: Boolean): PriceRefreshResult {
@@ -95,8 +104,11 @@ class PortfolioRepositoryImpl(
         val failures = coroutineScope {
             due.map { row -> async { limiter.withPermit { refresh(row, now) } } }.awaitAll()
         }.filterNotNull()
+        val refreshed = due.size - failures.size
+        // Once per refresh, not per holding, and only when a price actually changed.
+        if (refreshed > 0) appDatabase.writeTransaction { snapshotUpserter.refreshCurrentMonth() }
         return PriceRefreshResult(
-            refreshed = due.size - failures.size,
+            refreshed = refreshed,
             upToDate = quoted.size - due.size,
             failures = failures,
         )
@@ -172,7 +184,7 @@ private fun toEntity(holding: PortfolioHolding): PortfolioHoldingEntity = when (
     )
 }
 
-private fun toDomain(row: PortfolioHoldingEntity): PortfolioHolding {
+internal fun portfolioHoldingToDomain(row: PortfolioHoldingEntity): PortfolioHolding {
     val currency = Currency.valueOf(row.currency)
     val valuation = when (HoldingKind.valueOf(row.kind)) {
         HoldingKind.QUOTED -> HoldingValuation.Quoted(

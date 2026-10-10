@@ -44,7 +44,7 @@ val dataModule = module {
     single<Clock> { Clock.System }
     single<() -> TimeZone> { { TimeZone.currentSystemDefault() } }
 
-    single { NetWorthSnapshotUpserter(get(), get(), get(), get(), get(), get()) }
+    single { NetWorthSnapshotUpserter(get(), get(), get(), get(), get(), get(), get()) }
 
     single<AssetRepository> {
         AssetRepositoryImpl(
@@ -83,6 +83,7 @@ val dataModule = module {
             appDatabase = get(),
             dao = get(),
             quoteSource = get(),
+            snapshotUpserter = get(),
             seedingGate = get(),
             clock = get(),
         )
