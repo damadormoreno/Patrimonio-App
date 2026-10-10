@@ -26,6 +26,7 @@ import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
+import com.denebapps.patrimonio.domain.repository.QuoteSource
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.ui.screens.account.AccountViewModel
 import com.denebapps.patrimonio.ui.screens.history.NetWorthHistoryViewModel
@@ -275,6 +276,14 @@ class KoinModuleTest {
         val koin = startTestKoin(fxModule)
 
         assertNotNull(koin.get<FxRepository>())
+    }
+
+    @Test
+    fun `QuoteSource resolves via DI as a singleton reusing the shared HttpClient`() {
+        val koin = startTestKoin(fxModule, quotesModule)
+
+        assertNotNull(koin.get<QuoteSource>())
+        assertSame(koin.get<QuoteSource>(), koin.get<QuoteSource>())
     }
 
     @Test

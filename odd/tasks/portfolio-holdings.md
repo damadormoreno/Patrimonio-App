@@ -48,9 +48,9 @@ charts, XIRR/TWR, broker imports, crypto.
 
 ## Tasks
 
-- [ ] **T1 — Remove subscriptions** (route: delegated writer; trigger: many non-trivial files).
+- [x] **T1 — Remove subscriptions** (route: delegated writer; trigger: many non-trivial files).
   DB v7 migration dropping the table + migration test; backup format bump, legacy files still import.
-- [ ] **T2 — Quote source port + Morningstar/Yahoo adapters** (route: delegated writer).
+- [x] **T2 — Quote source port + Morningstar/Yahoo adapters** (route: delegated writer).
   Search (ISIN/ticker/name) and latest price; MockEngine tests for parsing, ISIN→SecId, failures.
 - [ ] **T3 — Holdings persistence** (route: delegated writer). Domain model with scaled units, Room v8 +
   migration test, repository, price refresh policy, backup/clear-all/cloud keys.
@@ -82,8 +82,25 @@ One branch, one PR. The ~400-line heuristic does not apply (user decision, 2026-
 
 ## Progress / evidence
 
-_Nothing implemented yet._
+- **T1** (`ad06ce6`, `feat!: remove the subscriptions feature`): 27 files deleted (domain, data, UI,
+  reminders, notification permission, 6 subscription-only tests); `MIGRATION_6_7` drops `subscriptions`
+  (schema `7.json`); backup format v7, v3–v6 files still import (section ignored via `ignoreUnknownKeys`);
+  Settings "Avisos" and `androidx.work` removed; single tab hides the tab bar until Cartera lands.
+  RED: `AppDatabaseMigrationTest` + `BackupCodecTest` → 32 tests, 3 failed (6→7 migration, v6 import,
+  v7 envelope). GREEN (parent re-run): ktlint, `testDebugUnitTest` 463/463, `assembleDebug`,
+  `compileKotlinIosArm64` (executed) all pass. Risk treated as high (migration + deletions); RDD off →
+  parent independent re-run as verification. Orphan DataStore keys `renewal_reminders_*` left harmless.
+  Manual on-device v6→v7 migration pending (done at the end over v6 → final version).
+- **T2** (commit below, `feat(portfolio): add quote sources for funds, ETFs and stocks`): `QuoteSource` port +
+  `CompositeQuoteSource` over `MorningstarApi` (screener + 30-day timeseries, EUR, literal `]`/`$` in `id`) and
+  `YahooFinanceApi` (search + chart, GBp→GBP); `Price` scaled ×1e6 with overflow guard; `QuoteHttp` with
+  rumbo's User-Agent, 3 attempts with linear backoff on 429/5xx/network, per-request 15 s/30 s timeouts
+  (parent moved them off the shared client so FX/cloud keep no limits). Yahoo search candidates carry no
+  currency until priced (T5 fetches the quote on pick); non-enum currencies → `QuoteUnavailableException`.
+  RED: 47 tests, 39 failed against `TODO()` stubs (PriceTest had no RED: written before stubs).
+  GREEN (parent re-run): ktlint, 511 tests, assemble, iOS compile executed. Writer did two manual curl
+  calls to the live Morningstar timeseries (literal and encoded `]`/`$` both work); no network in tests.
 
 ## Next step
 
-Start T1.
+T3 — holdings persistence (DB v8, repository, refresh, backup).

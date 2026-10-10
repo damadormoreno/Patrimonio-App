@@ -5,6 +5,7 @@ import com.denebapps.patrimonio.data.fx.FxRepositoryImpl
 import com.denebapps.patrimonio.data.platform.platformHttpClientEngine
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
@@ -22,6 +23,9 @@ val fxModule = module {
             install(ContentNegotiation) {
                 json(Json { ignoreUnknownKeys = true })
             }
+            // No default limits: only requests that opt in (quote lookups) get a timeout, so cloud uploads
+            // and FX keep their previous behavior.
+            install(HttpTimeout)
         }
     }
     single { FrankfurterApi(get()) }
