@@ -20,6 +20,41 @@ class BackupCodecTest {
     private val watches = AccountTypeBackup("t1", "ASSET", "Relojes", "⌚", "GOLD", 0)
     private val watch = AssetBackup("a3", "t1", "Rolex", null, 900_000, "EUR", emoji = "⌚")
 
+    private val pricedFund = PortfolioHoldingBackup(
+        id = "p1",
+        name = "Vanguard Global Stock",
+        type = "FUND",
+        isin = "IE00B03HCZ61",
+        kind = "QUOTED",
+        provider = "MORNINGSTAR",
+        providerCode = "0P00012PP6",
+        currency = "EUR",
+        unitsScaled = 8_100_001,
+        priceScaled = 12_345_678,
+        priceDateEpochDay = 20_000,
+        priceFetchedAtEpochMs = 1_000,
+    )
+    private val unpricedEtf = PortfolioHoldingBackup(
+        id = "p2",
+        name = "iShares MSCI World",
+        type = "ETF",
+        ticker = "IWDA.AS",
+        kind = "QUOTED",
+        provider = "YAHOO",
+        providerCode = "IWDA.AS",
+        currency = "EUR",
+        unitsScaled = 2_500_000,
+    )
+    private val painting = PortfolioHoldingBackup(
+        id = "p3",
+        name = "Cuadro",
+        type = "OTHER",
+        kind = "MANUAL",
+        currency = "USD",
+        valueMinor = 250_000,
+        valuedAtEpochMs = 7,
+    )
+
     private val full = BackupDocument(
         exportedAt = "2026-10-06T10:00:00Z",
         accountTypes = listOf(watches),
@@ -33,6 +68,7 @@ class BackupCodecTest {
             SavingsGoalAllocationEventBackup(1, "goal-1", 50_000, 1_000),
             SavingsGoalAllocationEventBackup(2, "goal-1", -20_000, 2_000),
         ),
+        portfolioHoldings = listOf(pricedFund, unpricedEtf, painting),
         savingsGoalLinkEvents = listOf(
             SavingsGoalLinkEventBackup(1, "goal-1", null, "a1", "LINK", 1_000),
             SavingsGoalLinkEventBackup(2, "goal-2", null, null, "LINK", 1_000, fromGroupId = null, toGroupId = "g1"),
@@ -62,7 +98,8 @@ class BackupCodecTest {
         val json = BackupCodec.encode(BackupDocument(exportedAt = "2026-10-06T10:00:00Z"))
 
         assertTrue(""""format": "patrimonio-backup"""" in json, json)
-        assertTrue(""""version": 7""" in json, json)
+        assertTrue(""""version": 8""" in json, json)
+        assertTrue(""""portfolioHoldings"""" in json, json)
         assertFalse("subscriptions" in json, json)
     }
 
@@ -182,10 +219,10 @@ class BackupCodecTest {
     @Test
     fun `newer format version is rejected with an update hint`() {
         val error = assertFailsWith<InvalidBackupException> {
-            BackupCodec.decode("""{"format":"patrimonio-backup","version":8,"exportedAt":"x"}""")
+            BackupCodec.decode("""{"format":"patrimonio-backup","version":9,"exportedAt":"x"}""")
         }
 
-        assertTrue("v8" in error.message.orEmpty())
+        assertTrue("v9" in error.message.orEmpty())
     }
 
     @Test
@@ -222,7 +259,7 @@ class BackupCodecTest {
     @Test
     fun `a version 5 backup has no custom types nor emojis and its built-in types still read`() {
         val json = BackupCodec.encode(BackupDocument(exportedAt = "2026-10-06T10:00:00Z", assets = listOf(asset)))
-            .replace(""""version": 7""", """"version": 5""")
+            .replace(""""version": 8""", """"version": 5""")
             .replace(Regex(""",\s*"emoji": null"""), "")
             .replace(Regex(""",\s*"accountTypes": \[\s*]"""), "")
 
@@ -324,6 +361,91 @@ class BackupCodecTest {
 
         assertEquals(listOf(asset), document.assets)
         assertFalse("subscriptions" in BackupCodec.encode(document))
+    }
+
+    private fun holdingReason(holding: PortfolioHoldingBackup): String =
+        reasonFor(full.copy(portfolioHoldings = listOf(holding)))
+
+    private fun roundTrip(holding: PortfolioHoldingBackup): List<PortfolioHoldingBackup> =
+        BackupCodec.decode(BackupCodec.encode(full.copy(portfolioHoldings = listOf(holding)))).portfolioHoldings
+
+    @Test
+    fun `portfolio holdings of both variants survive a round trip`() {
+        val decoded = BackupCodec.decode(BackupCodec.encode(full))
+
+        assertEquals(listOf(pricedFund, unpricedEtf, painting), decoded.portfolioHoldings)
+    }
+
+    @Test
+    fun `a version 7 backup without holdings imports with an empty portfolio`() {
+        val document = BackupCodec.decode(
+            """
+            {
+              "format": "patrimonio-backup",
+              "version": 7,
+              "exportedAt": "2026-10-06T10:00:00Z",
+              "assets": [{"id": "a1", "group": "BANK", "name": "Cuenta", "amountMinor": 150000, "currency": "EUR"}]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(listOf(asset), document.assets)
+        assertEquals(emptyList(), document.portfolioHoldings)
+    }
+
+    @Test
+    fun `portfolio holdings need a unique id a name and known enum names and currency`() {
+        assertTrue("duplicado" in reasonFor(full.copy(portfolioHoldings = listOf(pricedFund, pricedFund))))
+        assertTrue("sin id" in holdingReason(pricedFund.copy(id = " ")))
+        assertTrue("sin nombre" in holdingReason(pricedFund.copy(name = "")))
+        assertTrue("tipo" in holdingReason(pricedFund.copy(type = "BOND")))
+        assertTrue("divisa" in holdingReason(pricedFund.copy(currency = "CHF")))
+        assertTrue("clase" in holdingReason(pricedFund.copy(kind = "OTHER")))
+    }
+
+    @Test
+    fun `a quoted holding needs a known provider a code and positive units`() {
+        assertTrue("proveedor" in holdingReason(pricedFund.copy(provider = "BING")))
+        assertTrue("proveedor" in holdingReason(pricedFund.copy(provider = null)))
+        assertTrue("código" in holdingReason(pricedFund.copy(providerCode = " ")))
+        assertTrue("código" in holdingReason(pricedFund.copy(providerCode = null)))
+        assertTrue("unidades" in holdingReason(pricedFund.copy(unitsScaled = 0)))
+        assertTrue("unidades" in holdingReason(pricedFund.copy(unitsScaled = -1)))
+        assertTrue("unidades" in holdingReason(pricedFund.copy(unitsScaled = null)))
+    }
+
+    @Test
+    fun `a quoted holding has its price fields all set or all missing and never negative`() {
+        assertTrue("precio" in holdingReason(pricedFund.copy(priceScaled = null)))
+        assertTrue("precio" in holdingReason(pricedFund.copy(priceDateEpochDay = null)))
+        assertTrue("precio" in holdingReason(pricedFund.copy(priceFetchedAtEpochMs = null)))
+        assertTrue("precio" in holdingReason(unpricedEtf.copy(priceFetchedAtEpochMs = 5)))
+        assertTrue("precio" in holdingReason(pricedFund.copy(priceScaled = -1)))
+        val zeroPrice = pricedFund.copy(priceScaled = 0)
+        assertEquals(listOf(zeroPrice), roundTrip(zeroPrice))
+    }
+
+    @Test
+    fun `a manual holding needs a non negative value and a date and carries no quote data`() {
+        assertTrue("valor manual" in holdingReason(painting.copy(valueMinor = null)))
+        assertTrue("valor manual" in holdingReason(painting.copy(valueMinor = -1)))
+        assertTrue("valor manual" in holdingReason(painting.copy(valuedAtEpochMs = null)))
+        assertTrue("mezcla" in holdingReason(painting.copy(unitsScaled = 1)))
+        assertTrue("mezcla" in holdingReason(painting.copy(provider = "YAHOO")))
+        assertTrue("mezcla" in holdingReason(painting.copy(priceScaled = 1)))
+        val zeroValue = painting.copy(valueMinor = 0)
+        assertEquals(listOf(zeroValue), roundTrip(zeroValue))
+    }
+
+    @Test
+    fun `a quoted holding carries no manual value`() {
+        assertTrue("mezcla" in holdingReason(pricedFund.copy(valueMinor = 1)))
+        assertTrue("mezcla" in holdingReason(pricedFund.copy(valuedAtEpochMs = 1)))
+    }
+
+    @Test
+    fun `a price date outside the supported calendar is rejected`() {
+        assertTrue("fecha" in holdingReason(pricedFund.copy(priceDateEpochDay = Long.MAX_VALUE)))
     }
 
     private companion object {

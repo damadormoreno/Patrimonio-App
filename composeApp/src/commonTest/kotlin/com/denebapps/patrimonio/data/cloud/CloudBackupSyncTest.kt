@@ -23,6 +23,8 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -217,6 +219,15 @@ class CloudBackupSyncTest {
         runCurrent()
         assertEquals("rev-3", remote.document?.revision)
         assertTrue(sync.state.value is CloudBackupState.Active)
+    }
+
+    @Test
+    fun `portfolio holdings count as records so a device that only has them is not empty`() {
+        val onlyHoldings = Json.parseToJsonElement(
+            "{\"assets\":[],\"portfolioHoldings\":[{\"id\":\"p1\"},{\"id\":\"p2\"}]}",
+        ).jsonObject
+
+        assertEquals(2, recordCount(onlyHoldings))
     }
 
     @Test

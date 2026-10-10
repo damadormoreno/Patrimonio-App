@@ -8,6 +8,7 @@ import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.LiabilityEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
+import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
@@ -70,6 +71,12 @@ class DataMaintenanceRepositoryImplTest {
             ),
         )
         db.netWorthDao().upsert(NetWorthSnapshotEntity("2026-06", 10_000, 50_000))
+        db.portfolioHoldingDao().insert(
+            PortfolioHoldingEntity(
+                "holding-1", "Cuadro", "OTHER", null, null, "MANUAL", null, null, "EUR",
+                null, null, null, null, 250_000, 1L,
+            ),
+        )
     }
 
     private suspend fun assertAllFinancialTablesEmpty(db: AppDatabase) {
@@ -79,6 +86,7 @@ class DataMaintenanceRepositoryImplTest {
         assertTrue(db.savingsGoalDao().observeAll().first().isEmpty(), "savings goals not cleared")
         assertTrue(db.savingsGoalDao().listAllLinkedAssets().isEmpty(), "goal accounts not cleared")
         assertTrue(db.netWorthDao().observeAll().first().isEmpty(), "net-worth snapshots not cleared")
+        assertTrue(db.portfolioHoldingDao().list().isEmpty(), "portfolio holdings not cleared")
     }
 
     @Test

@@ -12,7 +12,8 @@ import kotlinx.serialization.Serializable
  * Version 4 turned savings goal ids into UUID strings and added
  * [SavingsGoalBackup.createdAtEpochMs]; version 5 replaced the single `linkedAssetId` with
  * [SavingsGoalBackup.linkedAssetIds]; version 6 added the user's [accountTypes] and each account's
- * `emoji`, both empty in older files. [BackupCodec] upgrades older files on read.
+ * `emoji`, both empty in older files; version 8 added the investment [portfolioHoldings], empty in older files.
+ * [BackupCodec] upgrades older files on read.
  *
  * Enum-like fields hold the domain enum `name`s and currencies their ISO code; amounts are minor
  * units, dates epoch days, timestamps epoch milliseconds.
@@ -31,6 +32,7 @@ data class BackupDocument(
     val savingsGoalAllocationEvents: List<SavingsGoalAllocationEventBackup> = emptyList(),
     val savingsGoalLinkEvents: List<SavingsGoalLinkEventBackup> = emptyList(),
     val accountTypes: List<AccountTypeBackup> = emptyList(),
+    val portfolioHoldings: List<PortfolioHoldingBackup> = emptyList(),
 )
 
 /** A custom account type; [kind] and [color] are enum names. Accounts point at it from their `group`. */
@@ -118,4 +120,30 @@ data class SavingsGoalLinkEventBackup(
     val timestampEpochMs: Long,
     val fromGroupId: String? = null,
     val toGroupId: String? = null,
+)
+
+/**
+ * An investment holding. [type] and [kind] are enum names (`InstrumentType`, `QUOTED`/`MANUAL`), [currency] an ISO
+ * code. A `QUOTED` holding carries [provider], [providerCode] (a `QuoteProvider` name and its instrument code),
+ * [unitsScaled] (units x 1,000,000) and, once priced, [priceScaled] (price in major units x 1,000,000),
+ * [priceDateEpochDay] and [priceFetchedAtEpochMs] together; a `MANUAL` one carries [valueMinor] (minor units of
+ * [currency]) and [valuedAtEpochMs] instead.
+ */
+@Serializable
+data class PortfolioHoldingBackup(
+    val id: String,
+    val name: String,
+    val type: String,
+    val isin: String? = null,
+    val ticker: String? = null,
+    val kind: String,
+    val provider: String? = null,
+    val providerCode: String? = null,
+    val currency: String,
+    val unitsScaled: Long? = null,
+    val priceScaled: Long? = null,
+    val priceDateEpochDay: Long? = null,
+    val priceFetchedAtEpochMs: Long? = null,
+    val valueMinor: Long? = null,
+    val valuedAtEpochMs: Long? = null,
 )

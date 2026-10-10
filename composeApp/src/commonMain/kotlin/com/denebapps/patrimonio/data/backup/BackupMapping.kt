@@ -6,6 +6,7 @@ import com.denebapps.patrimonio.data.db.entity.AccountTypeEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.LiabilityEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
+import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
@@ -74,3 +75,39 @@ internal fun SavingsGoalLinkEventEntity.toBackup() =
 
 internal fun SavingsGoalLinkEventBackup.toEntity() =
     SavingsGoalLinkEventEntity(id, goalId, fromAssetId, toAssetId, kind, timestampEpochMs, fromGroupId, toGroupId)
+
+internal fun PortfolioHoldingEntity.toBackup() = PortfolioHoldingBackup(
+    id,
+    name,
+    type,
+    isin,
+    ticker,
+    kind,
+    provider,
+    providerCode,
+    currency,
+    unitsScaled,
+    priceScaled,
+    priceDateEpochDay,
+    priceFetchedAtEpochMs,
+    valueMinor,
+    valuedAtEpochMs,
+)
+
+internal fun PortfolioHoldingBackup.toEntity() = PortfolioHoldingEntity(
+    id,
+    name,
+    type,
+    isin,
+    ticker,
+    kind,
+    provider,
+    providerCode,
+    currency,
+    unitsScaled,
+    priceScaled,
+    priceDateEpochDay,
+    priceFetchedAtEpochMs,
+    valueMinor,
+    valuedAtEpochMs,
+)

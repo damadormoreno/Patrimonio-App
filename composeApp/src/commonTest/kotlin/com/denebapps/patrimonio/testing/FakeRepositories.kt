@@ -7,15 +7,19 @@ import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalSubtract
 import com.denebapps.patrimonio.domain.calc.savingsGoalCancellationDelta
 import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.Asset
+import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.FxRates
+import com.denebapps.patrimonio.domain.model.HoldingValuation
 import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.NetWorthSnapshot
+import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.model.SavingsGoalAllocationEvent
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEvent
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
+import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.model.YearMonth
 import com.denebapps.patrimonio.domain.repository.AccountGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
@@ -30,7 +34,10 @@ import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalTargetExcept
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NegativeSavingsGoalProgressException
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioHoldingNotFoundException
+import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
+import com.denebapps.patrimonio.domain.repository.PriceRefreshResult
 import com.denebapps.patrimonio.domain.repository.SavingsGoalAssetNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalBuiltinGroupException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalGroupNotFoundException
@@ -450,5 +457,64 @@ class FakeSavingsGoalRepository(
 
     private fun setLifecycle(goalId: String, lifecycle: SavingsGoalLifecycle) {
         backing.value = backing.value.map { if (it.id == goalId) it.copy(lifecycle = lifecycle) else it }
+    }
+}
+
+/**
+ * `MutableStateFlow`-backed [PortfolioRepository] fake for ViewModel unit tests. [refreshPrices] records its `force`
+ * argument in [refreshCalls] and answers [refreshResult], or throws [refreshFailure]; it never changes a price.
+ * Manual values are stamped with [valuedAtEpochMs].
+ */
+class FakePortfolioRepository(
+    initial: List<PortfolioHolding> = emptyList(),
+    private val valuedAtEpochMs: Long = 0L,
+) : PortfolioRepository {
+    private val backing = MutableStateFlow(initial)
+
+    val current: List<PortfolioHolding> get() = backing.value
+    val refreshCalls = mutableListOf<Boolean>()
+    var refreshResult = PriceRefreshResult(refreshed = 0, upToDate = 0, failures = emptyList())
+    var refreshFailure: Throwable? = null
+
+    override fun observeAll(): Flow<List<PortfolioHolding>> = backing
+
+    override suspend fun add(holding: PortfolioHolding) {
+        check(backing.value.none { it.id == holding.id }) { "Holding '${holding.id}' already exists" }
+        backing.value = backing.value + holding
+    }
+
+    override suspend fun updateUnits(id: String, units: Units) {
+        val holding = find(id)
+        val valuation = holding.valuation as? HoldingValuation.Quoted
+            ?: error("Holding '$id' is not a quoted holding")
+        replace(holding.copy(valuation = valuation.copy(units = units)))
+    }
+
+    override suspend fun updateManualValue(id: String, value: CurrencyAmount) {
+        val holding = find(id)
+        check(holding.valuation is HoldingValuation.Manual) { "Holding '$id' is not a manual holding" }
+        replace(holding.copy(valuation = HoldingValuation.Manual(value, valuedAtEpochMs)))
+    }
+
+    override suspend fun delete(id: String) {
+        find(id)
+        backing.value = backing.value.filterNot { it.id == id }
+    }
+
+    override suspend fun refreshPrices(force: Boolean): PriceRefreshResult {
+        refreshCalls += force
+        refreshFailure?.let { throw it }
+        return refreshResult
+    }
+
+    fun emit(holdings: List<PortfolioHolding>) {
+        backing.value = holdings
+    }
+
+    private fun find(id: String): PortfolioHolding =
+        backing.value.firstOrNull { it.id == id } ?: throw PortfolioHoldingNotFoundException(id)
+
+    private fun replace(holding: PortfolioHolding) {
+        backing.value = backing.value.map { if (it.id == holding.id) holding else it }
     }
 }

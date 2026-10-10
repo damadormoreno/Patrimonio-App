@@ -16,6 +16,7 @@ import com.denebapps.patrimonio.data.repository.DataMaintenanceRepositoryImpl
 import com.denebapps.patrimonio.data.repository.LiabilityRepositoryImpl
 import com.denebapps.patrimonio.data.repository.NetWorthRepositoryImpl
 import com.denebapps.patrimonio.data.repository.NetWorthSnapshotUpserter
+import com.denebapps.patrimonio.data.repository.PortfolioRepositoryImpl
 import com.denebapps.patrimonio.data.repository.SavingsGoalRepositoryImpl
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AccountTypeRepository
@@ -25,6 +26,7 @@ import com.denebapps.patrimonio.domain.repository.BackupRepository
 import com.denebapps.patrimonio.domain.repository.DataMaintenanceRepository
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import kotlinx.datetime.Clock
@@ -76,6 +78,15 @@ val dataModule = module {
         )
     }
     single<AccountTypeRepository> { AccountTypeRepositoryImpl(get()) }
+    single<PortfolioRepository> {
+        PortfolioRepositoryImpl(
+            appDatabase = get(),
+            dao = get(),
+            quoteSource = get(),
+            seedingGate = get(),
+            clock = get(),
+        )
+    }
     single<PreferencesRepository> { PreferencesRepositoryImpl(dataStoreFilePath(get<PlatformContext>())) }
     single<DataMaintenanceRepository> { DataMaintenanceRepositoryImpl(get()) }
     single<AppLock> {

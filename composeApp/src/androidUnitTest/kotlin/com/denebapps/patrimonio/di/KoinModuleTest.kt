@@ -9,13 +9,17 @@ import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.SeedingGate
 import com.denebapps.patrimonio.data.db.configureAppDatabase
 import com.denebapps.patrimonio.data.db.createAppDatabaseBuilder
+import com.denebapps.patrimonio.data.db.dao.PortfolioHoldingDao
 import com.denebapps.patrimonio.data.db.dao.SavingsGoalDao
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.platform.PlatformContext
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
+import com.denebapps.patrimonio.domain.model.HoldingValuation
+import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.BackupRepository
@@ -25,6 +29,7 @@ import com.denebapps.patrimonio.domain.repository.DataMaintenanceRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.QuoteSource
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
@@ -284,6 +289,26 @@ class KoinModuleTest {
 
         assertNotNull(koin.get<QuoteSource>())
         assertSame(koin.get<QuoteSource>(), koin.get<QuoteSource>())
+    }
+
+    @Test
+    fun `PortfolioRepository resolves via DI as a singleton and persists through the shared DAO`() = runTest {
+        val koin = startTestKoin(fxModule, quotesModule)
+        val repository = koin.get<PortfolioRepository>()
+        val manual = PortfolioHolding(
+            id = "painting",
+            name = "Cuadro",
+            type = InstrumentType.OTHER,
+            isin = null,
+            ticker = null,
+            valuation = HoldingValuation.Manual(CurrencyAmount(Money(250_000), Currency.EUR), valuedAtEpochMs = 1L),
+        )
+
+        repository.add(manual)
+
+        assertSame(repository, koin.get<PortfolioRepository>())
+        assertSame(koin.get<AppDatabase>().portfolioHoldingDao(), koin.get<PortfolioHoldingDao>())
+        assertEquals(listOf(manual), repository.observeAll().first())
     }
 
     @Test

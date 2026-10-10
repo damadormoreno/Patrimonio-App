@@ -52,7 +52,7 @@ charts, XIRR/TWR, broker imports, crypto.
   DB v7 migration dropping the table + migration test; backup format bump, legacy files still import.
 - [x] **T2 — Quote source port + Morningstar/Yahoo adapters** (route: delegated writer).
   Search (ISIN/ticker/name) and latest price; MockEngine tests for parsing, ISIN→SecId, failures.
-- [ ] **T3 — Holdings persistence** (route: delegated writer). Domain model with scaled units, Room v8 +
+- [x] **T3 — Holdings persistence** (route: delegated writer). Domain model with scaled units, Room v8 +
   migration test, repository, price refresh policy, backup/clear-all/cloud keys.
 - [ ] **T4 — Net worth integration** (route: delegated writer). Snapshot upserter + Patrimonio totals and
   "Cartera" composition share.
@@ -100,7 +100,16 @@ One branch, one PR. The ~400-line heuristic does not apply (user decision, 2026-
   RED: 47 tests, 39 failed against `TODO()` stubs (PriceTest had no RED: written before stubs).
   GREEN (parent re-run): ktlint, 511 tests, assemble, iOS compile executed. Writer did two manual curl
   calls to the live Morningstar timeseries (literal and encoded `]`/`$` both work); no network in tests.
+- **T3** (commit below, `feat(portfolio): persist holdings and refresh their prices`): `PortfolioHolding` with
+  sealed `HoldingValuation` (`Quoted(ref, currency, units, lastQuote?)` / `Manual(value, valuedAt)`); `Units`
+  ×1e6; `mulDivHalfEven` exact 128-bit fixed point (parent reviewed: carries, MIN_VALUE, round-up overflow);
+  table `portfolio_holdings` via `AutoMigration(7, 8)` (`8.json`); `PortfolioRepository.refreshPrices`
+  (stale > 6 h or never, `Semaphore(4)`, failures keep last price, currency mismatch = failure) fired on
+  start from `initKoin`; backup v8 with `portfolioHoldings` (v1–v7 import empty, v9 rejected); clear-all,
+  `BACKED_UP_TABLES` and cloud `RECORD_KEYS` include the table (price refreshes trigger cloud auto-upload).
+  RED: calc+migration 37 tests/29 failed; persistence/backup 102 tests/30 failed (DAO test had no RED).
+  GREEN (parent re-run): ktlint, 572 tests, assemble, iOS compile.
 
 ## Next step
 
-T3 — holdings persistence (DB v8, repository, refresh, backup).
+T4 — net worth integration.

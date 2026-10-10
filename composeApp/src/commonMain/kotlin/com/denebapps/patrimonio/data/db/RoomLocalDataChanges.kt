@@ -20,6 +20,7 @@ class RoomLocalDataChanges(private val database: AppDatabase) : LocalDataChanges
             "savings_goal_allocation_events",
             "savings_goal_link_events",
             "account_types",
+            "portfolio_holdings",
         )
     }
 }

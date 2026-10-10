@@ -8,6 +8,7 @@ package com.denebapps.patrimonio.data.db
  * 2. Group members, then groups (members reference both groups and assets).
  * 3. Net-worth snapshots, assets, liabilities (no outbound FKs once the above are gone), and the
  *    custom account types they used.
+ * 4. Portfolio holdings (no FKs either way).
  *
  * `fx_rates` (reference cache, re-fetchable) is deliberately untouched. Callers MUST run this
  * inside [writeTransaction] so a failure leaves the previous data intact.
@@ -23,4 +24,5 @@ internal suspend fun AppDatabase.clearFinancialTables() {
     assetDao().deleteAll()
     liabilityDao().deleteAll()
     accountTypeDao().deleteAll()
+    portfolioHoldingDao().deleteAll()
 }
