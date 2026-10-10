@@ -10,7 +10,6 @@ import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
-import com.denebapps.patrimonio.data.db.entity.SubscriptionEntity
 
 // Entity <-> backup DTO mapping. 1:1 today; this is where a future schema or format change gets
 // absorbed so neither side leaks into the other.
@@ -75,9 +74,3 @@ internal fun SavingsGoalLinkEventEntity.toBackup() =
 
 internal fun SavingsGoalLinkEventBackup.toEntity() =
     SavingsGoalLinkEventEntity(id, goalId, fromAssetId, toAssetId, kind, timestampEpochMs, fromGroupId, toGroupId)
-
-internal fun SubscriptionEntity.toBackup() =
-    SubscriptionBackup(id, name, amountMinor, currency, cycle, firstChargeEpochDay, paidFromAssetId, active)
-
-internal fun SubscriptionBackup.toEntity() =
-    SubscriptionEntity(id, name, amountMinor, currency, cycle, firstChargeEpochDay, paidFromAssetId, active)

@@ -52,12 +52,13 @@ composeApp/src/commonMain/kotlin/com/denebapps/patrimonio/
 
 Ajustes → Datos → *Exportar copia* / *Importar copia* (selector nativo vía
 [FileKit](https://github.com/vinceglb/FileKit)). El archivo es JSON legible
-(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 4}`:
+(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 7}`:
 
 - Incluye activos, pasivos, grupos y miembros, histórico mensual y metas con sus aportaciones y
-  vínculos (una meta se vincula a una cuenta **o** a un grupo) y suscripciones. No incluye tipos de
-  cambio (caché) ni preferencias. Las copias de versiones anteriores se siguen importando; en las de
-  la 1 a la 3 las metas tenían id numérico y reciben un UUID nuevo al importarlas.
+  vínculos (una meta se vincula a una cuenta **o** a un grupo) y tipos de cuenta propios. No incluye
+  tipos de cambio (caché) ni preferencias. Las copias de versiones anteriores se siguen importando;
+  en las de la 1 a la 3 las metas tenían id numérico y reciben un UUID nuevo al importarlas, y la
+  sección de suscripciones de las copias de la 3 a la 6 se ignora (la función se eliminó en la 7).
 - Importar **reemplaza** todos los datos en una sola transacción. El archivo se valida entero antes
   (divisas, tipos, ids únicos, referencias, reglas del ledger de metas), así que uno inválido no
   toca nada.
@@ -70,17 +71,10 @@ dispositivo.
 ## Roadmap
 
 1. ~~**Backup**~~: export/import JSON desde Ajustes (ver *Copias de seguridad*).
-2. ~~**Suscripciones**~~: pestaña con gasto mensual/anual en EUR, próximos cargos, pausadas y
-   activo que paga (informativo, no mueve saldos).
-3. ~~**Avisos de renovación**~~: notificación local a las 9:00 el mismo día, 1, 3 o 7 días antes
-   de cada cargo, desactivada por defecto (Ajustes → Avisos). WorkManager en Android y
-   `UNUserNotificationCenter` en iOS. Límites conocidos:
-   - Se programan los próximos 60 días (máx. 50 avisos, por el límite de 64 de iOS); abrir la app
-     amplía esa ventana. Si no abres la app en dos meses, dejan de llegar.
-   - Un aviso cuya hora ya ha pasado al planificar no se envía. Si activas los avisos el mismo día de
-     un cargo después de las 9:00, ese cargo se queda sin aviso.
-   - En iOS no se muestran con la app en primer plano (falta un `UNUserNotificationCenterDelegate`).
-4. **Login + sync** (opcional): Google / Apple / email junto con sincronización. Activos, pasivos,
-   grupos, suscripciones y metas ya tienen id `String` (UUID); la migración 3 → 4 (`MIGRATION_3_4`)
+2. **Cartera** (en curso): sustituye a Suscripciones, que se eliminan junto con los avisos de
+   renovación. Pestaña para armar una cartera de inversión (fondos, ETF y acciones buscados por
+   ISIN, ticker o nombre), valorada al último precio disponible y sumada al patrimonio neto.
+3. **Login + sync** (opcional): Google / Apple / email junto con sincronización. Activos, pasivos,
+   grupos y metas ya tienen id `String` (UUID); la migración 3 → 4 (`MIGRATION_3_4`)
    dio un UUID nuevo a las metas existentes. Las aportaciones y cambios de vínculo de cada meta
    siguen con id local autoincremental: cómo sincronizarlas se decide con el diseño del sync.

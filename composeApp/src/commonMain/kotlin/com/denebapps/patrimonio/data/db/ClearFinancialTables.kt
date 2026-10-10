@@ -6,8 +6,7 @@ package com.denebapps.patrimonio.data.db
  * 1. Savings-goal ledgers, link history and linked accounts, then goals (the linked accounts reference
  *    assets; goals reference groups).
  * 2. Group members, then groups (members reference both groups and assets).
- * 3. Subscriptions (they reference the asset that pays them).
- * 4. Net-worth snapshots, assets, liabilities (no outbound FKs once the above are gone), and the
+ * 3. Net-worth snapshots, assets, liabilities (no outbound FKs once the above are gone), and the
  *    custom account types they used.
  *
  * `fx_rates` (reference cache, re-fetchable) is deliberately untouched. Callers MUST run this
@@ -20,7 +19,6 @@ internal suspend fun AppDatabase.clearFinancialTables() {
     savingsGoalDao().deleteAllGoals()
     accountGroupDao().deleteAllMembers()
     accountGroupDao().deleteAllGroups()
-    subscriptionDao().deleteAll()
     netWorthDao().deleteAll()
     assetDao().deleteAll()
     liabilityDao().deleteAll()

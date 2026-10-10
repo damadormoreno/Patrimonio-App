@@ -357,9 +357,9 @@ class CloudBackupSync(
     }
 }
 
-private val RECORD_KEYS = listOf("assets", "liabilities", "accountGroups", "savingsGoals", "subscriptions")
+private val RECORD_KEYS = listOf("assets", "liabilities", "accountGroups", "savingsGoals")
 
-/** Accounts, debts, groups, goals and subscriptions in a backup: zero means there is nothing to protect. */
+/** Accounts, debts, groups and goals in a backup: zero means there is nothing to protect. */
 internal fun recordCount(backup: JsonObject): Int = RECORD_KEYS.sumOf { (backup[it] as? JsonArray)?.size ?: 0 }
 
 internal fun cloudBackupErrorFor(error: Exception): CloudBackupError = when (error) {

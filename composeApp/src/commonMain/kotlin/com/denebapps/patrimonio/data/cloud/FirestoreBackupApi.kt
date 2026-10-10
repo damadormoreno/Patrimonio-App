@@ -29,9 +29,9 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
- * The cloud copy. [revision] identifies the upload that wrote it; [records] counts its accounts, debts, groups,
- * goals and subscriptions (null in copies written before it existed). [key] is the wrapped data key that
- * encrypted [data] (null in copies from before encryption, whose [data] is the plain backup JSON). [data] is
+ * The cloud copy. [revision] identifies the upload that wrote it; [records] counts its accounts, debts, groups
+ * and goals (null in copies written before it existed). [key] is the wrapped data key that encrypted [data]
+ * (null in copies from before encryption, whose [data] is the plain backup JSON). [data] is
  * null when only the metadata was read.
  */
 data class CloudBackupDocument(

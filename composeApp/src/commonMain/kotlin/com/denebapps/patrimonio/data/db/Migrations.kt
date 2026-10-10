@@ -109,3 +109,14 @@ private val MIGRATION_4_5_STATEMENTS = listOf(
     "CREATE INDEX IF NOT EXISTS `index_savings_goals_linkedGroupId` ON `savings_goals` (`linkedGroupId`)",
     "CREATE INDEX IF NOT EXISTS `index_savings_goal_assets_assetId` ON `savings_goal_assets` (`assetId`)",
 )
+
+/**
+ * 6 -> 7: the subscriptions feature is gone, so its table is dropped. Nothing references `subscriptions`
+ * (its own foreign key points at `assets`), so no other table or row is touched. The result matches
+ * `7.json`, which Room validates in `AppDatabaseMigrationTest`.
+ */
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("DROP TABLE IF EXISTS `subscriptions`")
+    }
+}

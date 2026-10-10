@@ -8,7 +8,6 @@ import kotlinx.serialization.serializer
  */
 enum class TabKey(val id: String, val label: String, val iconName: String) {
     PATRIMONIO("patrimonio", "Patrimonio", "wallet"),
-    SUBSCRIPTIONS("subs", "Suscripciones", "receipt"),
     ;
 
     companion object {
@@ -38,7 +37,6 @@ object TabMapping {
 
     private val routeNameToTab: Map<String?, TabKey> = mapOf(
         routeName<Patrimonio>() to TabKey.PATRIMONIO,
-        routeName<Subscriptions>() to TabKey.SUBSCRIPTIONS,
     )
 
     /** Maps a destination's route name to its [TabKey], or `null` if it is not a tab route. */

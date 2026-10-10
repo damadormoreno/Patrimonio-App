@@ -60,7 +60,6 @@ kotlin {
         }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
-            implementation(libs.androidx.work.runtime)
             implementation(libs.koin.android)
             implementation(libs.ktor.client.android)
             implementation(libs.androidx.credentials)

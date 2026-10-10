@@ -3,7 +3,6 @@ package com.denebapps.patrimonio.data.backup
 import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalAdd
 import com.denebapps.patrimonio.domain.model.AccountKind
 import com.denebapps.patrimonio.domain.model.Asset
-import com.denebapps.patrimonio.domain.model.BillingCycle
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.Money
@@ -32,15 +31,16 @@ import kotlin.uuid.Uuid
  * hand-edited or corrupted file is rejected with a readable reason instead of failing half-way
  * through an import or crashing a later read.
  *
- * Writes [VERSION] (6). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
- * group-link fields, which default to null, v1/v2 files lack subscriptions, which default to empty,
- * v1–v3 files have numeric goal ids, which [upgradeLegacyGoalIds] replaces before decoding, v1–v4
- * files link a goal to one `linkedAssetId`, which [upgradeSingleLinkedAsset] turns into a list, and
- * v1–v5 files have no custom account types nor emojis, which default to empty.
+ * Writes [VERSION] (7). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
+ * group-link fields, which default to null, v1–v3 files have numeric goal ids, which
+ * [upgradeLegacyGoalIds] replaces before decoding, v1–v4 files link a goal to one `linkedAssetId`,
+ * which [upgradeSingleLinkedAsset] turns into a list, v1–v5 files have no custom account types nor
+ * emojis, which default to empty, and v3–v6 files may carry a `subscriptions` section from the removed
+ * subscriptions feature, which is ignored like any unknown key.
  */
 object BackupCodec {
     const val FORMAT = "patrimonio-backup"
-    const val VERSION = 6
+    const val VERSION = 7
 
     private val json = Json {
         prettyPrint = true
@@ -137,7 +137,6 @@ private val TYPE_COLORS = TypeColor.entries.map { it.name }.toSet()
 private val CURRENCIES = Currency.entries.map { it.name }.toSet()
 private val LIFECYCLES = SavingsGoalLifecycle.entries.map { it.name }.toSet()
 private val LINK_KINDS = SavingsGoalLinkEventKind.entries.map { it.name }.toSet()
-private val BILLING_CYCLES = BillingCycle.entries.map { it.name }.toSet()
 private val YEAR_MONTH = Regex("""\d{4}-(0[1-9]|1[0-2])""")
 
 private fun BackupDocument.validate() {
@@ -230,26 +229,6 @@ private fun BackupDocument.validate() {
         if (event.id <= 0) invalid("Hay un cambio de vínculo con un id no válido.")
         if (event.goalId !in goalIds) invalid("Un cambio de vínculo apunta a una meta que no existe: ${event.goalId}.")
         if (event.kind !in LINK_KINDS) invalid("Tipo de cambio de vínculo desconocido: ${event.kind}.")
-    }
-
-    requireUnique("suscripción", subscriptions.map { it.id })
-    subscriptions.forEach { subscription ->
-        if (subscription.id.isBlank()) invalid("Hay una suscripción sin id.")
-        if (subscription.name.isEmpty() || subscription.name != subscription.name.trim()) {
-            invalid("Hay una suscripción con un nombre no válido.")
-        }
-        if (subscription.amountMinor <= 0) {
-            invalid("La suscripción '${subscription.name}' tiene un importe no positivo.")
-        }
-        if (subscription.currency !in CURRENCIES) {
-            invalid("La suscripción '${subscription.name}' tiene una divisa no soportada: ${subscription.currency}.")
-        }
-        if (subscription.cycle !in BILLING_CYCLES) {
-            invalid("La suscripción '${subscription.name}' tiene una periodicidad desconocida: ${subscription.cycle}.")
-        }
-        if (subscription.paidFromAssetId != null && subscription.paidFromAssetId !in assetIds) {
-            invalid("La suscripción '${subscription.name}' se paga desde un activo que no existe.")
-        }
     }
 }
 

@@ -16,7 +16,6 @@ import com.denebapps.patrimonio.domain.model.SavingsGoalAllocationEvent
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEvent
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
-import com.denebapps.patrimonio.domain.model.Subscription
 import com.denebapps.patrimonio.domain.model.YearMonth
 import com.denebapps.patrimonio.domain.repository.AccountGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
@@ -32,19 +31,14 @@ import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NegativeSavingsGoalProgressException
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
-import com.denebapps.patrimonio.domain.repository.RenewalReminderSettings
 import com.denebapps.patrimonio.domain.repository.SavingsGoalAssetNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalBuiltinGroupException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
-import com.denebapps.patrimonio.domain.repository.SubscriptionNotFoundException
-import com.denebapps.patrimonio.domain.repository.SubscriptionRepository
 import com.denebapps.patrimonio.domain.repository.TerminalSavingsGoalException
 import com.denebapps.patrimonio.domain.repository.ThemeMode
 import com.denebapps.patrimonio.domain.repository.UpdateSavingsGoal
-import com.denebapps.patrimonio.notifications.LocalNotification
-import com.denebapps.patrimonio.notifications.ReminderScheduler
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -77,14 +71,6 @@ class FakePreferencesRepository(
 
     override suspend fun setLastName(value: String) {
         lastNameBacking.value = value
-    }
-
-    private val remindersBacking = MutableStateFlow(RenewalReminderSettings())
-
-    override fun observeRenewalReminders(): StateFlow<RenewalReminderSettings> = remindersBacking
-
-    override suspend fun setRenewalReminders(settings: RenewalReminderSettings) {
-        remindersBacking.value = settings
     }
 }
 
@@ -162,47 +148,6 @@ class FakeAssetRepository(initial: List<Asset> = emptyList()) : AssetRepository 
 
     fun emit(assets: List<Asset>) {
         backing.value = assets
-    }
-}
-
-/** Records every [replaceAll] call; [failure] makes the next calls throw. */
-class FakeReminderScheduler : ReminderScheduler {
-    val calls = mutableListOf<List<LocalNotification>>()
-    var failure: Throwable? = null
-
-    val scheduled: List<LocalNotification> get() = calls.lastOrNull().orEmpty()
-
-    override suspend fun replaceAll(notifications: List<LocalNotification>) {
-        failure?.let { throw it }
-        calls += notifications
-    }
-}
-
-/** `MutableStateFlow`-backed [SubscriptionRepository] fake; [failure] makes every write throw. */
-class FakeSubscriptionRepository(initial: List<Subscription> = emptyList()) : SubscriptionRepository {
-    private val backing = MutableStateFlow(initial)
-    var failure: Throwable? = null
-
-    val current: List<Subscription> get() = backing.value
-
-    override fun observeAll(): Flow<List<Subscription>> = backing
-
-    override suspend fun find(id: String): Subscription? = backing.value.find { it.id == id }
-
-    override suspend fun insert(subscription: Subscription) {
-        failure?.let { throw it }
-        backing.value = backing.value + subscription
-    }
-
-    override suspend fun update(subscription: Subscription) {
-        failure?.let { throw it }
-        if (backing.value.none { it.id == subscription.id }) throw SubscriptionNotFoundException(subscription.id)
-        backing.value = backing.value.map { if (it.id == subscription.id) subscription else it }
-    }
-
-    override suspend fun deleteById(id: String) {
-        failure?.let { throw it }
-        backing.value = backing.value.filterNot { it.id == id }
     }
 }
 

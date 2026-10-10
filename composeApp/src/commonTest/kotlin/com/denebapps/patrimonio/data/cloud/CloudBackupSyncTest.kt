@@ -472,7 +472,7 @@ private const val CLOUD_JSON = "{\"cloud\":true}"
 private val CLOUD_SAVED_AT = Instant.parse("2026-10-01T08:00:00Z")
 
 private const val EMPTY_BACKUP =
-    "{\"assets\":[],\"liabilities\":[],\"accountGroups\":[],\"savingsGoals\":[],\"subscriptions\":[]}"
+    "{\"assets\":[],\"liabilities\":[],\"accountGroups\":[],\"savingsGoals\":[]}"
 
 private class FakeLocalDataChanges : LocalDataChanges {
     private val changes = MutableSharedFlow<Unit>(extraBufferCapacity = 8)

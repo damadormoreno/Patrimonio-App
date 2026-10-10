@@ -4,6 +4,7 @@ import com.denebapps.patrimonio.domain.repository.InvalidBackupException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -46,13 +47,7 @@ class BackupCodecTest {
                 toGroupId = null,
             ),
         ),
-        subscriptions = listOf(
-            SubscriptionBackup("s1", "Netflix", 1_299, "EUR", "MONTHLY", 20_484, paidFromAssetId = "a1"),
-            SubscriptionBackup("s2", "iCloud", 9_900, "USD", "YEARLY", 20_200, active = false),
-        ),
     )
-
-    private val subscription = full.subscriptions.first()
 
     private fun reasonFor(document: BackupDocument): String =
         assertFailsWith<InvalidBackupException> { BackupCodec.decode(BackupCodec.encode(document)) }.message.orEmpty()
@@ -67,7 +62,8 @@ class BackupCodecTest {
         val json = BackupCodec.encode(BackupDocument(exportedAt = "2026-10-06T10:00:00Z"))
 
         assertTrue(""""format": "patrimonio-backup"""" in json, json)
-        assertTrue(""""version": 6""" in json, json)
+        assertTrue(""""version": 7""" in json, json)
+        assertFalse("subscriptions" in json, json)
     }
 
     @Test
@@ -186,10 +182,10 @@ class BackupCodecTest {
     @Test
     fun `newer format version is rejected with an update hint`() {
         val error = assertFailsWith<InvalidBackupException> {
-            BackupCodec.decode("""{"format":"patrimonio-backup","version":7,"exportedAt":"x"}""")
+            BackupCodec.decode("""{"format":"patrimonio-backup","version":8,"exportedAt":"x"}""")
         }
 
-        assertTrue("v7" in error.message.orEmpty())
+        assertTrue("v8" in error.message.orEmpty())
     }
 
     @Test
@@ -226,7 +222,7 @@ class BackupCodecTest {
     @Test
     fun `a version 5 backup has no custom types nor emojis and its built-in types still read`() {
         val json = BackupCodec.encode(BackupDocument(exportedAt = "2026-10-06T10:00:00Z", assets = listOf(asset)))
-            .replace(""""version": 6""", """"version": 5""")
+            .replace(""""version": 7""", """"version": 5""")
             .replace(Regex(""",\s*"emoji": null"""), "")
             .replace(Regex(""",\s*"accountTypes": \[\s*]"""), "")
 
@@ -308,23 +304,26 @@ class BackupCodecTest {
     }
 
     @Test
-    fun `a version 2 backup decodes with no subscriptions`() {
-        val document = BackupCodec.decode("""{"format":"patrimonio-backup","version":2,"exportedAt":"x"}""")
+    fun `a version 6 backup with subscriptions still imports and the section is dropped`() {
+        val document = BackupCodec.decode(
+            """
+            {
+              "format": "patrimonio-backup",
+              "version": 6,
+              "exportedAt": "2026-10-06T10:00:00Z",
+              "assets": [{"id": "a1", "group": "BANK", "name": "Cuenta", "amountMinor": 150000, "currency": "EUR"}],
+              "subscriptions": [
+                {"id": "s1", "name": "Netflix", "amountMinor": 1299, "currency": "EUR", "cycle": "MONTHLY",
+                 "firstChargeEpochDay": 20484, "paidFromAssetId": "a1", "active": true},
+                {"id": "s2", "name": "Broken", "amountMinor": 0, "currency": "CHF", "cycle": "DAILY",
+                 "firstChargeEpochDay": 1, "paidFromAssetId": "missing"}
+              ]
+            }
+            """.trimIndent(),
+        )
 
-        assertEquals(2, document.version)
-        assertEquals(emptyList(), document.subscriptions)
-    }
-
-    @Test
-    fun `invalid subscriptions are rejected`() {
-        fun reasonForSubscription(changed: SubscriptionBackup) = reasonFor(full.copy(subscriptions = listOf(changed)))
-
-        assertTrue("periodicidad" in reasonForSubscription(subscription.copy(cycle = "DAILY")))
-        assertTrue("divisa" in reasonForSubscription(subscription.copy(currency = "CHF")))
-        assertTrue("importe" in reasonForSubscription(subscription.copy(amountMinor = 0)))
-        assertTrue("nombre" in reasonForSubscription(subscription.copy(name = "Netflix ")))
-        assertTrue("activo" in reasonForSubscription(subscription.copy(paidFromAssetId = "missing")))
-        assertTrue("duplicad" in reasonFor(full.copy(subscriptions = listOf(subscription, subscription))))
+        assertEquals(listOf(asset), document.assets)
+        assertFalse("subscriptions" in BackupCodec.encode(document))
     }
 
     private companion object {

@@ -10,7 +10,6 @@ class TabMappingTest {
     @Test
     fun `route names are the serial names navigation uses, which R8 does not rename`() {
         assertEquals("com.denebapps.patrimonio.ui.navigation.Patrimonio", routeName<Patrimonio>())
-        assertEquals("com.denebapps.patrimonio.ui.navigation.Subscriptions", routeName<Subscriptions>())
     }
 
     @Test
@@ -24,17 +23,14 @@ class TabMappingTest {
     }
 
     @Test
-    fun `patrimonio and subscriptions tabs show the tab bar`() {
-        assertEquals(listOf(TabKey.PATRIMONIO, TabKey.SUBSCRIPTIONS), TabMapping.tabs)
-        assertTrue(TabMapping.tabBarVisible)
+    fun `a single tab hides the tab bar`() {
+        assertEquals(listOf(TabKey.PATRIMONIO), TabMapping.tabs)
+        assertFalse(TabMapping.tabBarVisible)
     }
 
     @Test
     fun `tabForRoute maps each tab route to its TabKey`() {
         assertEquals(TabKey.PATRIMONIO, TabMapping.tabForRoute(routeName<Patrimonio>()))
-        assertEquals(TabKey.SUBSCRIPTIONS, TabMapping.tabForRoute(routeName<Subscriptions>()))
-        assertEquals(TabKey.SUBSCRIPTIONS, TabKey.byId("subs"))
-        assertNull(TabMapping.tabForRoute(routeName<EditSubscription>()))
     }
 
     @Test

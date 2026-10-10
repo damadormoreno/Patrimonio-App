@@ -14,8 +14,6 @@ import com.denebapps.patrimonio.ui.screens.settings.AccountTypesViewModel
 import com.denebapps.patrimonio.ui.screens.settings.BackupViewModel
 import com.denebapps.patrimonio.ui.screens.settings.SecurityViewModel
 import com.denebapps.patrimonio.ui.screens.settings.SettingsViewModel
-import com.denebapps.patrimonio.ui.screens.subscriptions.SubscriptionSheetViewModel
-import com.denebapps.patrimonio.ui.screens.subscriptions.SubscriptionsViewModel
 import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import org.koin.core.module.dsl.viewModel
@@ -32,7 +30,7 @@ import org.koin.dsl.module
  * it with empty params, while `GoalAllocateSheet` passes `parametersOf(goalId, withdraw)`.
  */
 val presentationModule = module {
-    viewModel { AppViewModel(get(), get(), get(), get()) }
+    viewModel { AppViewModel(get(), get(), get()) }
     viewModel { SettingsViewModel(get(), get()) }
     viewModel { SecurityViewModel(get(), get()) }
     viewModel { AccountTypesViewModel(get(), get(), get()) }
@@ -99,24 +97,6 @@ val presentationModule = module {
             zoneProvider = get(),
             initialGoalId = params.getOrNull(),
             initialWithdraw = params.getOrNull() ?: false,
-        )
-    }
-    viewModel {
-        SubscriptionsViewModel(
-            subscriptionRepository = get(),
-            assetRepository = get(),
-            fxRepository = get(),
-            clock = get(),
-            zoneProvider = get(),
-        )
-    }
-    viewModel { params ->
-        SubscriptionSheetViewModel(
-            subscriptionRepository = get(),
-            assetRepository = get(),
-            clock = get(),
-            zoneProvider = get(),
-            subscriptionId = params.getOrNull(),
         )
     }
 }

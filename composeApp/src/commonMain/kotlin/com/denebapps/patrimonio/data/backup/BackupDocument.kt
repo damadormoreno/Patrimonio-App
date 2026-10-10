@@ -7,8 +7,9 @@ import kotlinx.serialization.Serializable
  * entities so a schema migration never silently changes what an exported file looks like: a
  * format change bumps [version] and [BackupCodec] decides what it can still read. Version 2 added
  * the savings-goal group link (`linkedGroupId`, `fromGroupId`/`toGroupId`); every such field
- * defaults to null so a version 1 file still decodes. Version 3 added [subscriptions], which defaults
- * to empty for older files. Version 4 turned savings goal ids into UUID strings and added
+ * defaults to null so a version 1 file still decodes. Versions 3 to 6 also carried a `subscriptions`
+ * section; version 7 removed it and older files keep decoding because unknown keys are ignored.
+ * Version 4 turned savings goal ids into UUID strings and added
  * [SavingsGoalBackup.createdAtEpochMs]; version 5 replaced the single `linkedAssetId` with
  * [SavingsGoalBackup.linkedAssetIds]; version 6 added the user's [accountTypes] and each account's
  * `emoji`, both empty in older files. [BackupCodec] upgrades older files on read.
@@ -29,7 +30,6 @@ data class BackupDocument(
     val savingsGoals: List<SavingsGoalBackup> = emptyList(),
     val savingsGoalAllocationEvents: List<SavingsGoalAllocationEventBackup> = emptyList(),
     val savingsGoalLinkEvents: List<SavingsGoalLinkEventBackup> = emptyList(),
-    val subscriptions: List<SubscriptionBackup> = emptyList(),
     val accountTypes: List<AccountTypeBackup> = emptyList(),
 )
 
@@ -118,16 +118,4 @@ data class SavingsGoalLinkEventBackup(
     val timestampEpochMs: Long,
     val fromGroupId: String? = null,
     val toGroupId: String? = null,
-)
-
-@Serializable
-data class SubscriptionBackup(
-    val id: String,
-    val name: String,
-    val amountMinor: Long,
-    val currency: String,
-    val cycle: String,
-    val firstChargeEpochDay: Long,
-    val paidFromAssetId: String? = null,
-    val active: Boolean = true,
 )

@@ -40,14 +40,11 @@ import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
 import com.denebapps.patrimonio.ui.screens.savings.GoalAllocateSheet
 import com.denebapps.patrimonio.ui.screens.savings.NewGoalSheet
 import com.denebapps.patrimonio.ui.screens.settings.SettingsScreen
-import com.denebapps.patrimonio.ui.screens.subscriptions.SubscriptionSheet
-import com.denebapps.patrimonio.ui.screens.subscriptions.SubscriptionsScreen
 import org.koin.compose.viewmodel.koinViewModel
 
 /** Maps a [TabKey] to its route object for `mainNavController.navigate(...)` calls. */
 private fun routeForTab(tab: TabKey): Any = when (tab) {
     TabKey.PATRIMONIO -> Patrimonio
-    TabKey.SUBSCRIPTIONS -> Subscriptions
 }
 
 /** The start tab doubles as the `popUpTo` anchor for tab switches. */
@@ -107,7 +104,6 @@ fun MainScaffold() {
                             TabKey.PATRIMONIO -> mainNavController.navigate(
                                 AddPatrimonio(isLiability = patrimonioIsLiability, groupId = null),
                             )
-                            TabKey.SUBSCRIPTIONS -> mainNavController.navigate(EditSubscription())
                             null -> Unit
                         }
                     },
@@ -185,19 +181,6 @@ fun MainScaffold() {
                     withdraw = route.withdraw,
                     onNavigateBack = { mainNavController.popBackStack() },
                     onEdit = { mainNavController.navigate(NewGoal(goalId = route.goalId)) },
-                )
-            }
-            composable<Subscriptions> {
-                SubscriptionsScreen(
-                    onAdd = { mainNavController.navigate(EditSubscription()) },
-                    onOpen = { id -> mainNavController.navigate(EditSubscription(subscriptionId = id)) },
-                )
-            }
-            composable<EditSubscription> { backStackEntry ->
-                val route = backStackEntry.toRoute<EditSubscription>()
-                SubscriptionSheet(
-                    subscriptionId = route.subscriptionId,
-                    onNavigateBack = { mainNavController.popBackStack() },
                 )
             }
         }
