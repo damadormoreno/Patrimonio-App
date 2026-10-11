@@ -71,6 +71,11 @@ producto puede llevar, opcionalmente, el banco o bróker que lo gestiona (*Banco
   habría que pasar a una fuente con licencia.
 - Los precios se actualizan al abrir la app si tienen más de 6 horas y con *Actualizar* (o
   deslizando hacia abajo) en la pestaña. Solo se admiten productos cotizados en EUR, USD, GBP o JPY.
+- **Ficha previa** (al pulsar un resultado de la búsqueda, antes de añadirlo): la misma información que el
+  detalle de un producto y su **encaje con tu cartera** (la seleccionada o todas): correlación con cada
+  producto y con la cartera, una conclusión (*diversifica poco* ≥ 0,9 · *moderadamente* · *aporta
+  diversificación* < 0,5) y, con un importe, cómo quedarían el peso, el TER y el riesgo medios y la
+  concentración. Su histórico se descarga solo para la ficha; *Añadir a la cartera* lleva al formulario.
 - **Detalle de un producto** (al pulsarlo): gráfica del precio (1M · 6M · 1A · 5A · Máx, deslizando el
   dedo se ve cada día), rentabilidad por año natural y anualizada a 1, 3 y 5 años, volatilidad
   (semanal anualizada, 3 años), máxima caída y, si Morningstar los tiene, gastos corrientes (TER) con

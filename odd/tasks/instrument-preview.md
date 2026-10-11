@@ -42,7 +42,7 @@ Out of scope: comparing two arbitrary products, saving a watchlist, benchmark co
 
 - [x] **T1 — Fit analytics + transient preview data** (pure calc + loader; route: delegated writer).
 - [x] **T2 — Preview screen + navigation from search to add form** (route: delegated writer).
-- [ ] **T3 — Docs** (route: inline): README *Cartera*.
+- [x] **T3 — Docs** (route: inline): README *Cartera*.
 
 ## Acceptance criteria
 
@@ -78,7 +78,8 @@ Out of scope: comparing two arbitrary products, saving a watchlist, benchmark co
   1,00, Vanguard 1,00, iShares 0,96); 30.000 € → 52,4 %, concentration warning; Xetra-Gold (`4GLD.DE`) →
   "Aporta diversificación" (0,13), 5.000 € → 15,5 %; back keeps the search; `Añadir a la cartera` opens the
   form with the product picked (portfolio picker shown: the emulator has 2 portfolios).
+- **T3** (commit below, `docs: document the product preview`): README *Cartera* (ficha previa).
 
 ## Next step
 
-T3 — docs, then push + PR.
+Done; push and PR to main.
