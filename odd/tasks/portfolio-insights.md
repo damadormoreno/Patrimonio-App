@@ -57,8 +57,8 @@ Out of scope: movements and real gains (phase 2), benchmarks/comparators, export
   max drawdown, weekly alignment, correlation matrix, constant-composition portfolio series in EUR,
   weighted TER/risk, allocations, concentration (route: delegated writer).
 - [x] **T3 — Position detail screen + reusable Canvas line chart** (route: delegated writer).
-- [ ] **T4 — Portfolio detail screen + correlation heatmap** (route: delegated writer).
-- [ ] **T5 — Docs** (route: inline): README *Cartera* section.
+- [x] **T4 — Portfolio detail screen + correlation heatmap** (route: delegated writer).
+- [x] **T5 — Docs** (route: inline): README *Cartera* section.
 
 ## Acceptance criteria
 
@@ -103,7 +103,20 @@ Out of scope: movements and real gains (phase 2), benchmarks/comparators, export
   1A +20,90 %, scrubbing over 26 years smooth (28/01/2014 · 14,108 €), calendar years match the fund's
   published figures (2022 −12,85 %, 2021 +30,98 %, 2018 −4,30 %), max drawdown −61,20 % (2000→2009),
   TER 0,18 % ≈ 23,31 €/año, SRRI 5.
+- **T4** (`66e7317`, `feat(portfolio): add the portfolio detail screen`): `PortfolioDetail` from the Cartera total
+  ("Ver detalle ›"); constant-composition chart (reuses T3 `LineChart`/cards), `Heatmap` + pure
+  `HeatmapColors`/`HeatmapLabels` (diverging `chartLoss`–`bg2`–`chartGain`, WCAG-contrast text), most
+  similar pair, allocations, TER/risk with coverage, concentration banner; heavy analysis on an injectable
+  dispatcher; `flatMapLatest` over the set of refs. RED: test sources failed to compile; GREEN 969 tests.
+- **Defect found in the manual test** → `38565b3` (`fix(portfolio): download daily Yahoo history`): Yahoo answers
+  `range=max` with MONTHLY bars (verified live: 206 points vs 4.362 with `period1/period2`), so IWDA.AS was
+  "Sin histórico suficiente" in the matrix. History now uses explicit `period1`/`period2`. RED→GREEN in
+  `YahooFinanceApiTest` (+ `CompositeQuoteSourceTest` URL). Emulator: Yahoo cache reset (unreleased
+  branch), IWDA.AS → 4.361 daily points; matrix 3×3 (0,96–1,00: the three track the MSCI World),
+  composition max drawdown −33,76 % (19/02/2020 → 23/03/2020).
+- **T5** (commit below, `docs: document the position and portfolio details`): README *Cartera* (details,
+  product vs own returns, history cache), backup v10, roadmap phase 2.
 
 ## Next step
 
-T4 — portfolio detail screen + correlation heatmap.
+Done. Push and PR to main (#30 merged).
