@@ -9,6 +9,9 @@ import com.denebapps.patrimonio.ui.screens.patrimonio.AddPatrimonioSheetViewMode
 import com.denebapps.patrimonio.ui.screens.patrimonio.GruposViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.PatrimonioViewModel
 import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
+import com.denebapps.patrimonio.ui.screens.portfolio.AddHoldingViewModel
+import com.denebapps.patrimonio.ui.screens.portfolio.CarteraViewModel
+import com.denebapps.patrimonio.ui.screens.portfolio.HoldingDetailViewModel
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
 import com.denebapps.patrimonio.ui.screens.settings.AccountTypesViewModel
 import com.denebapps.patrimonio.ui.screens.settings.BackupViewModel
@@ -27,7 +30,8 @@ import org.koin.dsl.module
  * [AddPatrimonioSheetViewModel] takes the `AddPatrimonio.isLiability`/`groupId`/`itemId` nav args via Koin's
  * parameter-injection lambda (`parametersOf(isLiability, groupId, itemId)`). [SavingsGoalsViewModel] backs
  * three destinations (the Metas de ahorro section, `NewGoal`, `GoalAllocate`): the first two resolve
- * it with empty params, while `GoalAllocateSheet` passes `parametersOf(goalId, withdraw)`.
+ * it with empty params, while `GoalAllocateSheet` passes `parametersOf(goalId, withdraw)`. [HoldingDetailViewModel]
+ * takes the `HoldingDetail.holdingId` nav arg as `parametersOf(holdingId)`.
  */
 val presentationModule = module {
     viewModel { AppViewModel(get(), get(), get()) }
@@ -100,4 +104,7 @@ val presentationModule = module {
             initialWithdraw = params.getOrNull() ?: false,
         )
     }
+    viewModel { CarteraViewModel(get(), get(), get<() -> TimeZone>()) }
+    viewModel { AddHoldingViewModel(get(), get(), get()) }
+    viewModel { params -> HoldingDetailViewModel(params.get(), get(), get(), get<() -> TimeZone>()) }
 }

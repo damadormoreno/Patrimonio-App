@@ -54,6 +54,7 @@ import com.denebapps.patrimonio.domain.calc.AccountAssignment
 import com.denebapps.patrimonio.domain.calc.SavingsGoalPace
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.TypeColor
 import com.denebapps.patrimonio.ui.components.EmptyState
 import com.denebapps.patrimonio.ui.components.FabContentBottomSpacing
 import com.denebapps.patrimonio.ui.components.HeaderIconBtn
@@ -91,7 +92,8 @@ private const val EUR_MINOR_SCALE = 100L
  * tap correctly (design.md Data Flow: `FAB(Patrimonio) -> navigate(AddPatrimonio)`). The Metas de
  * ahorro section is backed by a second, independent [SavingsGoalsViewModel] (design.md Decision 8) —
  * [onNewGoal]/[onGoalTap] are wired by `MainScaffold` to push `NewGoal`/`GoalAllocate(goalId)`. Tapping or
- * long-pressing an account calls [onEditItem] with the active view and the account id.
+ * long-pressing an account calls [onEditItem] with the active view and the account id. The investment portfolio
+ * shows as its own "Cartera" card among the assets; [onOpenCartera] switches to that tab.
  */
 @Composable
 fun PatrimonioScreen(
@@ -105,6 +107,7 @@ fun PatrimonioScreen(
     onViewChange: (PatrimonioView) -> Unit = {},
     onNewGoal: () -> Unit = {},
     onGoalTap: (String) -> Unit = {},
+    onOpenCartera: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val savingsState by savingsGoalsViewModel.state.collectAsState()
@@ -209,6 +212,12 @@ fun PatrimonioScreen(
                             onAdd = { onAddItem(state.view, group.groupId) },
                             onEditItem = { itemId -> onEditItem(state.view, itemId) },
                         )
+                    }
+                    // The portfolio is not an account, so the account filter does not apply to it: hide it
+                    // while a filter narrows the list rather than show it as if it matched.
+                    val portfolio = state.portfolio
+                    if (state.view == PatrimonioView.ACTIVOS && portfolio != null && !state.filter.isActive) {
+                        CarteraSummaryCard(portfolio = portfolio, onClick = onOpenCartera)
                     }
                 }
 
@@ -575,6 +584,42 @@ private fun PatrimonioGroupCard(
                 )
             }
         }
+    }
+}
+
+/** The investment portfolio as one card among the assets: its total and size; tapping it opens the Cartera tab. */
+@Composable
+private fun CarteraSummaryCard(portfolio: PortfolioSummaryUi, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = LocalAppColors.current
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(colors.surface)
+            .border(1.dp, colors.line, RoundedCornerShape(16.dp))
+            .clickable(onClickLabel = "Abrir cartera", onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            Modifier.size(32.dp).background(TypeColor.GREEN.toColor(), RoundedCornerShape(9.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(AppIcons.trend, contentDescription = null, tint = colors.surface2, modifier = Modifier.size(16.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text("Cartera", color = colors.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                text = if (portfolio.holdingCount == 1) "1 producto" else "${portfolio.holdingCount} productos",
+                color = colors.muted,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(top = 1.dp),
+            )
+        }
+        Text(text = formatMoneyEs(portfolio.total), color = colors.ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Icon(AppIcons.chevronR, contentDescription = null, tint = colors.muted, modifier = Modifier.size(17.dp))
     }
 }
 

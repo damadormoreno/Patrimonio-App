@@ -22,6 +22,10 @@ object MainZone
 @Serializable
 object Patrimonio
 
+/** The investment portfolio ("Cartera") tab. */
+@Serializable
+object Cartera
+
 // ── Main zone · pushed (non-tab) destinations ───────────────────────────────
 
 @Serializable
@@ -66,3 +70,11 @@ data class NewGoal(val goalId: String? = null)
  *  affordance — but stays user-switchable inside the sheet. */
 @Serializable
 data class GoalAllocate(val goalId: String, val withdraw: Boolean = false)
+
+/** Form that adds a holding to the portfolio: search a product, pick it and enter what is held, or enter it by hand. */
+@Serializable
+object AddHolding
+
+/** Detail of one portfolio holding: its value, units to edit, and delete. */
+@Serializable
+data class HoldingDetail(val holdingId: String)

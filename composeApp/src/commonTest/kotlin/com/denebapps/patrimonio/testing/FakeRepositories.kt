@@ -10,10 +10,13 @@ import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.HoldingValuation
+import com.denebapps.patrimonio.domain.model.InstrumentCandidate
+import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.NetWorthSnapshot
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
+import com.denebapps.patrimonio.domain.model.Quote
 import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.model.SavingsGoalAllocationEvent
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
@@ -38,6 +41,8 @@ import com.denebapps.patrimonio.domain.repository.PortfolioHoldingNotFoundExcept
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.PriceRefreshResult
+import com.denebapps.patrimonio.domain.repository.QuoteSource
+import com.denebapps.patrimonio.domain.repository.QuoteUnavailableException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalAssetNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalBuiltinGroupException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalGroupNotFoundException
@@ -476,6 +481,9 @@ class FakePortfolioRepository(
     var refreshResult = PriceRefreshResult(refreshed = 0, upToDate = 0, failures = emptyList())
     var refreshFailure: Throwable? = null
 
+    /** When set, [refreshPrices] suspends until it is completed, to observe a refresh in flight. */
+    var refreshGate: CompletableDeferred<Unit>? = null
+
     override fun observeAll(): Flow<List<PortfolioHolding>> = backing
 
     override suspend fun add(holding: PortfolioHolding) {
@@ -503,6 +511,7 @@ class FakePortfolioRepository(
 
     override suspend fun refreshPrices(force: Boolean): PriceRefreshResult {
         refreshCalls += force
+        refreshGate?.await()
         refreshFailure?.let { throw it }
         return refreshResult
     }
@@ -516,5 +525,30 @@ class FakePortfolioRepository(
 
     private fun replace(holding: PortfolioHolding) {
         backing.value = backing.value.map { if (it.id == holding.id) holding else it }
+    }
+}
+
+/**
+ * Scriptable [QuoteSource]: [searchResults] answers every search, [quotes] holds the price of each ref, and
+ * [searchFailure]/[quoteFailure] make the matching call throw. Every call is recorded.
+ */
+class FakeQuoteSource : QuoteSource {
+    var searchResults: List<InstrumentCandidate> = emptyList()
+    var searchFailure: Throwable? = null
+    val quotes = mutableMapOf<InstrumentRef, Quote>()
+    var quoteFailure: Throwable? = null
+    val searches = mutableListOf<String>()
+    val quoteRequests = mutableListOf<InstrumentRef>()
+
+    override suspend fun search(query: String): List<InstrumentCandidate> {
+        searches += query
+        searchFailure?.let { throw it }
+        return searchResults
+    }
+
+    override suspend fun latestQuote(ref: InstrumentRef): Quote {
+        quoteRequests += ref
+        quoteFailure?.let { throw it }
+        return quotes[ref] ?: throw QuoteUnavailableException("No quote scripted for $ref")
     }
 }

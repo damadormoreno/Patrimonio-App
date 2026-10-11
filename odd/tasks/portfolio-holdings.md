@@ -56,7 +56,7 @@ charts, XIRR/TWR, broker imports, crypto.
   migration test, repository, price refresh policy, backup/clear-all/cloud keys.
 - [x] **T4 — Net worth integration** (route: delegated writer). Snapshot upserter + Patrimonio totals and
   "Cartera" composition share.
-- [ ] **T5 — Cartera tab UI** (route: delegated writer). List with total and per-holding value/price date,
+- [x] **T5 — Cartera tab UI** (route: delegated writer). List with total and per-holding value/price date,
   add sheet (search → pick → units or total; manual mode), delete, refresh.
 - [ ] **T6 — Docs** (route: inline). README roadmap/backup sections.
 
@@ -117,7 +117,13 @@ One branch, one PR. The ~400-line heuristic does not apply (user decision, 2026-
   no longer empty with only holdings. Clear-all already wipes snapshots (`netWorthDao().deleteAll()`).
   RED: 53 tests, 15 failed (upserter, repository, ViewModel). GREEN (parent re-run): ktlint, 591 tests,
   assemble, iOS compile.
+- **T5** (commit below, `feat(portfolio): add the Cartera tab`): `TabKey.CARTERA` (icon `trend`) as second tab;
+  `CarteraScreen` (total, rows, "Actualizar" + pull-to-refresh, failure banner), `AddHoldingSheet` (400 ms
+  debounced search, pick → quote, `Participaciones | Importe actual` with live previews, manual fallback and
+  "Añadir manualmente"), `HoldingDetailSheet` (edit units/value, delete with confirmation); "Cartera" card on
+  Patrimonio switches tab; `parseUnitsEs`/`formatUnits`. RED: 79 tests, 74 failed against stubs.
+  GREEN (parent re-run): ktlint, 663 tests, assemble, iOS compile.
 
 ## Next step
 
-T5 — Cartera tab UI.
+Manual emulator test (v6 → v8 on device, live quotes), then T6 docs.

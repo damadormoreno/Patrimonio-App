@@ -8,6 +8,7 @@ import kotlinx.serialization.serializer
  */
 enum class TabKey(val id: String, val label: String, val iconName: String) {
     PATRIMONIO("patrimonio", "Patrimonio", "wallet"),
+    CARTERA("cartera", "Cartera", "trend"),
     ;
 
     companion object {
@@ -20,7 +21,7 @@ enum class TabKey(val id: String, val label: String, val iconName: String) {
  * Pure route↔tab mapping helper — no Compose/navigation-library dependency, unit-tested
  * directly (see `TabMappingTest`). [tabForRoute] takes `NavDestination.route` (the
  * type-safe route's [routeName]) and returns the matching [TabKey], or `null`
- * for non-tab (pushed) routes such as [Settings]/[Profile]/[AddPatrimonio].
+ * for non-tab (pushed) routes such as [Settings]/[Profile]/[AddPatrimonio]/[AddHolding].
  */
 /**
  * The route name navigation gives a type-safe destination without arguments: its serial name, a string
@@ -37,6 +38,7 @@ object TabMapping {
 
     private val routeNameToTab: Map<String?, TabKey> = mapOf(
         routeName<Patrimonio>() to TabKey.PATRIMONIO,
+        routeName<Cartera>() to TabKey.CARTERA,
     )
 
     /** Maps a destination's route name to its [TabKey], or `null` if it is not a tab route. */
