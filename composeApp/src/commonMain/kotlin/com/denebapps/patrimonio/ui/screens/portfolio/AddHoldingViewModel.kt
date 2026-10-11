@@ -7,6 +7,7 @@ import com.denebapps.patrimonio.domain.calc.parseAmountToMinor
 import com.denebapps.patrimonio.domain.calc.parseUnitsEs
 import com.denebapps.patrimonio.domain.calc.quotedValue
 import com.denebapps.patrimonio.domain.calc.unitsFromTotal
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.HoldingValuation
@@ -75,6 +76,7 @@ data class QuoteUi(val priceText: String, val dateText: String, val currency: Cu
  * is the live "≈ ..." line of the entry form and [canSave] says whether Save is enabled. [broker] is the optional bank
  * or broker field, as typed, shared by the entry and the manual forms. [portfolios] are the portfolios to choose from
  * and [portfolioId] the one the holding is added to; the picker is only shown ([canPickPortfolio]) with several.
+ * [assetClass] is the state of the "Clase de activo" picker, shared by the entry and the manual forms.
  */
 data class AddHoldingUiState(
     val stage: AddHoldingStage = AddHoldingStage.SEARCH,
@@ -93,6 +95,7 @@ data class AddHoldingUiState(
     val broker: String = "",
     val portfolios: List<PortfolioOptionUi> = emptyList(),
     val portfolioId: String? = null,
+    val assetClass: AssetClassChoiceUi = AssetClassChoiceUi(),
     val canSave: Boolean = false,
 ) {
     val canPickPortfolio: Boolean get() = portfolios.size >= MIN_PORTFOLIOS_TO_CHOOSE
@@ -107,7 +110,9 @@ private class EntryResult(val units: Units, val preview: String)
  * are derived from the price). A product that cannot be found, or whose price cannot be fetched, is added by hand
  * with a value of the user's own. Save stores the holding, with the fundamentals (cost, risk, category, manager) the
  * search already knew about the picked product, and emits one [navigateBack]. The holding goes to the portfolio chosen
- * with [onPortfolioChange], which starts as the one selected in Cartera (the first one when all are shown).
+ * with [onPortfolioChange], which starts as the one selected in Cartera (the first one when all are shown). The asset
+ * class starts as the one the product's category or type implies; [onAssetClassChange] picks another one. Only a class
+ * different from the inferred one is stored with the holding, so that a category that changes later keeps classifying it.
  */
 class AddHoldingViewModel(
     private val quoteSource: QuoteSource,
@@ -133,6 +138,7 @@ class AddHoldingViewModel(
     private var candidates: List<InstrumentCandidate> = emptyList()
     private var pickedCandidate: InstrumentCandidate? = null
     private var pickedQuote: Quote? = null
+    private var pickedClass: AssetClass? = null
     private var searchJob: Job? = null
     private var quoteJob: Job? = null
     private var saving = false
@@ -194,6 +200,7 @@ class AddHoldingViewModel(
         quoteJob?.cancel()
         pickedCandidate = candidate
         pickedQuote = null
+        pickedClass = null
         update {
             it.copy(
                 stage = AddHoldingStage.LOADING_QUOTE,
@@ -268,6 +275,12 @@ class AddHoldingViewModel(
 
     fun onTypeChange(type: InstrumentType) = update { it.copy(type = type) }
 
+    /** Picks the class of the holding; `null` leaves it to the app (the inferred one, if any). */
+    fun onAssetClassChange(assetClass: AssetClass?) {
+        pickedClass = assetClass
+        update { it }
+    }
+
     fun onCurrencyChange(currency: Currency) = update { it.copy(currency = currency) }
 
     /** The field holds at most [MAX_BROKER_LENGTH] characters; trimming happens once, when saving. */
@@ -318,9 +331,16 @@ class AddHoldingViewModel(
                 valuation = valuation,
                 broker = broker,
                 fundamentals = candidate.fundamentals,
+                assetClass = storedClass(form.assetClass),
             )
         }
     }
+
+    private fun classChoice(type: InstrumentType) =
+        assetClassChoice(pickedClass, pickedCandidate?.fundamentals?.category, type)
+
+    /** The class to store: the one picked, unless it is what the product implies anyway. */
+    private fun storedClass(choice: AssetClassChoiceUi): AssetClass? = choice.explicit?.takeIf { it != choice.inferred }
 
     private fun manualHolding(form: AddHoldingUiState): ((String) -> PortfolioHolding)? {
         val minor = parseAmountToMinor(form.amountText, form.currency) ?: return null
@@ -343,6 +363,7 @@ class AddHoldingViewModel(
                 valuation = valuation,
                 broker = broker,
                 fundamentals = candidate?.fundamentals,
+                assetClass = storedClass(form.assetClass),
             )
         }
     }
@@ -365,6 +386,7 @@ class AddHoldingViewModel(
     private fun clearPicked() {
         pickedCandidate = null
         pickedQuote = null
+        pickedClass = null
     }
 
     private fun manualForm(form: AddHoldingUiState, name: String, type: InstrumentType, currency: Currency) = form.copy(
@@ -384,13 +406,18 @@ class AddHoldingViewModel(
     private fun withDerived(form: AddHoldingUiState): AddHoldingUiState = when (form.stage) {
         AddHoldingStage.ENTRY -> {
             val result = entryResult(form)
-            form.copy(preview = result?.preview, canSave = result != null)
+            form.copy(
+                preview = result?.preview,
+                assetClass = classChoice(pickedCandidate?.type ?: form.type),
+                canSave = result != null,
+            )
         }
         AddHoldingStage.MANUAL -> form.copy(
             preview = null,
+            assetClass = classChoice(form.type),
             canSave = form.name.isNotBlank() && parseAmountToMinor(form.amountText, form.currency) != null,
         )
-        else -> form.copy(preview = null, canSave = false)
+        else -> form.copy(preview = null, assetClass = AssetClassChoiceUi(), canSave = false)
     }
 
     /** `null` while the entered units or total are invalid, zero, or do not fit the fixed-point range. */

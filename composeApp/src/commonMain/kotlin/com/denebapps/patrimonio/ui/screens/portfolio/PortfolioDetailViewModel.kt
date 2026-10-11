@@ -207,6 +207,7 @@ class PortfolioDetailViewModel(
             historyStatus = status,
             evolution = if (available) evolutionOf(analysis, range) else null,
             correlation = analysis.correlation.takeIf { available },
+            classAllocation = analysis.classAllocation,
             allocations = analysis.allocations,
             costsRisk = analysis.costsRisk,
             concentration = analysis.concentration,

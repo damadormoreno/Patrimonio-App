@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.domain.calc
 
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.DatedFxRate
@@ -163,6 +164,7 @@ class PortfolioAnalyticsTest {
         broker: String? = null,
         fundamentals: InstrumentFundamentals? = null,
         currency: Currency = price?.currency ?: Currency.EUR,
+        assetClass: AssetClass? = null,
     ) = PortfolioHolding(
         id = id,
         portfolioId = TEST_PORTFOLIO_ID,
@@ -178,6 +180,7 @@ class PortfolioAnalyticsTest {
         ),
         broker = broker,
         fundamentals = fundamentals,
+        assetClass = assetClass,
     )
 
     private fun manual(
@@ -185,6 +188,7 @@ class PortfolioAnalyticsTest {
         wholeEur: Long,
         broker: String? = null,
         fundamentals: InstrumentFundamentals? = null,
+        assetClass: AssetClass? = null,
     ) = PortfolioHolding(
         id = id,
         portfolioId = TEST_PORTFOLIO_ID,
@@ -195,6 +199,7 @@ class PortfolioAnalyticsTest {
         valuation = HoldingValuation.Manual(CurrencyAmount(eurCents(wholeEur), Currency.EUR), 1L),
         broker = broker,
         fundamentals = fundamentals,
+        assetClass = assetClass,
     )
 
     private fun eur(whole: Long) = Price(whole * 1_000_000L, Currency.EUR)
@@ -325,6 +330,74 @@ class PortfolioAnalyticsTest {
         assertEquals(listOf(Currency.EUR, Currency.USD), byCurrency.map { it.key })
         assertEquals(listOf(eurCents(1100), eurCents(900)), byCurrency.map { it.valueEur })
         assertClose(0.55, byCurrency[0].share)
+    }
+
+    @Test
+    fun `allocation by asset class uses the explicit class first and the inferred one after`() {
+        val equityFund = quoted("e", 10, eur(50), fundamentals = InstrumentFundamentals(category = "RV Global"))
+        val bondEtf = quoted(
+            "f",
+            10,
+            usd(100),
+            InstrumentType.ETF,
+            fundamentals = InstrumentFundamentals(category = "RF Deuda Pública EUR"),
+        )
+        // Explicit choice beats the inferred equity class of its category.
+        val relabelled = quoted(
+            "g",
+            10,
+            eur(10),
+            fundamentals = InstrumentFundamentals(category = "RV Global"),
+            assetClass = AssetClass.MIXED,
+        )
+        val gold = manual("h", 600, assetClass = AssetClass.COMMODITIES)
+
+        val byClass = allocationByAssetClass(listOf(equityFund, bondEtf, relabelled, gold), rates)
+
+        // Equity 500; fixed income 900 (USD at 0.9); mixed 100; commodities 600.
+        assertEquals(
+            listOf<AssetClass?>(
+                AssetClass.FIXED_INCOME,
+                AssetClass.COMMODITIES,
+                AssetClass.EQUITY,
+                AssetClass.MIXED,
+            ),
+            byClass.map { it.key },
+        )
+        assertEquals(listOf(eurCents(900), eurCents(600), eurCents(500), eurCents(100)), byClass.map { it.valueEur })
+        assertClose(900.0 / 2100.0, byClass[0].share)
+        assertClose(600.0 / 2100.0, byClass[1].share)
+        assertClose(500.0 / 2100.0, byClass[2].share)
+        assertClose(100.0 / 2100.0, byClass[3].share)
+        assertClose(1.0, byClass.sumOf { it.share })
+    }
+
+    @Test
+    fun `allocation by asset class gathers the unclassified holdings under a null key`() {
+        val classified = manual("x", 300, assetClass = AssetClass.CRYPTO)
+        val byClass = allocationByAssetClass(listOf(a, b, c, d, classified), rates)
+
+        // Unclassified: a 500 + b 900 + c 600 = 2000 (0.869...); crypto 300; d has no value.
+        assertEquals(listOf<AssetClass?>(null, AssetClass.CRYPTO), byClass.map { it.key })
+        assertEquals(listOf(eurCents(2000), eurCents(300)), byClass.map { it.valueEur })
+        assertClose(2000.0 / 2300.0, byClass[0].share)
+        assertClose(300.0 / 2300.0, byClass[1].share)
+    }
+
+    @Test
+    fun `asset class shares add up to one and a stock without a category counts as equity`() {
+        val stock = quoted("s", 10, eur(20), InstrumentType.STOCK)
+        val byClass = allocationByAssetClass(listOf(a, b, c, stock), rates)
+
+        assertEquals(listOf<AssetClass?>(null, AssetClass.EQUITY), byClass.map { it.key })
+        assertClose(1.0, byClass.sumOf { it.share })
+        assertEquals(portfolioTotalEur(listOf(a, b, c, stock), rates), Money(byClass.sumOf { it.valueEur.minorUnits }))
+    }
+
+    @Test
+    fun `allocation by asset class of an empty or valueless portfolio is empty`() {
+        assertEquals(emptyList(), allocationByAssetClass(emptyList(), rates))
+        assertEquals(emptyList(), allocationByAssetClass(listOf(d), rates))
     }
 
     @Test

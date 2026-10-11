@@ -118,5 +118,29 @@ private fun ProjectionCard(projection: ProjectionUi) {
             }
         }
     }
+    projection.classMix?.let { ClassMix(it) }
     projection.warning?.let { WarningBanner(it, Modifier.padding(top = 10.dp)) }
+}
+
+/** The asset class mix before and after, a row per class, and under which class the product counts. */
+@Composable
+private fun ClassMix(mix: ClassMixUi) {
+    val colors = LocalAppColors.current
+    SectionLabel("Reparto por clase de activo")
+    DetailCard {
+        mix.rows.forEachIndexed { index, row ->
+            SectionRow(
+                title = row.label,
+                showDivider = index != mix.rows.lastIndex,
+                trailing = { RowValue(row.changeText, colors.ink) },
+            )
+        }
+    }
+    Text(
+        text = mix.note,
+        color = colors.muted,
+        fontSize = 12.sp,
+        lineHeight = 17.sp,
+        modifier = Modifier.padding(top = 8.dp),
+    )
 }

@@ -1,5 +1,7 @@
 package com.denebapps.patrimonio.ui.screens.portfolio
 
+import com.denebapps.patrimonio.domain.model.AssetClass
+
 // What the portfolio detail screen shows, every text ready to show.
 
 /** The title of the detail of every portfolio together; the detail of one is titled with its name. */
@@ -61,6 +63,27 @@ data class CorrelationSectionUi(
 /** A bucket of a split: its [label], [amountText] in euros, [shareText] and the length of its bar [share] (0 to 1). */
 data class AllocationRowUi(val label: String, val amountText: String, val shareText: String, val share: Float)
 
+/** The title of the section that splits the portfolio by asset class. */
+internal const val CLASS_ALLOCATION_TITLE = "Reparto por clase de activo"
+
+/** Shown under the split while some holdings have no class. */
+internal const val UNCLASSIFIED_HINT = "Asigna su clase desde la ficha del producto."
+
+/** A class of the split ([assetClass] is `null` for the unclassified holdings): its row texts and bar length. */
+data class ClassRowUi(
+    val assetClass: AssetClass?,
+    val label: String,
+    val amountText: String,
+    val shareText: String,
+    val share: Float,
+)
+
+/**
+ * The portfolio split by asset class: a [rows] entry per class, largest first with the unclassified last, and the
+ * [unclassifiedHint] while there are unclassified holdings.
+ */
+data class ClassAllocationUi(val rows: List<ClassRowUi>, val unclassifiedHint: String?)
+
 /** A way of splitting the portfolio ("Por tipo") and its buckets, largest first. */
 data class AllocationGroupUi(val title: String, val rows: List<AllocationRowUi>)
 
@@ -90,6 +113,7 @@ data class PortfolioDetailUiState(
     val historyStatus: HistoryStatus = HistoryStatus.NOT_APPLICABLE,
     val evolution: EvolutionUi? = null,
     val correlation: CorrelationSectionUi? = null,
+    val classAllocation: ClassAllocationUi? = null,
     val allocations: List<AllocationGroupUi> = emptyList(),
     val costsRisk: CostsRiskUi? = null,
     val concentration: ConcentrationUi? = null,

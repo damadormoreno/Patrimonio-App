@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.data.backup
 
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.repository.InvalidBackupException
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -71,6 +72,8 @@ class BackupCodecTest {
         managementCompany = "Vanguard",
     )
 
+    private val classifiedFund = pricedFund.copy(id = "p6", assetClass = "FIXED_INCOME")
+
     private val full = BackupDocument(
         exportedAt = "2026-10-06T10:00:00Z",
         accountTypes = listOf(watches),
@@ -85,7 +88,7 @@ class BackupCodecTest {
             SavingsGoalAllocationEventBackup(2, "goal-1", -20_000, 2_000),
         ),
         portfolios = listOf(miCartera, hijos),
-        portfolioHoldings = listOf(pricedFund, unpricedEtf, painting, brokerPainting, fundamentalsFund),
+        portfolioHoldings = listOf(pricedFund, unpricedEtf, painting, brokerPainting, fundamentalsFund, classifiedFund),
         savingsGoalLinkEvents = listOf(
             SavingsGoalLinkEventBackup(1, "goal-1", null, "a1", "LINK", 1_000),
             SavingsGoalLinkEventBackup(2, "goal-2", null, null, "LINK", 1_000, fromGroupId = null, toGroupId = "g1"),
@@ -115,7 +118,7 @@ class BackupCodecTest {
         val json = BackupCodec.encode(BackupDocument(exportedAt = "2026-10-06T10:00:00Z"))
 
         assertTrue(""""format": "patrimonio-backup"""" in json, json)
-        assertTrue(""""version": 11""" in json, json)
+        assertTrue(""""version": 12""" in json, json)
         assertTrue(""""portfolioHoldings"""" in json, json)
         assertTrue(""""portfolios"""" in json, json)
         assertFalse("subscriptions" in json, json)
@@ -237,10 +240,10 @@ class BackupCodecTest {
     @Test
     fun `newer format version is rejected with an update hint`() {
         val error = assertFailsWith<InvalidBackupException> {
-            BackupCodec.decode("""{"format":"patrimonio-backup","version":12,"exportedAt":"x"}""")
+            BackupCodec.decode("""{"format":"patrimonio-backup","version":13,"exportedAt":"x"}""")
         }
 
-        assertTrue("v12" in error.message.orEmpty())
+        assertTrue("v13" in error.message.orEmpty())
     }
 
     @Test
@@ -396,9 +399,26 @@ class BackupCodecTest {
         val decoded = BackupCodec.decode(BackupCodec.encode(full))
 
         assertEquals(
-            listOf(pricedFund, unpricedEtf, painting, brokerPainting, fundamentalsFund),
+            listOf(pricedFund, unpricedEtf, painting, brokerPainting, fundamentalsFund, classifiedFund),
             decoded.portfolioHoldings,
         )
+    }
+
+    @Test
+    fun `a crypto holding quoted by CoinGecko survives a round trip while unknown names are still refused`() {
+        val bitcoin = unpricedEtf.copy(
+            id = "p7",
+            name = "Bitcoin",
+            type = "CRYPTO",
+            ticker = "BTC",
+            provider = "COINGECKO",
+            providerCode = "bitcoin",
+            assetClass = "CRYPTO",
+        )
+
+        assertEquals(listOf(bitcoin), roundTrip(bitcoin))
+        assertTrue("tipo" in holdingReason(bitcoin.copy(type = "NFT")))
+        assertTrue("proveedor" in holdingReason(bitcoin.copy(provider = "BINANCE")))
     }
 
     @Test
@@ -556,12 +576,60 @@ class BackupCodecTest {
     }
 
     @Test
+    fun `a holding keeps its asset class through a round trip and none stays none`() {
+        AssetClass.entries.forEach { assetClass ->
+            val holding = pricedFund.copy(assetClass = assetClass.name)
+            assertEquals(listOf(holding), roundTrip(holding), assetClass.name)
+        }
+        val manualCrypto = painting.copy(assetClass = "CRYPTO")
+        assertEquals(listOf(manualCrypto), roundTrip(manualCrypto))
+        assertNull(roundTrip(pricedFund).single().assetClass)
+    }
+
+    @Test
+    fun `a version 11 backup with holdings imports them with no asset class`() {
+        val document = BackupCodec.decode(
+            """
+            {
+              "format": "patrimonio-backup",
+              "version": 11,
+              "exportedAt": "2026-10-06T10:00:00Z",
+              "portfolios": [{"id": "pf-1", "name": "Mi cartera", "sortOrder": 0}],
+              "portfolioHoldings": [
+                {"id": "p3", "portfolioId": "pf-1", "name": "Cuadro", "type": "OTHER", "kind": "MANUAL",
+                 "currency": "USD", "valueMinor": 250000, "valuedAtEpochMs": 7, "category": "Otros"}
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(listOf(painting.copy(category = "Otros")), document.portfolioHoldings)
+        assertNull(document.portfolioHoldings.single().assetClass)
+    }
+
+    @Test
+    fun `an asset class must be a known one`() {
+        listOf("", "crypto", "BONDS", " EQUITY").forEach { name ->
+            assertTrue("clase de activo" in holdingReason(pricedFund.copy(assetClass = name)), name)
+        }
+        assertTrue("BONDS" in holdingReason(pricedFund.copy(assetClass = "BONDS")))
+        assertTrue("Vanguard Global Stock" in holdingReason(pricedFund.copy(assetClass = "BONDS")))
+    }
+
+    @Test
     fun `portfolios survive a round trip in the order they were saved`() {
         val decoded = BackupCodec.decode(BackupCodec.encode(full))
 
         assertEquals(listOf(miCartera, hijos), decoded.portfolios)
         assertEquals(
-            mapOf("p1" to "pf-1", "p2" to "pf-1", "p3" to "pf-1", "p4" to "pf-2", "p5" to "pf-1"),
+            mapOf(
+                "p1" to "pf-1",
+                "p2" to "pf-1",
+                "p3" to "pf-1",
+                "p4" to "pf-2",
+                "p5" to "pf-1",
+                "p6" to "pf-1",
+            ),
             decoded.portfolioHoldings.associate { it.id to it.portfolioId },
         )
     }

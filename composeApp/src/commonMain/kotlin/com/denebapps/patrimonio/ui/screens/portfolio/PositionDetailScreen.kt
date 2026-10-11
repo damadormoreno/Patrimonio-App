@@ -137,6 +137,7 @@ private fun HistorySections(state: PositionDetailUiState, onRangeSelect: (Histor
                 annualized = state.annualized,
                 risk = state.risk,
                 onRangeSelect = onRangeSelect,
+                chartNote = state.chartNote,
             )
         }
     }
@@ -199,6 +200,7 @@ private fun Header(header: PositionHeaderUi) {
             Text(text = header.identifier, color = colors.muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
         }
     }
+    Text(text = header.classText, color = colors.ink2, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
     header.broker?.let {
         Text(
             text = it,
@@ -207,7 +209,7 @@ private fun Header(header: PositionHeaderUi) {
             fontWeight = FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 6.dp),
+            modifier = Modifier.padding(top = 2.dp),
         )
     }
     Text(

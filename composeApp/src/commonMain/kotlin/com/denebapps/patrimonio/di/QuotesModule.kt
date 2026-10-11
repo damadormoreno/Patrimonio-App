@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.di
 
+import com.denebapps.patrimonio.data.quotes.CoinGeckoApi
 import com.denebapps.patrimonio.data.quotes.CompositeQuoteSource
 import com.denebapps.patrimonio.data.quotes.MorningstarApi
 import com.denebapps.patrimonio.data.quotes.QuoteHttp
@@ -19,7 +20,8 @@ val quotesModule = module {
     single { QuoteHttp(get()) }
     single { MorningstarApi(get(), get()) }
     single { YahooFinanceApi(get(), get()) }
-    single { CompositeQuoteSource(get(), get()) } binds arrayOf(
+    single { CoinGeckoApi(get(), get()) }
+    single { CompositeQuoteSource(get(), get(), get()) } binds arrayOf(
         QuoteSource::class,
         PriceHistorySource::class,
         FundamentalsSource::class,

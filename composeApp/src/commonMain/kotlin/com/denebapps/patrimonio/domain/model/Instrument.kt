@@ -1,14 +1,15 @@
 package com.denebapps.patrimonio.domain.model
 
 /** Kind of tradable product a holding can track. */
-enum class InstrumentType { FUND, ETF, STOCK, OTHER }
+enum class InstrumentType { FUND, ETF, STOCK, CRYPTO, OTHER }
 
 /** Public data source that quotes an instrument. */
-enum class QuoteProvider { MORNINGSTAR, YAHOO }
+enum class QuoteProvider { MORNINGSTAR, YAHOO, COINGECKO }
 
 /**
  * Provider-scoped identifier of an instrument: a Morningstar SecId (e.g. `0P00012PP6`) when [provider] is
- * [QuoteProvider.MORNINGSTAR], or a Yahoo Finance symbol (e.g. `IWDA.AS`) when it is [QuoteProvider.YAHOO].
+ * [QuoteProvider.MORNINGSTAR], a Yahoo Finance symbol (e.g. `IWDA.AS`) when it is [QuoteProvider.YAHOO], or a CoinGecko
+ * coin id (e.g. `bitcoin`) when it is [QuoteProvider.COINGECKO].
  */
 data class InstrumentRef(val provider: QuoteProvider, val code: String)
 

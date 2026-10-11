@@ -10,12 +10,16 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
+
+private const val NO_COINS_JSON = """{"coins":[]}"""
 
 class CompositeQuoteSourceTest {
     private class Hits {
         val morningstar = mutableListOf<String>()
         val yahoo = mutableListOf<String>()
+        val coinGecko = mutableListOf<String>()
     }
 
     /** Builds the composite over one mock engine; a handler returning `null` answers 404 (provider "down"). */
@@ -23,19 +27,26 @@ class CompositeQuoteSourceTest {
         hits: Hits = Hits(),
         morningstar: (String) -> String? = { SCREENER_JSON },
         yahoo: (String) -> String? = { YAHOO_SEARCH_JSON },
+        coinGecko: (String) -> String? = { NO_COINS_JSON },
     ): CompositeQuoteSource {
         val http = quoteHttp { request ->
             val url = request.url.toString()
-            val (hitList, answer) = if (request.url.host == "lt.morningstar.com") {
-                hits.morningstar to morningstar(url)
-            } else {
-                hits.yahoo to yahoo(url)
+            val (hitList, answer) = when (request.url.host) {
+                "lt.morningstar.com" -> hits.morningstar to morningstar(url)
+                "api.coingecko.com" -> hits.coinGecko to coinGecko(url)
+                else -> hits.yahoo to yahoo(url)
             }
             hitList += url
             if (answer == null) respondJson("", HttpStatusCode.NotFound) else respondJson(answer)
         }
-        return CompositeQuoteSource(MorningstarApi(http, FixedClock(FIXED_NOW)), YahooFinanceApi(http))
+        return CompositeQuoteSource(
+            MorningstarApi(http, FixedClock(FIXED_NOW)),
+            YahooFinanceApi(http),
+            CoinGeckoApi(http, FixedClock(FIXED_NOW)),
+        )
     }
+
+    private val yahooResultCodes = listOf("IWDA.AS", "AAPL", "0P0000ZZ99.F")
 
     private val yahooWithMorningstarTwin = """
         {"quotes":[
@@ -97,15 +108,91 @@ class CompositeQuoteSourceTest {
     }
 
     @Test
-    fun `a ticker or a name searches Yahoo only`() = runTest {
+    fun `a ticker or a name searches Yahoo and CoinGecko but never Morningstar`() = runTest {
         val hits = Hits()
 
         val candidates = source(hits).search("IWDA")
 
         assertTrue(hits.morningstar.isEmpty())
         assertEquals(1, hits.yahoo.size)
-        assertEquals(listOf("IWDA.AS", "AAPL", "0P0000ZZ99.F"), candidates.map { it.ref.code })
+        assertEquals(1, hits.coinGecko.size)
+        assertTrue(hits.coinGecko.single().endsWith("/search?query=IWDA"))
+        assertEquals(yahooResultCodes, candidates.map { it.ref.code })
         assertTrue(candidates.all { it.isin == null })
+    }
+
+    @Test
+    fun `without an exact match the top three coins follow the Yahoo results`() = runTest {
+        val candidates = source(coinGecko = { COINGECKO_SEARCH_JSON }).search("apple")
+
+        assertEquals(
+            yahooResultCodes.map { InstrumentRef(QuoteProvider.YAHOO, it) } + listOf(
+                InstrumentRef(QuoteProvider.COINGECKO, "bitcoin"),
+                InstrumentRef(QuoteProvider.COINGECKO, "bitcoin-cash"),
+                InstrumentRef(QuoteProvider.COINGECKO, "bitcoin-cash-sv"),
+            ),
+            candidates.map { it.ref },
+        )
+    }
+
+    @Test
+    fun `a coin whose symbol or name equals the query goes first and the other coins are left out`() = runTest {
+        val bySymbol = source(coinGecko = { COINGECKO_SEARCH_JSON }).search(" btc ")
+        val byName = source(coinGecko = { COINGECKO_SEARCH_JSON }).search("BITCOIN CASH")
+        val bySuffix = source(coinGecko = { COINGECKO_SEARCH_JSON }).search("bsv")
+
+        assertEquals(
+            listOf(InstrumentRef(QuoteProvider.COINGECKO, "bitcoin")) +
+                yahooResultCodes.map { InstrumentRef(QuoteProvider.YAHOO, it) },
+            bySymbol.map { it.ref },
+        )
+        assertEquals(InstrumentRef(QuoteProvider.COINGECKO, "bitcoin-cash"), byName.first().ref)
+        assertEquals(yahooResultCodes.size + 1, byName.size)
+        assertEquals(InstrumentRef(QuoteProvider.COINGECKO, "bitcoin-cash-sv"), bySuffix.first().ref)
+    }
+
+    @Test
+    fun `at most three exact coin matches are put first`() = runTest {
+        val coins = (1..5).joinToString(
+            ",",
+        ) { """{"id":"abc-$it","name":"Abc $it","symbol":"ABC","market_cap_rank":$it}""" }
+
+        val candidates = source(coinGecko = { """{"coins":[$coins]}""" }).search("abc")
+
+        assertEquals(listOf("abc-1", "abc-2", "abc-3") + yahooResultCodes, candidates.map { it.ref.code })
+    }
+
+    @Test
+    fun `Yahoo crypto results stay skipped because CoinGecko is the crypto source`() = runTest {
+        val candidates = source(coinGecko = { COINGECKO_SEARCH_JSON }).search("btc")
+
+        assertTrue(candidates.none { it.ref.provider == QuoteProvider.YAHOO && it.ref.code == "BTC-USD" })
+        assertTrue(
+            candidates.filter { it.type == InstrumentType.CRYPTO }.all { it.ref.provider == QuoteProvider.COINGECKO },
+        )
+    }
+
+    @Test
+    fun `a name search survives CoinGecko being down`() = runTest {
+        val candidates = source(coinGecko = { null }).search("apple")
+
+        assertEquals(yahooResultCodes, candidates.map { it.ref.code })
+    }
+
+    @Test
+    fun `a name search survives Yahoo being down and still offers the coins`() = runTest {
+        val candidates = source(yahoo = { null }, coinGecko = { COINGECKO_SEARCH_JSON }).search("apple")
+
+        assertEquals(listOf("bitcoin", "bitcoin-cash", "bitcoin-cash-sv"), candidates.map { it.ref.code })
+    }
+
+    @Test
+    fun `an ISIN search never asks CoinGecko`() = runTest {
+        val hits = Hits()
+
+        source(hits, coinGecko = { COINGECKO_SEARCH_JSON }).search(ISIN_FUND)
+
+        assertTrue(hits.coinGecko.isEmpty())
     }
 
     @Test
@@ -145,8 +232,8 @@ class CompositeQuoteSourceTest {
     }
 
     @Test
-    fun `a name search fails when Yahoo fails`() = runTest {
-        assertFailsWith<QuoteUnavailableException> { source(yahoo = { null }).search("apple") }
+    fun `a name search fails when Yahoo and CoinGecko both fail`() = runTest {
+        assertFailsWith<QuoteUnavailableException> { source(yahoo = { null }, coinGecko = { null }).search("apple") }
     }
 
     @Test
@@ -177,6 +264,34 @@ class CompositeQuoteSourceTest {
         assertTrue("timeseries_price" in hits.morningstar.single())
         assertEquals(1, hits.yahoo.size)
         assertTrue("period1=0&" in hits.yahoo.single())
+    }
+
+    @Test
+    fun `CoinGecko quotes and history are routed to CoinGecko`() = runTest {
+        val hits = Hits()
+        val source = source(
+            hits,
+            coinGecko = { url -> if ("simple/price" in url) COINGECKO_PRICE_JSON else COINGECKO_CHART_JSON },
+        )
+        val bitcoin = InstrumentRef(QuoteProvider.COINGECKO, "bitcoin")
+
+        val quote = source.latestQuote(bitcoin)
+        val history = source.priceHistory(bitcoin, from = null)
+
+        assertEquals(74_052_000_000L, quote.price.scaled)
+        assertEquals(listOf(100_500_000L, 101_250_000L, 103_500_000L), history.map { it.price.scaled })
+        assertEquals(2, hits.coinGecko.size)
+        assertTrue(hits.morningstar.isEmpty() && hits.yahoo.isEmpty())
+    }
+
+    @Test
+    fun `a CoinGecko holding has no fundamentals and asks nobody`() = runTest {
+        val hits = Hits()
+
+        val fundamentals = source(hits).fundamentals(ISIN_FUND, InstrumentRef(QuoteProvider.COINGECKO, "bitcoin"))
+
+        assertNull(fundamentals)
+        assertTrue(hits.morningstar.isEmpty() && hits.yahoo.isEmpty() && hits.coinGecko.isEmpty())
     }
 
     @Test

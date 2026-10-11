@@ -8,6 +8,7 @@ import com.denebapps.patrimonio.data.db.entity.HoldingKind
 import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
 import com.denebapps.patrimonio.data.db.writeTransaction
 import com.denebapps.patrimonio.data.platform.AppLogger
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.HoldingValuation
@@ -108,6 +109,13 @@ class PortfolioRepositoryImpl(
         seedingGate.await()
         appDatabase.writeTransaction {
             if (dao.updateBroker(id, normalized) == 0) throw PortfolioHoldingNotFoundException(id)
+        }
+    }
+
+    override suspend fun updateAssetClass(id: String, assetClass: AssetClass?) {
+        seedingGate.await()
+        appDatabase.writeTransaction {
+            if (dao.updateAssetClass(id, assetClass?.name) == 0) throw PortfolioHoldingNotFoundException(id)
         }
     }
 
@@ -265,6 +273,7 @@ private fun toEntity(holding: PortfolioHolding, nowMs: Long): PortfolioHoldingEn
         category = holding.fundamentals?.category,
         managementCompany = holding.fundamentals?.managementCompany,
         fundamentalsFetchedAtEpochMs = nowMs.takeIf { holding.fundamentals != null },
+        assetClass = holding.assetClass?.name,
     )
     is HoldingValuation.Manual -> PortfolioHoldingEntity(
         id = holding.id,
@@ -289,6 +298,7 @@ private fun toEntity(holding: PortfolioHolding, nowMs: Long): PortfolioHoldingEn
         category = holding.fundamentals?.category,
         managementCompany = holding.fundamentals?.managementCompany,
         fundamentalsFetchedAtEpochMs = nowMs.takeIf { holding.fundamentals != null },
+        assetClass = holding.assetClass?.name,
     )
 }
 
@@ -330,5 +340,6 @@ internal fun portfolioHoldingToDomain(row: PortfolioHoldingEntity): PortfolioHol
             category = row.category,
             managementCompany = row.managementCompany,
         ).takeUnless { it.isEmpty },
+        assetClass = row.assetClass?.let(AssetClass::valueOf),
     )
 }

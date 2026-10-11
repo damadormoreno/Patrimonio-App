@@ -25,6 +25,9 @@ enum class HoldingKind { QUOTED, MANUAL }
  * [ongoingChargePercentScaled] (percent x 1e4), [riskLevel] (SRRI 1 to 7), [category] and [managementCompany].
  * [fundamentalsFetchedAtEpochMs] is local sync state, not part of the backup: when the provider was last asked, so the
  * lookup runs at most once a day per holding; `null` until then.
+ *
+ * [assetClass] is an `AssetClass` name, only when the user chose one; `null` leaves the class to be inferred from
+ * [category] and [type] when the holding is read.
  */
 @Entity(
     tableName = "portfolio_holdings",
@@ -61,4 +64,5 @@ data class PortfolioHoldingEntity(
     val category: String? = null,
     val managementCompany: String? = null,
     val fundamentalsFetchedAtEpochMs: Long? = null,
+    val assetClass: String? = null,
 )

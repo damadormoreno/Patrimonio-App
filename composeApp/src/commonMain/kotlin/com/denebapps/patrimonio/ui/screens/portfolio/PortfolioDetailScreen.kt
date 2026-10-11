@@ -107,6 +107,7 @@ private fun LoadedSections(
             modifier = Modifier.padding(top = 14.dp),
         )
     }
+    state.classAllocation?.let { ClassAllocationSection(it) }
     when (state.historyStatus) {
         HistoryStatus.NOT_APPLICABLE, HistoryStatus.AVAILABLE -> Unit
         HistoryStatus.LOADING -> HistoryLoadingCard(Modifier.padding(top = 16.dp))

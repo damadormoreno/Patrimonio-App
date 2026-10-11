@@ -4,6 +4,7 @@ import com.denebapps.patrimonio.data.db.entity.HoldingKind
 import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalAdd
 import com.denebapps.patrimonio.domain.model.AccountKind
 import com.denebapps.patrimonio.domain.model.Asset
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.DEFAULT_PORTFOLIO_NAME
 import com.denebapps.patrimonio.domain.model.InstrumentType
@@ -41,7 +42,7 @@ import kotlin.uuid.Uuid
  * hand-edited or corrupted file is rejected with a readable reason instead of failing half-way
  * through an import or crashing a later read.
  *
- * Writes [VERSION] (11). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
+ * Writes [VERSION] (12). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
  * group-link fields, which default to null, v1–v3 files have numeric goal ids, which
  * [upgradeLegacyGoalIds] replaces before decoding, v1–v4 files link a goal to one `linkedAssetId`,
  * which [upgradeSingleLinkedAsset] turns into a list, v1–v5 files have no custom account types nor
@@ -49,11 +50,12 @@ import kotlin.uuid.Uuid
  * subscriptions feature, which is ignored like any unknown key, v1–v7 files have no portfolio holdings, which
  * default to empty, v1–v8 holdings have no bank or broker, which defaults to null, v1–v9 holdings have no
  * fundamentals (cost, risk, category, manager), which default to null, and v1–v10 files have no portfolios, which
- * [upgradeToSinglePortfolio] answers with one new "Mi cartera" that holds every holding.
+ * [upgradeToSinglePortfolio] answers with one new "Mi cartera" that holds every holding, and v1–v11 holdings have no
+ * asset class, which defaults to null (the class is inferred when read).
  */
 object BackupCodec {
     const val FORMAT = "patrimonio-backup"
-    const val VERSION = 11
+    const val VERSION = 12
 
     private val json = Json {
         prettyPrint = true
@@ -175,6 +177,7 @@ private val LIFECYCLES = SavingsGoalLifecycle.entries.map { it.name }.toSet()
 private val LINK_KINDS = SavingsGoalLinkEventKind.entries.map { it.name }.toSet()
 private val INSTRUMENT_TYPES = InstrumentType.entries.map { it.name }.toSet()
 private val QUOTE_PROVIDERS = QuoteProvider.entries.map { it.name }.toSet()
+private val ASSET_CLASSES = AssetClass.entries.map { it.name }.toSet()
 private val YEAR_MONTH = Regex("""\d{4}-(0[1-9]|1[0-2])""")
 
 private fun BackupDocument.validate() {
@@ -311,6 +314,9 @@ private fun validateHolding(holding: PortfolioHoldingBackup, portfolioIds: Set<S
     if (holding.type !in INSTRUMENT_TYPES) invalid("$label tiene un tipo desconocido: ${holding.type}.")
     if (holding.currency !in CURRENCIES) invalid("$label tiene una divisa no soportada: ${holding.currency}.")
     if (holding.broker != null) validateBroker(holding.broker, label)
+    if (holding.assetClass != null && holding.assetClass !in ASSET_CLASSES) {
+        invalid("$label tiene una clase de activo desconocida: ${holding.assetClass}.")
+    }
     validateFundamentals(holding, label)
     when (holding.kind) {
         HoldingKind.QUOTED.name -> validateQuotedHolding(holding, label)

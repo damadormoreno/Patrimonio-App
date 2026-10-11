@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.ui.components.FormSectionLabel
 import com.denebapps.patrimonio.ui.components.FormSheetGrabber
 import com.denebapps.patrimonio.ui.components.FormSheetTopBar
@@ -64,6 +65,7 @@ fun HoldingDetailSheet(
         onEditChange = viewModel::onEditChange,
         onBrokerChange = viewModel::onBrokerChange,
         onPortfolioChange = viewModel::onPortfolioChange,
+        onAssetClassChange = viewModel::onAssetClassChange,
         onSave = viewModel::onSave,
         onDelete = viewModel::onDelete,
         onCancel = onNavigateBack,
@@ -77,6 +79,7 @@ internal fun HoldingDetailContent(
     onEditChange: (String) -> Unit,
     onBrokerChange: (String) -> Unit,
     onPortfolioChange: (String) -> Unit,
+    onAssetClassChange: (AssetClass?) -> Unit,
     onSave: () -> Unit,
     onDelete: () -> Unit,
     onCancel: () -> Unit,
@@ -107,6 +110,7 @@ internal fun HoldingDetailContent(
                     onEditChange = onEditChange,
                     onBrokerChange = onBrokerChange,
                     onPortfolioChange = onPortfolioChange,
+                    onAssetClassChange = onAssetClassChange,
                     modifier = Modifier.padding(top = 22.dp),
                 )
                 Text(
@@ -212,6 +216,7 @@ private fun EditSection(
     onEditChange: (String) -> Unit,
     onBrokerChange: (String) -> Unit,
     onPortfolioChange: (String) -> Unit,
+    onAssetClassChange: (AssetClass?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier) {
@@ -223,6 +228,11 @@ private fun EditSection(
             FixedCurrencyAmountField(text = state.editText, currency = state.currency, onTextChange = onEditChange)
         }
         PreviewLine(state.preview)
+        AssetClassPicker(
+            choice = state.assetClass,
+            onSelect = onAssetClassChange,
+            modifier = Modifier.padding(top = 20.dp),
+        )
         BrokerField(text = state.brokerText, onTextChange = onBrokerChange, modifier = Modifier.padding(top = 20.dp))
         PortfolioPicker(
             options = state.portfolios,

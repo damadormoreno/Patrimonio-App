@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.domain.calc
 
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.FxHistory
 import com.denebapps.patrimonio.domain.model.FxRates
@@ -223,6 +224,13 @@ fun allocationByType(holdings: List<PortfolioHolding>, rates: FxRates): List<All
 /** EUR value per bank or broker, largest first; holdings without one share the `null` key ("no broker"). */
 fun allocationByBroker(holdings: List<PortfolioHolding>, rates: FxRates): List<AllocationEntry<String?>> =
     allocate(valuedHoldings(holdings, rates)) { it.holding.broker }
+
+/**
+ * EUR value per [PortfolioHolding.effectiveAssetClass], largest first; holdings that have none share the `null` key
+ * ("unclassified"). The shares add up to 1.
+ */
+fun allocationByAssetClass(holdings: List<PortfolioHolding>, rates: FxRates): List<AllocationEntry<AssetClass?>> =
+    allocate(valuedHoldings(holdings, rates)) { it.holding.effectiveAssetClass() }
 
 /** EUR value per currency the holdings are valued in, largest first. */
 fun allocationByCurrency(holdings: List<PortfolioHolding>, rates: FxRates): List<AllocationEntry<Currency>> =

@@ -7,6 +7,7 @@ import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalSubtract
 import com.denebapps.patrimonio.domain.calc.savingsGoalCancellationDelta
 import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.Asset
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.DEFAULT_PORTFOLIO_NAME
 import com.denebapps.patrimonio.domain.model.FxRates
@@ -496,6 +497,9 @@ class FakePortfolioRepository(
 
     val current: List<PortfolioHolding> get() = backing.value
     val refreshCalls = mutableListOf<Boolean>()
+
+    /** The `(holdingId, assetClass)` of every [updateAssetClass] call. */
+    val assetClassCalls = mutableListOf<Pair<String, AssetClass?>>()
     var refreshResult = PriceRefreshResult(refreshed = 0, upToDate = 0, failures = emptyList())
     var refreshFailure: Throwable? = null
 
@@ -528,6 +532,11 @@ class FakePortfolioRepository(
 
     override suspend fun updateBroker(id: String, broker: String?) {
         replace(find(id).copy(broker = normalizeBroker(broker)))
+    }
+
+    override suspend fun updateAssetClass(id: String, assetClass: AssetClass?) {
+        assetClassCalls += id to assetClass
+        replace(find(id).copy(assetClass = assetClass))
     }
 
     override suspend fun delete(id: String) {

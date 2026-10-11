@@ -7,6 +7,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -34,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.ui.components.FormSectionLabel
 import com.denebapps.patrimonio.ui.components.FormTextField
@@ -188,11 +190,65 @@ internal fun PortfolioPicker(
     modifier: Modifier = Modifier,
 ) {
     if (options.size < MIN_PORTFOLIOS_TO_CHOOSE) return
+    PickerField(
+        title = "Cartera",
+        valueText = options.firstOrNull { it.id == selectedId }?.name.orEmpty(),
+        clickLabel = "Elegir cartera",
+        modifier = modifier,
+    ) { dismiss ->
+        options.forEach { option ->
+            PickerItem(label = option.name, selected = option.id == selectedId) {
+                dismiss()
+                onSelect(option.id)
+            }
+        }
+    }
+}
+
+/**
+ * The "Clase de activo" picker of the add and detail forms: a field showing the class of the holding that opens a menu
+ * with the automatic option first ([AssetClassChoiceUi.automaticLabel]: the inferred class, or unclassified) and then
+ * every class. [onSelect] gets `null` for the automatic option.
+ */
+@Composable
+internal fun AssetClassPicker(
+    choice: AssetClassChoiceUi,
+    onSelect: (AssetClass?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    PickerField(
+        title = "Clase de activo",
+        valueText = choice.text,
+        clickLabel = "Elegir clase de activo",
+        modifier = modifier,
+    ) { dismiss ->
+        PickerItem(label = choice.automaticLabel, selected = choice.isAutomatic) {
+            dismiss()
+            onSelect(null)
+        }
+        AssetClass.entries.forEach { assetClass ->
+            PickerItem(label = assetClassLabel(assetClass), selected = choice.explicit == assetClass) {
+                dismiss()
+                onSelect(assetClass)
+            }
+        }
+    }
+}
+
+/** A labelled field showing [valueText] that opens the menu [items], which receives a function that closes it. */
+@Composable
+private fun PickerField(
+    title: String,
+    valueText: String,
+    clickLabel: String,
+    modifier: Modifier = Modifier,
+    items: @Composable ColumnScope.(dismiss: () -> Unit) -> Unit,
+) {
     val colors = LocalAppColors.current
     var expanded by remember { mutableStateOf(false) }
 
     Column(modifier) {
-        FormSectionLabel("Cartera")
+        FormSectionLabel(title)
         Box {
             Row(
                 modifier = Modifier
@@ -200,7 +256,7 @@ internal fun PortfolioPicker(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                        onClickLabel = "Elegir cartera",
+                        onClickLabel = clickLabel,
                         onClick = { expanded = true },
                     )
                     .fieldBox(),
@@ -208,7 +264,7 @@ internal fun PortfolioPicker(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
-                    text = options.firstOrNull { it.id == selectedId }?.name.orEmpty(),
+                    text = valueText,
                     color = colors.ink,
                     fontSize = 15.sp,
                     maxLines = 1,
@@ -218,25 +274,19 @@ internal fun PortfolioPicker(
                 Icon(AppIcons.chevronD, contentDescription = null, tint = colors.ink2, modifier = Modifier.size(14.dp))
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                options.forEach { option ->
-                    DropdownMenuItem(
-                        text = { Text(option.name) },
-                        onClick = {
-                            expanded = false
-                            onSelect(option.id)
-                        },
-                        trailingIcon = {
-                            if (option.id == selectedId) {
-                                Icon(
-                                    AppIcons.check,
-                                    contentDescription = null,
-                                    tint = colors.brand,
-                                )
-                            }
-                        },
-                    )
-                }
+                items { expanded = false }
             }
         }
     }
+}
+
+@Composable
+private fun PickerItem(label: String, selected: Boolean, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(label) },
+        onClick = onClick,
+        trailingIcon = {
+            if (selected) Icon(AppIcons.check, contentDescription = null, tint = LocalAppColors.current.brand)
+        },
+    )
 }

@@ -71,3 +71,33 @@ internal const val YAHOO_CHART_JSON = """
 
 /** Morningstar timeseries answer: two NAV points (2025-10-14 and 2025-10-15, UTC midnight). */
 internal const val TIMESERIES_JSON = "[[1760400000000,123.456],[1760486400000,124.1]]"
+
+/** CoinGecko `search` answer (real shape, trimmed): one coin without rank, one without id, other sections empty. */
+internal const val COINGECKO_SEARCH_JSON = """
+    {"coins":[
+      {"id":"bitcoin-cash","name":"Bitcoin Cash","api_symbol":"bitcoin-cash","symbol":"BCH","market_cap_rank":22,
+       "thumb":"https://coin-images.coingecko.com/coins/images/780/thumb/bitcoin-cash-circle.png"},
+      {"id":"unranked-bitcoin","name":"Unranked Bitcoin","api_symbol":"unranked-bitcoin","symbol":"UBTC",
+       "market_cap_rank":null},
+      {"id":"bitcoin","name":"Bitcoin","api_symbol":"bitcoin","symbol":"BTC","market_cap_rank":1},
+      {"id":"bitcoin-cash-sv","name":"Bitcoin SV","api_symbol":"bitcoin-cash-sv","symbol":"BSV","market_cap_rank":128},
+      {"id":"","name":"No id","symbol":"NOID","market_cap_rank":2}
+    ],"exchanges":[],"icos":[],"categories":[],"nfts":[]}
+"""
+
+/** CoinGecko `simple/price` answer (2025-10-16T10:00:02Z); the price can arrive as an integer. */
+internal const val COINGECKO_PRICE_JSON = """{"bitcoin":{"eur":74052,"last_updated_at":1760608802}}"""
+
+/**
+ * CoinGecko `market_chart` answer: 2025-10-14, 2025-10-15 and 2025-10-16 at 00:00 UTC, plus the live "now" point on
+ * 2025-10-16 at 10:00 UTC, which falls on the same day as the previous one.
+ */
+internal const val COINGECKO_CHART_JSON = """
+    {"prices":[[1760400000000,100.5],[1760486400000,101.25],[1760572800000,102.0],[1760608800000,103.5]],
+     "market_caps":[[1760400000000,1.0],[1760608800000,2.0]],"total_volumes":[[1760400000000,3.0]]}
+"""
+
+/** What the public API answers when more than a year of history is requested. */
+internal const val COINGECKO_RANGE_ERROR_JSON =
+    """{"error":{"status":{"timestamp":"2026-10-11T15:14:02.202+00:00","error_code":10012,""" +
+        """"error_message":"Your request exceeds the allowed time range."}}}"""

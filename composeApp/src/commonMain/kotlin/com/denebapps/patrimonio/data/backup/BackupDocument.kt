@@ -16,7 +16,8 @@ import kotlinx.serialization.Serializable
  * version 9 added each holding's optional `broker`, null in older files; version 10 added each holding's optional
  * fundamentals (`ongoingChargePercentScaled`, `riskLevel`, `category`, `managementCompany`), null in older files;
  * version 11 added the [portfolios] and each holding's `portfolioId`, which older files lack (one "Mi cartera" is made
- * for them). [BackupCodec] upgrades older files on read.
+ * for them); version 12 added each holding's optional `assetClass`, null in older files. [BackupCodec] upgrades older
+ * files on read.
  *
  * Enum-like fields hold the domain enum `name`s and currencies their ISO code; amounts are minor
  * units, dates epoch days, timestamps epoch milliseconds.
@@ -145,7 +146,8 @@ data class SavingsGoalLinkEventBackup(
  * (minor units of [currency]) and [valuedAtEpochMs] instead. [broker] is the optional bank or broker, for either kind.
  * The optional fundamentals, also for either kind: [ongoingChargePercentScaled] (yearly ongoing charge in percent x
  * 10,000), [riskLevel] (SRRI, 1 to 7), [category] and [managementCompany]. The local fundamentals sync stamp is not
- * exported.
+ * exported. [assetClass] is an `AssetClass` name, present only when the user chose the class (otherwise it is inferred
+ * from the category when read).
  */
 @Serializable
 data class PortfolioHoldingBackup(
@@ -170,4 +172,5 @@ data class PortfolioHoldingBackup(
     val riskLevel: Int? = null,
     val category: String? = null,
     val managementCompany: String? = null,
+    val assetClass: String? = null,
 )

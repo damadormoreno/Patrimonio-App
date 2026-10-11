@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.InstrumentType
@@ -59,6 +60,7 @@ internal class AddHoldingCallbacks(
     val onNameChange: (String) -> Unit,
     val onTypeChange: (InstrumentType) -> Unit,
     val onCurrencyChange: (Currency) -> Unit,
+    val onAssetClassChange: (AssetClass?) -> Unit,
     val onBrokerChange: (String) -> Unit,
     val onPortfolioChange: (String) -> Unit,
     val onSave: () -> Unit,
@@ -91,6 +93,7 @@ fun AddHoldingSheet(
             onNameChange = viewModel::onNameChange,
             onTypeChange = viewModel::onTypeChange,
             onCurrencyChange = viewModel::onCurrencyChange,
+            onAssetClassChange = viewModel::onAssetClassChange,
             onBrokerChange = viewModel::onBrokerChange,
             onPortfolioChange = viewModel::onPortfolioChange,
             onSave = viewModel::onSave,
@@ -157,7 +160,7 @@ private fun SearchStep(state: AddHoldingUiState, callbacks: AddHoldingCallbacks)
     )
     Spacer(Modifier.height(12.dp))
     when (state.searchStatus) {
-        SearchStatus.IDLE -> StatusText("Fondos, ETF y acciones. Escribe al menos 2 caracteres.")
+        SearchStatus.IDLE -> StatusText("Fondos, ETF, acciones y criptomonedas. Escribe al menos 2 caracteres.")
         SearchStatus.LOADING -> LoadingRow("Buscando…")
         SearchStatus.EMPTY -> StatusText("No se encontraron resultados")
         SearchStatus.ERROR -> StatusText("No se pudo buscar. Revisa la conexión.", colors.expense)
@@ -229,6 +232,8 @@ private fun EntryStep(state: AddHoldingUiState, callbacks: AddHoldingCallbacks) 
     }
     PreviewLine(state.preview)
     Spacer(Modifier.height(20.dp))
+    AssetClassPicker(choice = state.assetClass, onSelect = callbacks.onAssetClassChange)
+    Spacer(Modifier.height(20.dp))
     BrokerField(text = state.broker, onTextChange = callbacks.onBrokerChange)
     Spacer(Modifier.height(20.dp))
     AddToPortfolio(state, callbacks)
@@ -262,6 +267,8 @@ private fun ManualStep(state: AddHoldingUiState, callbacks: AddHoldingCallbacks)
         lineHeight = 18.sp,
         modifier = Modifier.padding(top = 10.dp),
     )
+    Spacer(Modifier.height(20.dp))
+    AssetClassPicker(choice = state.assetClass, onSelect = callbacks.onAssetClassChange)
     Spacer(Modifier.height(20.dp))
     BrokerField(text = state.broker, onTextChange = callbacks.onBrokerChange)
     Spacer(Modifier.height(20.dp))

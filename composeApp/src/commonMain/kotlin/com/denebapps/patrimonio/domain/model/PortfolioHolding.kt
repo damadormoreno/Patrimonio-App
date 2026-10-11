@@ -8,7 +8,8 @@ import kotlinx.datetime.LocalDate
  * Ids are random UUID strings, like the rest of the app. Every holding is in exactly one [Portfolio], [portfolioId].
  * [broker] is the optional bank or broker that manages the position (free text, kept as typed); it is a property of
  * the holding, whichever way it is valued. So are the product's [fundamentals] (cost, risk, category, manager), which a
- * data provider supplies and which stay `null` when it knows nothing about the product.
+ * data provider supplies and which stay `null` when it knows nothing about the product. [assetClass] is the class the
+ * user chose for it, `null` when they did not: [effectiveAssetClass] is the one the app uses.
  */
 data class PortfolioHolding(
     val id: String,
@@ -20,6 +21,7 @@ data class PortfolioHolding(
     val valuation: HoldingValuation,
     val broker: String? = null,
     val fundamentals: InstrumentFundamentals? = null,
+    val assetClass: AssetClass? = null,
 ) {
     init {
         require(id.isNotBlank()) { "holding id must not be blank" }
@@ -29,6 +31,12 @@ data class PortfolioHolding(
             "holding broker must be trimmed, not blank and at most $MAX_BROKER_LENGTH characters"
         }
     }
+
+    /**
+     * The class of the holding: the one the user chose, else the one its product's category (or its type) implies,
+     * else `null`, unclassified. Derived on every read, so a category that arrives later classifies the holding too.
+     */
+    fun effectiveAssetClass(): AssetClass? = assetClass ?: inferAssetClass(fundamentals?.category, type)
 }
 
 /** The longest bank or broker name a holding accepts, after trimming. */

@@ -607,6 +607,11 @@ class InstrumentPreviewViewModelTest {
                     riskText = "5,0 → 5,7 de 7",
                     riskCoverage = null,
                     warning = null,
+                    // Nothing here has a class: the whole portfolio is unclassified before and after.
+                    classMix = ClassMixUi(
+                        rows = listOf(ClassMixRowUi("Sin clasificar", "100,0 %", "100,0 %")),
+                        note = "Se contaría como Sin clasificar: elige su clase al añadirlo.",
+                    ),
                 ),
                 s.fit().projection,
             )

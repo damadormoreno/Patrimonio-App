@@ -54,13 +54,14 @@ import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
         FxHistoryEntity::class,
         FxHistorySyncEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
     // 5 -> 6 only adds the custom account types table and the accounts' nullable emoji column. 6 -> 7 (drops
     // the subscriptions table) is the hand-written MIGRATION_6_7. 7 -> 8 only adds the portfolio holdings table.
     // 8 -> 9 only adds their nullable broker column. 9 -> 10 only adds the nullable fundamentals columns of the
     // holdings and the four re-downloadable history caches. 10 -> 11 (the portfolios, with a required foreign key on
-    // the holdings) is the hand-written MIGRATION_10_11.
+    // the holdings) is the hand-written MIGRATION_10_11. 11 -> 12 only adds the nullable asset class column of the
+    // holdings.
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -68,6 +69,7 @@ import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
         AutoMigration(from = 7, to = 8),
         AutoMigration(from = 8, to = 9),
         AutoMigration(from = 9, to = 10),
+        AutoMigration(from = 11, to = 12),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)

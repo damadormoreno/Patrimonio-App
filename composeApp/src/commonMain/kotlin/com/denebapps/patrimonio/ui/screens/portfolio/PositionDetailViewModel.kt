@@ -117,7 +117,7 @@ data class ProductDataUi(
 /**
  * The top of the screen. [identifier] is whatever identifies the product plus its data source (empty for a manual
  * one), [detailText] the units, last price and date (or the manual valuation date), [weightText] how much of the
- * portfolio the position is (null while it has no value).
+ * portfolio the position is (null while it has no value). [classText] is its asset class and where it comes from.
  */
 data class PositionHeaderUi(
     val name: String = "",
@@ -128,6 +128,7 @@ data class PositionHeaderUi(
     val valueEurText: String? = null,
     val detailText: String = "",
     val weightText: String? = null,
+    val classText: String = "",
 )
 
 /**
@@ -146,6 +147,7 @@ data class PositionDetailUiState(
     val risk: RiskUi? = null,
     val product: ProductDataUi? = null,
     val note: String = "",
+    val chartNote: String? = null,
     val isSyncing: Boolean = false,
     val syncError: Boolean = false,
 )
@@ -314,6 +316,7 @@ class PositionDetailViewModel(
             yearReturns = yearReturnsUi(points, today),
             annualized = annualizedFigures(points),
             risk = riskUi(points, today),
+            chartNote = historyNote(holding.valuation.ref.provider),
             syncError = syncState.failed,
         )
     }
@@ -332,7 +335,15 @@ class PositionDetailViewModel(
             valueEurText = valueEurText,
             detailText = holdingDetailLine(holding, zoneProvider()),
             weightText = weightText(holding, placed, rates),
+            classText = classText(holding),
         )
+    }
+
+    /** "Renta variable · automática" (from the category or type) or "... · elegida"; "Sin clasificar" for none. */
+    private fun classText(holding: PortfolioHolding): String {
+        val effective = holding.effectiveAssetClass() ?: return UNCLASSIFIED_LABEL
+        val origin = if (holding.assetClass == null) "automática" else "elegida"
+        return "${assetClassLabel(effective)} · $origin"
     }
 
     /**

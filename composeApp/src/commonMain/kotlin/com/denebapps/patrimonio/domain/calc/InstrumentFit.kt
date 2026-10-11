@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.domain.calc
 
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.FxRates
@@ -45,6 +46,8 @@ data class ConcentrationWarning(val name: String, val weight: Double, val isCand
  * total; [portfolioTotal] is the value before adding. The cost and risk summaries have the candidate's fundamentals
  * counted when it has any (its coverage shows when it has not). [concentrationWarning] is set when the largest product
  * afterwards is above [CONCENTRATION_THRESHOLD] (the first product of an empty portfolio is not a warning).
+ * [classAllocationBefore] and [classAllocationAfter] are the asset class mix of the portfolio (`null` key:
+ * unclassified) without and with the candidate, which counts under the class it was given.
  */
 data class AddProjection(
     val amount: Money,
@@ -55,6 +58,8 @@ data class AddProjection(
     val riskBefore: RiskSummary,
     val riskAfter: RiskSummary,
     val concentrationWarning: ConcentrationWarning?,
+    val classAllocationBefore: List<AllocationEntry<AssetClass?>>,
+    val classAllocationAfter: List<AllocationEntry<AssetClass?>>,
 )
 
 /**
@@ -75,7 +80,8 @@ data class InstrumentFit(
  * quoted holding; correlations follow the rules of [correlationMatrix] (weekly returns in EUR, the last
  * [ANALYSIS_WINDOW_YEARS] years or all of them, at least [MIN_WEEKLY_RETURNS] common weeks). The verdict comes from the
  * correlation with the portfolio and, when that is undefined, from the highest one with a single holding. With a
- * positive [amount] (EUR) the result also projects the portfolio after adding it.
+ * positive [amount] (EUR) the result also projects the portfolio after adding it, counting the candidate under
+ * [assetClass], the class the user picked for it; `null` lets its fundamentals and type decide, like a holding.
  */
 fun instrumentFit(
     candidate: InstrumentPreviewData,
@@ -84,6 +90,7 @@ fun instrumentFit(
     rates: FxRates,
     today: LocalDate,
     amount: Money?,
+    assetClass: AssetClass? = null,
 ): InstrumentFit {
     val candidateReturns = weeklyReturnsByWeek(candidate.eurHistory)
     val similarities = holdings
@@ -101,7 +108,9 @@ fun instrumentFit(
         holdings = similarities,
         portfolio = portfolio,
         verdict = basis?.let(::fitVerdict),
-        projection = amount?.takeIf { it.minorUnits > 0 }?.let { projectAdd(candidate, holdings, rates, it) },
+        projection = amount?.takeIf { it.minorUnits > 0 }?.let { added ->
+            projectAdd(candidate, holdings, rates, added, assetClass)
+        },
     )
 }
 
@@ -131,6 +140,7 @@ private fun projectAdd(
     holdings: List<PortfolioHolding>,
     rates: FxRates,
     amount: Money,
+    assetClass: AssetClass?,
 ): AddProjection? = try {
     val product = candidate.candidate
     val standIn = PortfolioHolding(
@@ -142,6 +152,7 @@ private fun projectAdd(
         ticker = product.ticker,
         valuation = HoldingValuation.Manual(CurrencyAmount(amount, Currency.EUR), valuedAtEpochMs = 0L),
         fundamentals = candidate.fundamentals,
+        assetClass = assetClass,
     )
     val after = holdings + standIn
     val weights = holdingWeights(after, rates)
@@ -160,6 +171,8 @@ private fun projectAdd(
         } else {
             null
         },
+        classAllocationBefore = allocationByAssetClass(holdings, rates),
+        classAllocationAfter = allocationByAssetClass(after, rates),
     )
 } catch (overflow: ArithmeticException) {
     null
