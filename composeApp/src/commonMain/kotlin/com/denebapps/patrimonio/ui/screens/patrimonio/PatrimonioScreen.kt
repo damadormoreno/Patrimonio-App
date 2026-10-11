@@ -54,10 +54,10 @@ import com.denebapps.patrimonio.domain.calc.AccountAssignment
 import com.denebapps.patrimonio.domain.calc.SavingsGoalPace
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.Money
-import com.denebapps.patrimonio.domain.model.TypeColor
 import com.denebapps.patrimonio.ui.components.EmptyState
 import com.denebapps.patrimonio.ui.components.FabContentBottomSpacing
 import com.denebapps.patrimonio.ui.components.HeaderIconBtn
+import com.denebapps.patrimonio.ui.components.PORTFOLIO_LOOK
 import com.denebapps.patrimonio.ui.components.Pill
 import com.denebapps.patrimonio.ui.components.PillTone
 import com.denebapps.patrimonio.ui.components.ScreenHeader
@@ -177,7 +177,9 @@ fun PatrimonioScreen(
 
                 SectionRow(
                     title = "Composición · $viewLabel",
-                    trailing = { Text("${state.composition.size} grupos", color = colors.muted, fontSize = 12.sp) },
+                    trailing = {
+                        Text(compositionCountLabel(state.composition), color = colors.muted, fontSize = 12.sp)
+                    },
                     showDivider = false,
                 )
                 StackedShare(state.composition, modifier = Modifier.padding(bottom = 4.dp))
@@ -496,7 +498,7 @@ private fun StackedShare(groups: List<GroupShareUi>, modifier: Modifier = Modifi
                     modifier = Modifier
                         .weight(share.total.minorUnits.toFloat().coerceAtLeast(0.0001f))
                         .fillMaxHeight()
-                        .background(share.type.color.toColor()),
+                        .background(share.type.toColor()),
                 )
             }
         }
@@ -506,7 +508,7 @@ private fun StackedShare(groups: List<GroupShareUi>, modifier: Modifier = Modifi
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Box(Modifier.size(8.dp).background(share.type.color.toColor(), RoundedCornerShape(2.dp)))
+                    Box(Modifier.size(8.dp).background(share.type.toColor(), RoundedCornerShape(2.dp)))
                     Text(text = share.label, color = colors.ink2, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     Text(text = "${share.sharePct}%", color = colors.muted, fontSize = 12.sp)
                 }
@@ -523,7 +525,7 @@ private fun PatrimonioGroupCard(
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAppColors.current
-    val tone = group.type.color.toColor()
+    val tone = group.type.toColor()
 
     Column(
         modifier = modifier
@@ -604,7 +606,7 @@ private fun CarteraSummaryCard(portfolio: PortfolioSummaryUi, onClick: () -> Uni
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Box(
-            Modifier.size(32.dp).background(TypeColor.GREEN.toColor(), RoundedCornerShape(9.dp)),
+            Modifier.size(32.dp).background(PORTFOLIO_LOOK.toColor(), RoundedCornerShape(9.dp)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(AppIcons.trend, contentDescription = null, tint = colors.surface2, modifier = Modifier.size(16.dp))

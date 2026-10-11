@@ -44,6 +44,22 @@ data class AppColors(
      *  colour-blind readers (checked with the dataviz palette validator); these pass in both modes. */
     val chartGain: Color,
     val chartLoss: Color,
+    /** The Cartera share of the assets composition bar: apart from every account type color, whatever its mode. */
+    val chartPortfolio: Color,
+    /**
+     * One color per asset class of the portfolio bars and legends (`classUnclassified`: no class). Not the category
+     * tokens: those must keep their look for account types, and these nine have to stay apart from each other under
+     * protanopia and deuteranopia too (a unit test simulates both on these exact values).
+     */
+    val classEquity: Color,
+    val classFixedIncome: Color,
+    val classMoneyMarket: Color,
+    val classMixed: Color,
+    val classCommodities: Color,
+    val classRealEstate: Color,
+    val classCrypto: Color,
+    val classOther: Color,
+    val classUnclassified: Color,
 )
 
 /** Radii token set, ported from `tokens.css` `--r-*` variables. */

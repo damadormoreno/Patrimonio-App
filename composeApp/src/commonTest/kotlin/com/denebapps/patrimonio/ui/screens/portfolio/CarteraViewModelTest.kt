@@ -1,9 +1,11 @@
 package com.denebapps.patrimonio.ui.screens.portfolio
 
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.HoldingValuation
+import com.denebapps.patrimonio.domain.model.InstrumentFundamentals
 import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.LastQuote
@@ -181,6 +183,55 @@ class CarteraViewModelTest {
         advanceUntilIdle()
 
         assertEquals(listOf("Openbank", null), vm.state.value.rows.map { it.broker })
+        job.cancel()
+    }
+
+    @Test
+    fun `a row names the class its type implies`() = runTest(dispatcher) {
+        val crypto = quoted("btc", "Bitcoin", 100_000, Price(50_000_000, Currency.EUR), InstrumentType.CRYPTO)
+        val vm = viewModel(FakePortfolioRepository(listOf(usdStock, crypto)))
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        val rows = vm.state.value.rows
+        assertEquals(listOf(AssetClass.EQUITY, AssetClass.CRYPTO), rows.map { it.assetClass })
+        assertEquals(listOf("Renta variable", "Cripto"), rows.map { it.assetClassText })
+        job.cancel()
+    }
+
+    @Test
+    fun `a row names the class the user chose over the one inferred`() = runTest(dispatcher) {
+        val chosen = usdStock.copy(assetClass = AssetClass.MIXED)
+        val vm = viewModel(FakePortfolioRepository(listOf(chosen)))
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        val row = vm.state.value.rows.single()
+        assertEquals(AssetClass.MIXED, row.assetClass)
+        assertEquals("Mixto", row.assetClassText)
+        job.cancel()
+    }
+
+    @Test
+    fun `a row names the class the provider category implies`() = runTest(dispatcher) {
+        val categorized = fund.copy(fundamentals = InstrumentFundamentals(category = "RF Deuda Corporativa EUR"))
+        val vm = viewModel(FakePortfolioRepository(listOf(categorized)))
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        assertEquals("Renta fija", vm.state.value.rows.single().assetClassText)
+        job.cancel()
+    }
+
+    @Test
+    fun `an unclassified row shows no class at all`() = runTest(dispatcher) {
+        val vm = viewModel(FakePortfolioRepository(listOf(fund, manual)))
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        val rows = vm.state.value.rows
+        assertEquals(listOf(null, null), rows.map { it.assetClass })
+        assertEquals(listOf(null, null), rows.map { it.assetClassText })
         job.cancel()
     }
 

@@ -31,6 +31,7 @@ import com.denebapps.patrimonio.testing.FakeNetWorthRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
 import com.denebapps.patrimonio.testing.FakeSavingsGoalRepository
 import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
+import com.denebapps.patrimonio.ui.components.PORTFOLIO_LOOK
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -498,6 +499,7 @@ class PatrimonioViewModelTest {
         assertEquals(listOf("Cuentas bancarias", "Cartera"), composition.map { it.label })
         assertEquals(listOf(67, 33), composition.map { it.sharePct })
         assertEquals(Money(250_000), composition.last().total)
+        assertEquals(PORTFOLIO_LOOK, composition.last().type)
         job.cancel()
     }
 

@@ -24,7 +24,6 @@ import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.NetWorthSnapshot
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.SavingsGoal
-import com.denebapps.patrimonio.domain.model.TypeColor
 import com.denebapps.patrimonio.domain.model.YearMonth
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AccountTypeRepository
@@ -34,6 +33,8 @@ import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
+import com.denebapps.patrimonio.ui.components.PORTFOLIO_LOOK
+import com.denebapps.patrimonio.ui.components.PORTFOLIO_TYPE_ID
 import com.denebapps.patrimonio.ui.components.TypeLook
 import com.denebapps.patrimonio.ui.components.typeLook
 import com.denebapps.patrimonio.ui.components.typeOptions
@@ -52,9 +53,6 @@ private const val PATRIMONIO_STOP_TIMEOUT_MS = 5_000L
 
 /** Active stat toggle driving composition/list content (spec: Activos/Pasivos Stat Toggle). */
 enum class PatrimonioView { ACTIVOS, PASIVOS }
-
-/** Composition entry of the investment portfolio: it is not an account type, so it carries its own look. */
-private val PORTFOLIO_LOOK = TypeLook("portfolio", "Cartera", TypeColor.GREEN)
 
 /** One composition-bar segment / legend entry (spec: Composition Bar by Group). [groupId] is the
  *  account type id — the UI layer resolves icon/tone from it. */
@@ -80,6 +78,23 @@ data class PatrimonioItemUi(
     /** The account's own emoji, shown before its name. */
     val emoji: String? = null,
 )
+
+/**
+ * What the composition header says about the [composition] it heads: how many account groups it has ("2 grupos") and,
+ * when the portfolio is one of its shares, "Cartera" after them. The portfolio is not an account group, so it is named
+ * rather than counted.
+ */
+fun compositionCountLabel(composition: List<GroupShareUi>): String {
+    val groupCount = composition.count { it.groupId != PORTFOLIO_TYPE_ID }
+    val hasPortfolio = composition.size > groupCount
+    val groups = when {
+        groupCount == 1 -> "1 grupo"
+        groupCount == 0 && hasPortfolio -> null
+        else -> "$groupCount grupos"
+    }
+    val portfolio = PORTFOLIO_LOOK.label.takeIf { hasPortfolio }
+    return listOfNotNull(groups, portfolio).joinToString(" · ")
+}
 
 /** One per-group card (spec: Per-Group List Rows). */
 data class PatrimonioGroupUi(

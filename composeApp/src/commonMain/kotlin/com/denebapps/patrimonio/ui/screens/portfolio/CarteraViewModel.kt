@@ -3,6 +3,7 @@ package com.denebapps.patrimonio.ui.screens.portfolio
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.denebapps.patrimonio.domain.calc.portfolioTotalEur
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.InvalidPortfolioNameException
 import com.denebapps.patrimonio.domain.model.MAX_PORTFOLIO_NAME_LENGTH
@@ -37,7 +38,8 @@ private const val LAST_PORTFOLIO_TEXT = "Necesitas al menos una cartera."
 /**
  * One line of the Cartera list: texts ready to show. [valueEurText] is only set for a holding not in euros, [broker]
  * for one that has a bank or broker, and [portfolioName] while the list mixes several portfolios (so it says which one
- * each holding is in).
+ * each holding is in). [assetClass] and [assetClassText] are the holding's class and its name; both `null` for one that
+ * has none, which the list leaves unlabelled instead of repeating "Sin clasificar" on every such row.
  */
 data class HoldingRowUi(
     val id: String,
@@ -48,6 +50,8 @@ data class HoldingRowUi(
     val valueText: String,
     val valueEurText: String?,
     val portfolioName: String? = null,
+    val assetClass: AssetClass? = null,
+    val assetClassText: String? = null,
 )
 
 /**
@@ -361,6 +365,8 @@ class CarteraViewModel(
             valueText = valueText,
             valueEurText = valueEurText,
             portfolioName = portfolioName,
+            assetClass = effectiveAssetClass(),
+            assetClassText = effectiveAssetClass()?.let(::assetClassLabel),
         )
     }
 }
