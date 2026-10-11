@@ -218,7 +218,7 @@ private fun TotalCard(total: Money, modifier: Modifier = Modifier) {
 
 /** Short, non-blocking note after a refresh that could not update every price; tap the cross to dismiss it. */
 @Composable
-private fun RefreshNotice(message: String, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+internal fun RefreshNotice(message: String, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
     val colors = LocalAppColors.current
     Row(
         modifier = modifier

@@ -47,6 +47,7 @@ import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.AddHoldingViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.CarteraViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.HoldingDetailViewModel
+import com.denebapps.patrimonio.ui.screens.portfolio.PositionDetailViewModel
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
 import com.denebapps.patrimonio.ui.screens.settings.AccountTypesViewModel
 import com.denebapps.patrimonio.ui.screens.settings.BackupViewModel
@@ -350,6 +351,7 @@ class KoinModuleTest {
         assertNotNull(koin.get<CarteraViewModel>())
         assertNotNull(koin.get<AddHoldingViewModel>())
         assertNotNull(koin.get<HoldingDetailViewModel> { parametersOf("holding-1") })
+        assertNotNull(koin.get<PositionDetailViewModel> { parametersOf("holding-1") })
         assertNotNull(koin.get<SavingsGoalsViewModel>())
         assertNotNull(koin.get<ProfileViewModel>())
         assertNotNull(koin.get<AccountViewModel>())

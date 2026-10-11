@@ -56,7 +56,7 @@ Out of scope: movements and real gains (phase 2), benchmarks/comparators, export
 - [x] **T2 — Analytics (pure calc)**: ranges, period/calendar-year/YTD returns, CAGR 1/3/5y, volatility,
   max drawdown, weekly alignment, correlation matrix, constant-composition portfolio series in EUR,
   weighted TER/risk, allocations, concentration (route: delegated writer).
-- [ ] **T3 — Position detail screen + reusable Canvas line chart** (route: delegated writer).
+- [x] **T3 — Position detail screen + reusable Canvas line chart** (route: delegated writer).
 - [ ] **T4 — Portfolio detail screen + correlation heatmap** (route: delegated writer).
 - [ ] **T5 — Docs** (route: inline): README *Cartera* section.
 
@@ -94,7 +94,16 @@ Out of scope: movements and real gains (phase 2), benchmarks/comparators, export
   `riskSummary`, `concentration` > 40 %). Money exact, ratios `Double`. RED: test sources failed to compile;
   41 tests GREEN. Parent reviewed volatility/Pearson formulas. GREEN (parent re-run): check.sh (820 tests),
   iOS compile.
+- **T3** (commit below, `feat(portfolio): add the position detail screen`): pushed `PositionDetail(holdingId)` from
+  Cartera rows (edit sheet via `Editar`); header with weight; Canvas `LineChart` + pure `ChartGeometry`
+  (binary-search scrubbing that yields to vertical scroll); ranges 1M–Máx (default 1A, empty ranges
+  disabled); calendar-year/annualized returns, volatility, max drawdown, fundamentals with yearly TER cost,
+  SRRI scale; sync on open, forced refresh, banner/retry states. RED: test sources failed to compile; GREEN
+  887 tests. Parent: check.sh green; emulator with live data for IE00B03HCZ61 — history since 14/02/2000,
+  1A +20,90 %, scrubbing over 26 years smooth (28/01/2014 · 14,108 €), calendar years match the fund's
+  published figures (2022 −12,85 %, 2021 +30,98 %, 2018 −4,30 %), max drawdown −61,20 % (2000→2009),
+  TER 0,18 % ≈ 23,31 €/año, SRRI 5.
 
 ## Next step
 
-T3 — position detail screen + Canvas chart.
+T4 — portfolio detail screen + correlation heatmap.

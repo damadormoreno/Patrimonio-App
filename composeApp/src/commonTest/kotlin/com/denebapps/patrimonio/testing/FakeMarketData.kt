@@ -4,9 +4,14 @@ import com.denebapps.patrimonio.domain.model.InstrumentFundamentals
 import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.PricePoint
 import com.denebapps.patrimonio.domain.repository.FundamentalsSource
+import com.denebapps.patrimonio.domain.repository.HistorySyncResult
+import com.denebapps.patrimonio.domain.repository.InstrumentHistoryRepository
 import com.denebapps.patrimonio.domain.repository.PriceHistorySource
 import com.denebapps.patrimonio.domain.repository.QuoteUnavailableException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.datetime.LocalDate
 
 /**
@@ -51,4 +56,33 @@ class FakeFundamentalsSource : FundamentalsSource {
         failure?.let { throw it }
         return answers[isin]
     }
+}
+
+/**
+ * In-memory [InstrumentHistoryRepository] for ViewModel tests: [set] stores the history of a ref (and re-emits it),
+ * [sync] records `(ref, force)` in [syncCalls], suspends on [syncGate] when one is set, and throws [syncFailure].
+ */
+class FakeInstrumentHistoryRepository : InstrumentHistoryRepository {
+    private val series = mutableMapOf<InstrumentRef, MutableStateFlow<List<PricePoint>>>()
+
+    val syncCalls = mutableListOf<Pair<InstrumentRef, Boolean>>()
+    var syncFailure: Throwable? = null
+    var syncGate: CompletableDeferred<Unit>? = null
+
+    fun set(ref: InstrumentRef, points: List<PricePoint>) {
+        flowOf(ref).value = points
+    }
+
+    override fun observe(ref: InstrumentRef): Flow<List<PricePoint>> = flowOf(ref)
+
+    override suspend fun sync(ref: InstrumentRef, force: Boolean) {
+        syncCalls += ref to force
+        syncGate?.await()
+        syncFailure?.let { throw it }
+    }
+
+    override suspend fun syncAll(refs: Collection<InstrumentRef>, force: Boolean): HistorySyncResult =
+        HistorySyncResult(synced = 0, upToDate = 0, failures = emptyList())
+
+    private fun flowOf(ref: InstrumentRef) = series.getOrPut(ref) { MutableStateFlow(emptyList()) }
 }
