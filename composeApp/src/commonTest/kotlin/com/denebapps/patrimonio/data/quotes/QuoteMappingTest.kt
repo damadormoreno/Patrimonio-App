@@ -47,6 +47,15 @@ class QuoteMappingTest {
     }
 
     @Test
+    fun `yahooPrice drops float noise beyond four decimals of the quoted unit`() {
+        // Yahoo serves closes as single-precision floats: 131.67 arrives as 131.669998.
+        assertEquals(Price(131_670_000L, Currency.EUR), yahooPrice(131.669998, "EUR"))
+        assertEquals(Price(189_345_700L, Currency.USD), yahooPrice(189.34570312, "USD"))
+        // Pence keep four decimals of the pence quote, so pounds keep six.
+        assertEquals(Price(8_123_457L, Currency.GBP), yahooPrice(812.34567, "GBp"))
+    }
+
+    @Test
     fun `yahooPrice converts pence to pounds`() {
         assertEquals(Price(8_123_000L, Currency.GBP), yahooPrice(812.3, "GBp"))
         assertEquals(Price(8_123_000L, Currency.GBP), yahooPrice(812.3, "GBX"))
