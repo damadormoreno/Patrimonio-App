@@ -1,7 +1,6 @@
 package com.denebapps.patrimonio.ui.screens.portfolio
 
 import com.denebapps.patrimonio.domain.calc.ANALYSIS_WINDOW_YEARS
-import com.denebapps.patrimonio.domain.calc.CalendarYearReturn
 import com.denebapps.patrimonio.domain.calc.Drawdown
 import com.denebapps.patrimonio.domain.calc.HistoryRange
 import com.denebapps.patrimonio.domain.calc.RangeChange
@@ -82,16 +81,6 @@ internal fun formatSignedPrice(scaledDelta: Long, currency: Currency): String {
 /** "14/03": the day and the month, zero padded. */
 internal fun formatDayMonthShort(date: LocalDate): String =
     "${date.dayOfMonth.toString().padStart(TWO_DIGITS, '0')}/${date.monthNumber.toString().padStart(TWO_DIGITS, '0')}"
-
-/**
- * The row label of a calendar year: "2025", "2026 · en curso" for the running one and "2019 · desde 14/03" for the
- * first, which only covers the history from [historyStart]; both marks can apply to the same year.
- */
-internal fun yearReturnLabel(year: CalendarYearReturn, historyStart: LocalDate): String = buildString {
-    append(year.year)
-    if (year.yearToDate) append(" · en curso")
-    if (year.partial) append(" · desde ${formatDayMonthShort(historyStart)}")
-}
 
 /** "31/12/2021 → 03/10/2022": from the peak to the trough of a fall. */
 internal fun drawdownDatesText(drawdown: Drawdown): String =

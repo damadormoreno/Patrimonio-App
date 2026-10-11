@@ -8,6 +8,7 @@ import com.denebapps.patrimonio.domain.calc.rangeChange
 import com.denebapps.patrimonio.domain.calc.volatility
 import com.denebapps.patrimonio.domain.model.PRICE_SCALE
 import com.denebapps.patrimonio.domain.model.PricePoint
+import com.denebapps.patrimonio.ui.components.charts.BarChartBar
 import com.denebapps.patrimonio.ui.components.charts.ChartPoint
 import kotlinx.datetime.LocalDate
 
@@ -55,15 +56,58 @@ internal fun priceChartUi(
     return chips to chart
 }
 
-/** One row per calendar year of [points], the running one first. */
-internal fun yearReturnsUi(points: List<PricePoint>, today: LocalDate): List<YearReturnUi> =
-    calendarYearReturns(points, today).map {
+/** One bar per calendar year of [points], the oldest first (the order the chart draws them in). */
+internal fun yearReturnsUi(points: List<PricePoint>, today: LocalDate): List<YearReturnUi> {
+    val historyStart = formatDayMonthShort(points.first().date)
+    return calendarYearReturns(points, today).reversed().map {
         YearReturnUi(
-            yearReturnLabel(it, points.first().date),
-            formatPercent(it.returnRatio),
-            toneOf(it.returnRatio),
+            year = it.year,
+            ratio = it.returnRatio,
+            valueText = formatPercent(it.returnRatio, signed = false),
+            tone = toneOf(it.returnRatio),
+            partialSince = if (it.partial) historyStart else null,
+            yearToDate = it.yearToDate,
         )
     }
+}
+
+/** Why a year is not a whole one: "desde 14/03" for the first of the history, "en curso" for the running one. */
+private fun YearReturnUi.reasons(): List<String> = listOfNotNull(
+    partialSince?.let { "desde $it" },
+    "en curso".takeIf { yearToDate },
+)
+
+/**
+ * What explains the lighter bars under the chart: "2019: desde 14/03 · 2026: en curso". `null` when every year is a
+ * whole one.
+ */
+internal fun yearReturnsFootnote(years: List<YearReturnUi>): String? = years
+    .filter { it.reasons().isNotEmpty() }
+    .map { "${it.year}: ${it.reasons().joinToString(" y ")}" }
+    .takeIf { it.isNotEmpty() }
+    ?.joinToString(" · ")
+
+/** What a screen reader says about the chart: "Rentabilidad por año: 2026 0,95 % (en curso), 2025 4,70 %". */
+internal fun yearReturnsDescription(years: List<YearReturnUi>): String {
+    val title = "Rentabilidad por año"
+    if (years.isEmpty()) return title
+    return years.asReversed().joinToString(prefix = "$title: ") { year ->
+        val reasons = year.reasons()
+        val note = if (reasons.isEmpty()) "" else " (${reasons.joinToString(" y ")})"
+        "${year.year} ${year.valueText}$note"
+    }
+}
+
+/**
+ * The bar of a year. A return that rounds to zero is a zero bar, so the chart draws it as the neutral mark its text
+ * says it is; the partial first year and the running one are drawn lighter.
+ */
+internal fun YearReturnUi.toBar(): BarChartBar = BarChartBar(
+    label = year.toString(),
+    value = if (tone == PerformanceTone.NEUTRAL) 0.0 else ratio,
+    valueText = valueText,
+    faded = partialSince != null || yearToDate,
+)
 
 /** The volatility and the deepest fall of [points]. */
 internal fun riskUi(points: List<PricePoint>, today: LocalDate): RiskUi {

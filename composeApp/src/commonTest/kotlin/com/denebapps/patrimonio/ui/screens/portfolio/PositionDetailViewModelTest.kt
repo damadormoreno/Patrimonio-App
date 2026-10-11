@@ -40,6 +40,7 @@ import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
+import kotlin.math.round
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -113,6 +114,9 @@ class PositionDetailViewModelTest {
         // 2026-10-10T12:00:00Z
         valuation = HoldingValuation.Manual(CurrencyAmount(Money(250_000), Currency.EUR), 1_791_633_600_000L),
     )
+
+    /** The ratio is a `Double` and carries rounding noise (0.19999999999999996): compare it to six decimals. */
+    private fun YearReturnUi.rounded() = copy(ratio = round(ratio * 1e6) / 1e6)
 
     private fun eur(date: LocalDate, whole: Long) = PricePoint(date, Price(whole * 1_000_000, Currency.EUR))
 
@@ -286,7 +290,7 @@ class PositionDetailViewModelTest {
     }
 
     @Test
-    fun `returns per calendar year list the running year first and the partial first year last`() =
+    fun `returns per calendar year list the partial first year first and the running year last`() =
         runTest(dispatcher) {
             val s = setup("fund")
             val job = collect(s.vm)
@@ -294,10 +298,17 @@ class PositionDetailViewModelTest {
 
             assertEquals(
                 listOf(
-                    YearReturnUi("2026 · en curso", "+10,00 %", PerformanceTone.GAIN),
-                    YearReturnUi("2025 · desde 14/03", "+20,00 %", PerformanceTone.GAIN),
+                    YearReturnUi(
+                        2025,
+                        0.2,
+                        "20,00 %",
+                        PerformanceTone.GAIN,
+                        partialSince = "14/03",
+                        yearToDate = false,
+                    ),
+                    YearReturnUi(2026, 0.1, "10,00 %", PerformanceTone.GAIN, partialSince = null, yearToDate = true),
                 ),
-                s.vm.state.value.yearReturns,
+                s.vm.state.value.yearReturns.map { it.rounded() },
             )
             job.cancel()
         }
@@ -315,10 +326,10 @@ class PositionDetailViewModelTest {
 
         assertEquals(
             listOf(
-                YearReturnUi("2026 · en curso", "0,00 %", PerformanceTone.NEUTRAL),
-                YearReturnUi("2025", "−20,00 %", PerformanceTone.LOSS),
+                YearReturnUi(2025, -0.2, "−20,00 %", PerformanceTone.LOSS, partialSince = null, yearToDate = false),
+                YearReturnUi(2026, 0.0, "0,00 %", PerformanceTone.NEUTRAL, partialSince = null, yearToDate = true),
             ),
-            s.vm.state.value.yearReturns,
+            s.vm.state.value.yearReturns.map { it.rounded() },
         )
         job.cancel()
     }

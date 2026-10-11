@@ -1,6 +1,5 @@
 package com.denebapps.patrimonio.ui.screens.portfolio
 
-import com.denebapps.patrimonio.domain.calc.CalendarYearReturn
 import com.denebapps.patrimonio.domain.calc.Drawdown
 import com.denebapps.patrimonio.domain.calc.HistoryRange
 import com.denebapps.patrimonio.domain.calc.RangeChange
@@ -71,37 +70,6 @@ class PositionFormatTest {
     fun `short day and month are zero padded`() {
         assertEquals("14/03", formatDayMonthShort(LocalDate(2019, 3, 14)))
         assertEquals("05/11", formatDayMonthShort(LocalDate(2019, 11, 5)))
-    }
-
-    @Test
-    fun `a full year has just its number`() {
-        val label = yearReturnLabel(CalendarYearReturn(2025, 0.18, partial = false, yearToDate = false), start())
-
-        assertEquals("2025", label)
-    }
-
-    @Test
-    fun `the running year is marked as in progress`() {
-        val label = yearReturnLabel(CalendarYearReturn(2026, 0.04, partial = false, yearToDate = true), start())
-
-        assertEquals("2026 · en curso", label)
-    }
-
-    @Test
-    fun `the first year says when the history starts`() {
-        val label = yearReturnLabel(CalendarYearReturn(2019, 0.1, partial = true, yearToDate = false), start())
-
-        assertEquals("2019 · desde 14/03", label)
-    }
-
-    @Test
-    fun `a history that starts this year is both in progress and partial`() {
-        val label = yearReturnLabel(
-            CalendarYearReturn(2026, 0.1, partial = true, yearToDate = true),
-            LocalDate(2026, 2, 3),
-        )
-
-        assertEquals("2026 · en curso · desde 03/02", label)
     }
 
     @Test

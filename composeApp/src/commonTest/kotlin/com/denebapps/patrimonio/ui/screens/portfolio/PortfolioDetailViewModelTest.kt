@@ -348,7 +348,9 @@ class PortfolioDetailViewModelTest {
         val job = open(s)
 
         val evolution = assertNotNull(s.vm.state.value.evolution)
-        assertEquals(listOf("2026 · en curso", "2025 · desde 28/03"), evolution.yearReturns.map { it.label })
+        assertEquals(listOf(2025, 2026), evolution.yearReturns.map { it.year })
+        assertEquals(listOf("28/03", null), evolution.yearReturns.map { it.partialSince })
+        assertEquals(listOf(false, true), evolution.yearReturns.map { it.yearToDate })
         assertTrue(evolution.risk.volatilityLabel.startsWith("Volatilidad ("))
         assertTrue(evolution.risk.volatilityText.endsWith(" %"))
         assertTrue(evolution.risk.drawdownText.startsWith("−"))

@@ -78,8 +78,19 @@ data class ChartUi(
     val lastDateText: String,
 )
 
-/** A calendar year: its [label] ("2026 · en curso"), return as [valueText] and the sign as [tone]. */
-data class YearReturnUi(val label: String, val valueText: String, val tone: PerformanceTone)
+/**
+ * A calendar [year] of the return chart: its return as a ratio ([ratio], 0.10 is +10 %) and as [valueText] ("5,84 %"),
+ * and the sign as [tone]. [partialSince] is the day and month ("14/03") the first year of the history starts at (null
+ * for any other year) and [yearToDate] marks the running year; both are figures that are not a whole year.
+ */
+data class YearReturnUi(
+    val year: Int,
+    val ratio: Double,
+    val valueText: String,
+    val tone: PerformanceTone,
+    val partialSince: String?,
+    val yearToDate: Boolean,
+)
 
 /** A labelled figure ("3 años", "+7,10 %"), "—" when it could not be computed. */
 data class FigureUi(val label: String, val valueText: String, val tone: PerformanceTone = PerformanceTone.NEUTRAL)

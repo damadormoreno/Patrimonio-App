@@ -59,6 +59,10 @@ Out of scope: movements and real gains (phase 2), benchmarks/comparators, export
 - [x] **T3 — Position detail screen + reusable Canvas line chart** (route: delegated writer).
 - [x] **T4 — Portfolio detail screen + correlation heatmap** (route: delegated writer).
 - [x] **T5 — Docs** (route: inline): README *Cartera* section.
+- [x] **T6 — Calendar-year returns as a bar chart** (user request after PR #31, reference: Finect-style bars;
+  route: delegated writer): vertical bars oldest → newest, green up / red down with the % above/below,
+  years on the x axis, zero baseline; horizontal scroll starting at the latest years when they don't fit;
+  partial first year and year-to-date drawn lighter with a footnote; used in both details.
 
 ## Acceptance criteria
 
@@ -116,7 +120,13 @@ Out of scope: movements and real gains (phase 2), benchmarks/comparators, export
   composition max drawdown −33,76 % (19/02/2020 → 23/03/2020).
 - **T5** (commit below, `docs: document the position and portfolio details`): README *Cartera* (details,
   product vs own returns, history cache), backup v10, roadmap phase 2.
+- **T6** (commit below, `feat(portfolio): show calendar-year returns as a bar chart`): Canvas `BarChart` + pure
+  `BarChartGeometry` (zero-inclusive 1/2/5 scale, label room above/below, 48dp slots, scroll when they don't
+  fit, starts at the latest year), `income`/`expense` colors, partial first year and YTD at 45 % alpha with
+  footnote, accessibility summary; used in both details. RED: test sources failed to compile; GREEN 997.
+  Parent: check.sh green; emulator with Vanguard (26 years): starts on 2020–2026, 2026 lighter, footnote
+  "2000: desde 14/02 · 2026: en curso", horizontal scroll to 2002–2008 with a shared scale (2008 −37,82 %).
 
 ## Next step
 
-Done. Push and PR to main (#30 merged).
+Done; pushed to PR #31.

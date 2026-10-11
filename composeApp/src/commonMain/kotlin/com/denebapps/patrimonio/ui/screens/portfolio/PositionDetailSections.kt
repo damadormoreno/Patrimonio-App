@@ -238,20 +238,6 @@ internal fun RowValue(text: String, color: Color, modifier: Modifier = Modifier)
     )
 }
 
-/** One row per calendar year, most recent first. */
-@Composable
-internal fun YearReturnsCard(rows: List<YearReturnUi>, modifier: Modifier = Modifier) {
-    DetailCard(modifier = modifier) {
-        rows.forEachIndexed { index, row ->
-            SectionRow(
-                title = row.label,
-                showDivider = index != rows.lastIndex,
-                trailing = { RowValue(row.valueText, toneColor(row.tone)) },
-            )
-        }
-    }
-}
-
 /** The annualized returns over 1, 3 and 5 years. */
 @Composable
 internal fun AnnualizedCard(rows: List<FigureUi>, modifier: Modifier = Modifier) {
