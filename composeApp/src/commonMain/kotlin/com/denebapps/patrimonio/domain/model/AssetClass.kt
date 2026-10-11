@@ -20,6 +20,7 @@ fun inferAssetClass(category: String?, type: InstrumentType): AssetClass? =
  */
 private fun classImpliedByType(type: InstrumentType): AssetClass? = when (type) {
     InstrumentType.STOCK -> AssetClass.EQUITY
+    InstrumentType.CRYPTO -> AssetClass.CRYPTO
     InstrumentType.FUND, InstrumentType.ETF, InstrumentType.OTHER -> null
 }
 

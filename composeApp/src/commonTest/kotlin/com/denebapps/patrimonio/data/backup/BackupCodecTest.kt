@@ -405,6 +405,23 @@ class BackupCodecTest {
     }
 
     @Test
+    fun `a crypto holding quoted by CoinGecko survives a round trip while unknown names are still refused`() {
+        val bitcoin = unpricedEtf.copy(
+            id = "p7",
+            name = "Bitcoin",
+            type = "CRYPTO",
+            ticker = "BTC",
+            provider = "COINGECKO",
+            providerCode = "bitcoin",
+            assetClass = "CRYPTO",
+        )
+
+        assertEquals(listOf(bitcoin), roundTrip(bitcoin))
+        assertTrue("tipo" in holdingReason(bitcoin.copy(type = "NFT")))
+        assertTrue("proveedor" in holdingReason(bitcoin.copy(provider = "BINANCE")))
+    }
+
+    @Test
     fun `a version 7 backup without holdings imports with an empty portfolio`() {
         val document = BackupCodec.decode(
             """

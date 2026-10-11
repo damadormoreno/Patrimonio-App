@@ -30,6 +30,7 @@ fun instrumentTypeLabel(type: InstrumentType): String = when (type) {
     InstrumentType.FUND -> "Fondo"
     InstrumentType.ETF -> "ETF"
     InstrumentType.STOCK -> "Acción"
+    InstrumentType.CRYPTO -> "Cripto"
     InstrumentType.OTHER -> "Otro"
 }
 
@@ -37,6 +38,7 @@ fun instrumentTypeLabel(type: InstrumentType): String = when (type) {
 fun providerLabel(provider: QuoteProvider): String = when (provider) {
     QuoteProvider.MORNINGSTAR -> "Morningstar"
     QuoteProvider.YAHOO -> "Yahoo Finance"
+    QuoteProvider.COINGECKO -> "CoinGecko"
 }
 
 /** "10/10/2026". */

@@ -137,6 +137,13 @@ class AssetClassTest {
     }
 
     @Test
+    fun `a crypto is the crypto class without any category`() {
+        assertEquals(AssetClass.CRYPTO, infer(null, InstrumentType.CRYPTO))
+        assertEquals(AssetClass.CRYPTO, infer("RV Global", InstrumentType.CRYPTO))
+        assertEquals(AssetClass.CRYPTO, holding(type = InstrumentType.CRYPTO).effectiveAssetClass())
+    }
+
+    @Test
     fun `the category decides for funds and ETFs whatever the type`() {
         assertEquals(AssetClass.FIXED_INCOME, infer("RF Otros", InstrumentType.ETF))
         assertEquals(AssetClass.COMMODITIES, infer("Materias Primas - Diversificado", InstrumentType.ETF))

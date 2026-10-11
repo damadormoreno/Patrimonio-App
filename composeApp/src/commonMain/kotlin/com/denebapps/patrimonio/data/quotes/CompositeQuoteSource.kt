@@ -16,46 +16,75 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.datetime.LocalDate
 
 /**
- * [QuoteSource] combining Morningstar and Yahoo Finance, following the merge rules of rumbo
+ * [QuoteSource] combining Morningstar, Yahoo Finance and CoinGecko, following the merge rules of rumbo
  * (MIT, github.com/danidm98/rumbo, `buscar.py`):
  *
  * - An ISIN is searched on both providers; Morningstar candidates come first. A Yahoo `0P…` symbol whose code
  *   (before the dot) is a Morningstar SecId already found is the same instrument and is dropped, and Yahoo
  *   mutual funds are dropped when Morningstar already offers a fund.
- * - A ticker or a name is searched on Yahoo only.
- * - One provider failing does not fail an ISIN search; both failing does.
+ * - A ticker or a name is searched on Yahoo and CoinGecko at once (Yahoo's own crypto results are skipped, CoinGecko is
+ *   the crypto source). A coin whose symbol or name equals the query goes first (at most [TOP_COINS] of them) and the
+ *   other coins are left out; without such a coin the [TOP_COINS] best ranked ones follow the Yahoo results.
+ * - One provider failing does not fail a search; all the providers it asks failing does.
  *
  * Candidates are NOT validated by fetching prices — the caller prices the one the user picks.
  *
  * The same adapters also serve the price history, routed by the instrument's provider, and the fundamentals, which
- * only Morningstar publishes (its screener, by ISIN) whichever provider quotes the holding.
+ * only Morningstar publishes (its screener, by ISIN) whichever provider quotes the holding; a crypto has none.
  */
 class CompositeQuoteSource(
     private val morningstar: MorningstarApi,
     private val yahoo: YahooFinanceApi,
+    private val coinGecko: CoinGeckoApi,
 ) : QuoteSource, PriceHistorySource, FundamentalsSource {
     override suspend fun search(query: String): List<InstrumentCandidate> {
         val text = query.trim()
         return when {
             text.isEmpty() -> emptyList()
             looksLikeIsin(text) -> searchByIsin(text.uppercase())
-            else -> yahoo.search(text)
+            else -> searchByTickerOrName(text)
         }
     }
 
     override suspend fun latestQuote(ref: InstrumentRef): Quote = when (ref.provider) {
         QuoteProvider.MORNINGSTAR -> morningstar.latestNav(ref.code)
         QuoteProvider.YAHOO -> yahoo.latestQuote(ref.code)
+        QuoteProvider.COINGECKO -> coinGecko.latestQuote(ref.code)
     }
 
     override suspend fun priceHistory(ref: InstrumentRef, from: LocalDate?): List<PricePoint> = when (ref.provider) {
         QuoteProvider.MORNINGSTAR -> morningstar.priceHistory(ref.code, from)
         QuoteProvider.YAHOO -> yahoo.priceHistory(ref.code, from)
+        QuoteProvider.COINGECKO -> coinGecko.priceHistory(ref.code, from)
     }
 
     override suspend fun fundamentals(isin: String, preferred: InstrumentRef?): InstrumentFundamentals? {
+        if (preferred?.provider == QuoteProvider.COINGECKO) return null
         val secId = preferred?.takeIf { it.provider == QuoteProvider.MORNINGSTAR }?.code
         return morningstar.fundamentals(isin.trim().uppercase(), secId)
+    }
+
+    private suspend fun searchByTickerOrName(text: String): List<InstrumentCandidate> = coroutineScope {
+        val fromYahoo = async { runCatchingUnavailable { yahoo.search(text) } }
+        val fromCoinGecko = async { runCatchingUnavailable { coinGecko.search(text) } }
+        val yahooResult = fromYahoo.await()
+        val coinGeckoResult = fromCoinGecko.await()
+        if (yahooResult.isFailure && coinGeckoResult.isFailure) {
+            throw QuoteUnavailableException("No quote provider answered the search", yahooResult.exceptionOrNull())
+        }
+        mergeCoins(text, yahooResult.getOrDefault(emptyList()), coinGeckoResult.getOrDefault(emptyList()))
+    }
+
+    private fun mergeCoins(
+        query: String,
+        fromYahoo: List<InstrumentCandidate>,
+        coins: List<InstrumentCandidate>,
+    ): List<InstrumentCandidate> {
+        val exact = coins.filter { coin ->
+            coin.ticker.equals(query, ignoreCase = true) || coin.name.trim().equals(query, ignoreCase = true)
+        }
+        val merged = if (exact.isEmpty()) fromYahoo + coins.take(TOP_COINS) else exact.take(TOP_COINS) + fromYahoo
+        return merged.distinctBy { it.ref }
     }
 
     private suspend fun searchByIsin(isin: String): List<InstrumentCandidate> = coroutineScope {
@@ -95,5 +124,6 @@ class CompositeQuoteSource(
 
     private companion object {
         const val MORNINGSTAR_PREFIX = "0P"
+        const val TOP_COINS = 3
     }
 }

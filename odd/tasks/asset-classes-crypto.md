@@ -44,7 +44,7 @@ CoinGecko API key.
 ## Tasks
 
 - [x] **T1 — Asset classes: model, inference, Room v12, backup v12, allocation calc** (route: delegated writer).
-- [ ] **T2 — CoinGecko adapter + crypto in search/quotes/history** (route: delegated writer).
+- [x] **T2 — CoinGecko adapter + crypto in search/quotes/history** (route: delegated writer).
 - [ ] **T3 — UI: pickers, portfolio detail block, preview projection, crypto results** (route: delegated writer).
 - [ ] **T4 — Docs** (route: inline).
 
@@ -70,7 +70,15 @@ CoinGecko API key.
   (`12.json`), `updateAssetClass`, backup v12, `allocationByAssetClass`, `AddProjection.classAllocationBefore/
   After`. RED: compile errors; GREEN (parent re-run): check.sh (1226 tests), iOS compile.
   Noted (pre-existing, not touched): a `BackupCodecTest` v5 test's `.replace("version": 10…)` never matches.
+- **T2** (commit below, `feat(portfolio): add crypto through CoinGecko`): `QuoteProvider.COINGECKO`,
+  `InstrumentType.CRYPTO` (→ `AssetClass.CRYPTO`); `CoinGeckoApi` (search ordered by market-cap rank, top 8;
+  `simple/price` with `last_updated_at`; `market_chart` days 365 or clamped incremental, never `max`, one point
+  per UTC day); composite name/ticker search queries Yahoo + CoinGecko concurrently (exact symbol/name coins
+  first, else top 3 appended; either provider may fail). Backup/Room accept the new names without changes.
+  UI compile fixes only in `HoldingFormat.kt` (`Cripto`, `CoinGecko`). Live shapes checked (401 + 10012 for
+  `days=max`, integer prices, live "now" point). RED: compile errors; GREEN (parent re-run): check.sh
+  (1254 tests), iOS compile.
 
 ## Next step
 
-T2 — CoinGecko.
+T3 — UI.
