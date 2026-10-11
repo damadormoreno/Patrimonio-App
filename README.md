@@ -56,6 +56,12 @@ precio) y se valora a ese precio; lo que no tenga cotización se añade con valo
 EUR suma al patrimonio neto como bloque propio y aparece como *Cartera* en la composición. Cada
 producto puede llevar, opcionalmente, el banco o bróker que lo gestiona (*Banco o bróker*, texto libre).
 
+- **Varias carteras** (p. ej. *Jubilación*, *Hijos*): cada producto está en **una sola** cartera y el
+  patrimonio neto suma todas. En la pestaña se elige *Todas* o una cartera (se recuerda la elección);
+  lista, total y detalle siguen esa selección. Se crean, renombran y eliminan desde *Gestionar*: al
+  eliminar una con productos se pide a qué otra moverlos, y la última no se puede borrar. Al añadir un
+  producto se elige su cartera y desde su ficha se puede mover a otra.
+
 - **Precios**: Morningstar (`lt.morningstar.com`: búsqueda por ISIN y valor liquidativo en EUR,
   sobre todo fondos) y Yahoo Finance (búsqueda y cierres diarios de ETF y acciones), con la misma
   lógica que [rumbo](https://github.com/danidm98/rumbo) (MIT). Están detrás del puerto
@@ -85,7 +91,7 @@ producto puede llevar, opcionalmente, el banco o bróker que lo gestiona (*Banco
 
 Ajustes → Datos → *Exportar copia* / *Importar copia* (selector nativo vía
 [FileKit](https://github.com/vinceglb/FileKit)). El archivo es JSON legible
-(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 10}`:
+(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 11}`:
 
 - Incluye activos, pasivos, grupos y miembros, histórico mensual y metas con sus aportaciones y
   vínculos (una meta se vincula a una cuenta **o** a un grupo), tipos de cuenta propios y los
@@ -94,7 +100,8 @@ Ajustes → Datos → *Exportar copia* / *Importar copia* (selector nativo vía
   en las de la 1 a la 3 las metas tenían id numérico y reciben un UUID nuevo al importarlas, y la
   sección de suscripciones de las copias de la 3 a la 6 se ignora (la función se eliminó en la 7);
   las anteriores a la 8 se importan sin cartera y las anteriores a la 9, sin banco o bróker,
-  y las anteriores a la 10, sin datos de Morningstar (se rellenan solos).
+  las anteriores a la 10, sin datos de Morningstar (se rellenan solos), y las anteriores a la 11
+  meten todos los productos en una única cartera *Mi cartera*.
 - Importar **reemplaza** todos los datos en una sola transacción. El archivo se valida entero antes
   (divisas, tipos, ids únicos, referencias, reglas del ledger de metas), así que uno inválido no
   toca nada.

@@ -39,7 +39,7 @@ Out of scope: reordering portfolios by drag, per-portfolio colors/icons, portfol
 - [x] **T1 — Data: portfolios table, Room v11 migration, repository, backup v11, seeding/clear-all**
   (route: delegated writer).
 - [x] **T2 — UI: selector, management, add/move, filtered list/total/details** (route: delegated writer).
-- [ ] **T3 — Docs** (route: inline): README *Cartera* and backup sections.
+- [x] **T3 — Docs** (route: inline): README *Cartera* and backup sections.
 
 ## Acceptance criteria
 
@@ -75,7 +75,8 @@ Out of scope: reordering portfolios by drag, per-portfolio colors/icons, portfol
   moved Vanguard there (weight 100 % · 47,6 % del total; Mi cartera 14.255,32 € = 27.207,52 − 12.952,20);
   Todas lists portfolio names; deleted "Jubilacion" moving its holding back → nothing lost, snapshot
   39.707,52 € unchanged.
+- **T3** (commit below, `docs: document multiple portfolios`): README *Cartera* (several portfolios) and backup v11.
 
 ## Next step
 
-T3 — docs, then push + PR.
+Done; push and PR (stacked on #31 while it is open).
