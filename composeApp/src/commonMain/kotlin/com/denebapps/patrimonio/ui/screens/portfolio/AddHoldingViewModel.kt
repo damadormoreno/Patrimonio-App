@@ -17,11 +17,14 @@ import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.LastQuote
 import com.denebapps.patrimonio.domain.model.MAX_BROKER_LENGTH
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.MovementType
 import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Quote
 import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.model.normalizeBroker
+import com.denebapps.patrimonio.domain.repository.FxHistoryRepository
+import com.denebapps.patrimonio.domain.repository.MovementRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
@@ -40,6 +43,9 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.todayIn
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
@@ -58,6 +64,9 @@ enum class SearchStatus { IDLE, LOADING, RESULTS, EMPTY, ERROR }
 /** How the user tells what they hold: the number of units, or what the position is worth now. */
 enum class EntryMode { UNITS, AMOUNT }
 
+/** What the user tells about a new product: what they hold now (no movements), or one purchase (a position with them). */
+enum class EntryKind { CURRENT, PURCHASE }
+
 /** A search result row. [identifier] is the ISIN and/or ticker; [source] is the exchange or the data provider. */
 data class CandidateUi(
     val ref: InstrumentRef,
@@ -71,12 +80,39 @@ data class CandidateUi(
 data class QuoteUi(val priceText: String, val dateText: String, val currency: Currency)
 
 /**
+ * The "Una compra" entry: the purchase that creates the position. [eurText] is what the euro field holds when [showEur]
+ * (the product is not quoted in euros), [eurHint] why it needs to be typed, and [impliedPriceText] the price per unit
+ * the amount and units come to.
+ */
+data class PurchaseUi(
+    val date: LocalDate,
+    val unitsText: String = "",
+    val amountText: String = "",
+    val feeText: String = "",
+    val eurText: String = "",
+    val showEur: Boolean = false,
+    val eurHint: String? = null,
+    val impliedPriceText: String? = null,
+)
+
+/** What the user typed in the purchase entry; [eurText] is `null` while it follows the rate of the day. */
+private data class PurchaseTyped(
+    val date: LocalDate,
+    val unitsText: String = "",
+    val amountText: String = "",
+    val feeText: String = "",
+    val eurText: String? = null,
+)
+
+/**
  * Everything the add form shows. Only the fields of the current [stage] matter: the search ones in `SEARCH`, the
  * entry ones in `ENTRY`, the manual ones (name, type, currency and [amountText] as the value) in `MANUAL`. [preview]
  * is the live "≈ ..." line of the entry form and [canSave] says whether Save is enabled. [broker] is the optional bank
  * or broker field, as typed, shared by the entry and the manual forms. [portfolios] are the portfolios to choose from
  * and [portfolioId] the one the holding is added to; the picker is only shown ([canPickPortfolio]) with several.
- * [assetClass] is the state of the "Clase de activo" picker, shared by the entry and the manual forms.
+ * [assetClass] is the state of the "Clase de activo" picker, shared by the entry and the manual forms. The entry is
+ * what is held now or, with [entryKind] [EntryKind.PURCHASE], the [purchase] that creates the position; [saveError] is
+ * why the last save was refused.
  */
 data class AddHoldingUiState(
     val stage: AddHoldingStage = AddHoldingStage.SEARCH,
@@ -96,6 +132,9 @@ data class AddHoldingUiState(
     val portfolios: List<PortfolioOptionUi> = emptyList(),
     val portfolioId: String? = null,
     val assetClass: AssetClassChoiceUi = AssetClassChoiceUi(),
+    val entryKind: EntryKind = EntryKind.CURRENT,
+    val purchase: PurchaseUi = PurchaseUi(date = LocalDate(1970, 1, 1)),
+    val saveError: String? = null,
     val canSave: Boolean = false,
 ) {
     val canPickPortfolio: Boolean get() = portfolios.size >= MIN_PORTFOLIOS_TO_CHOOSE
@@ -119,10 +158,15 @@ class AddHoldingViewModel(
     private val portfolioRepository: PortfolioRepository,
     private val portfolios: PortfolioCollectionRepository,
     private val preferences: PreferencesRepository,
+    private val movementRepository: MovementRepository,
+    fxHistoryRepository: FxHistoryRepository,
     private val clock: Clock,
+    zoneProvider: () -> TimeZone,
     private val idProvider: () -> String = ::newHoldingId,
 ) : ViewModel() {
-    private val mutableState = MutableStateFlow(AddHoldingUiState())
+    private val today = clock.todayIn(zoneProvider())
+    private var purchase = PurchaseTyped(date = today)
+    private val mutableState = MutableStateFlow(AddHoldingUiState(purchase = PurchaseUi(date = today)))
     val state: StateFlow<AddHoldingUiState> = mutableState.asStateFlow()
 
     private val navigateBackChannel = Channel<Unit>(Channel.BUFFERED)
@@ -142,8 +186,10 @@ class AddHoldingViewModel(
     private var searchJob: Job? = null
     private var quoteJob: Job? = null
     private var saving = false
+    private val fx = FxRateLookup(fxHistoryRepository, viewModelScope) { update { it } }
 
     init {
+        fx.start()
         viewModelScope.launch {
             val remembered = preferences.observeSelectedPortfolioId().first()
             portfolios.observePortfolios().collect { all -> showPortfolios(all, remembered) }
@@ -201,11 +247,15 @@ class AddHoldingViewModel(
         pickedCandidate = candidate
         pickedQuote = null
         pickedClass = null
+        purchase = PurchaseTyped(date = today)
         update {
             it.copy(
                 stage = AddHoldingStage.LOADING_QUOTE,
                 picked = candidate.toUi(),
                 quote = null,
+                entryKind = EntryKind.CURRENT,
+                purchase = PurchaseUi(date = today),
+                saveError = null,
                 entryMode = EntryMode.UNITS,
                 unitsText = "",
                 amountText = "",
@@ -232,6 +282,32 @@ class AddHoldingViewModel(
 
     fun onEntryModeChange(mode: EntryMode) = update { it.copy(entryMode = mode) }
 
+    /** Switches between what is held now and one purchase ("Una compra"). */
+    fun onEntryKindChange(kind: EntryKind) {
+        update { it.copy(entryKind = kind, saveError = null) }
+        if (kind == EntryKind.PURCHASE) pickedQuote?.let { fx.ensure(it.price.currency, purchase.date) }
+    }
+
+    fun onPurchaseDateChange(date: LocalDate) {
+        purchase = purchase.copy(date = date, eurText = null)
+        pickedQuote?.let { fx.ensure(it.price.currency, date) }
+        update { it.copy(saveError = null) }
+    }
+
+    fun onPurchaseUnitsChange(text: String) = changePurchase { it.copy(unitsText = text) }
+
+    fun onPurchaseAmountChange(text: String) = changePurchase { it.copy(amountText = text, eurText = null) }
+
+    fun onPurchaseFeeChange(text: String) = changePurchase { it.copy(feeText = text) }
+
+    /** The euro equivalent as typed; a blank field follows the rate of the day again. */
+    fun onPurchaseEurChange(text: String) = changePurchase { it.copy(eurText = text) }
+
+    private fun changePurchase(transform: (PurchaseTyped) -> PurchaseTyped) {
+        purchase = transform(purchase)
+        update { it.copy(saveError = null) }
+    }
+
     fun onUnitsChange(text: String) = update { it.copy(unitsText = text) }
 
     /** The current total of the position in the entry form, or the value of a manual holding. */
@@ -255,8 +331,12 @@ class AddHoldingViewModel(
     fun onBackToSearch() {
         quoteJob?.cancel()
         clearPicked()
+        purchase = PurchaseTyped(date = today)
         update {
             it.copy(
+                entryKind = EntryKind.CURRENT,
+                purchase = PurchaseUi(date = today),
+                saveError = null,
                 stage = AddHoldingStage.SEARCH,
                 picked = null,
                 quote = null,
@@ -295,8 +375,9 @@ class AddHoldingViewModel(
     fun onSave() {
         val form = mutableState.value
         if (saving || !form.canSave) return
+        if (form.stage == AddHoldingStage.ENTRY && form.entryKind == EntryKind.PURCHASE) return savePurchase(form)
         val holdingIn = when (form.stage) {
-            AddHoldingStage.ENTRY -> quotedHolding(form)
+            AddHoldingStage.ENTRY -> entryResult(form)?.let { quotedHolding(form, it.units) }
             AddHoldingStage.MANUAL -> manualHolding(form)
             else -> null
         } ?: return
@@ -307,11 +388,32 @@ class AddHoldingViewModel(
         }
     }
 
+    /** Stores the holding with its first purchase in one step; a refused purchase shows its reason and stores nothing. */
+    private fun savePurchase(form: AddHoldingUiState) {
+        val draft = purchaseEntry()?.draft ?: return
+        val holdingIn = quotedHolding(form, checkNotNull(draft.units)) ?: return
+        saving = true
+        update { it.copy(saveError = null) }
+        viewModelScope.launch {
+            try {
+                movementRepository.addHoldingWithPurchase(
+                    holdingIn(mutableState.value.portfolioId ?: defaultPortfolio()),
+                    draft,
+                )
+                navigateBackChannel.send(Unit)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                saving = false
+                update { it.copy(saveError = movementErrorMessage(failure)) }
+            }
+        }
+    }
+
     /** The holding the form describes, as a function of the portfolio it is added to; `null` when it is incomplete. */
-    private fun quotedHolding(form: AddHoldingUiState): ((String) -> PortfolioHolding)? {
+    private fun quotedHolding(form: AddHoldingUiState, units: Units): ((String) -> PortfolioHolding)? {
         val candidate = pickedCandidate ?: return null
         val quote = pickedQuote ?: return null
-        val units = entryResult(form)?.units ?: return null
         val id = idProvider()
         val valuation = HoldingValuation.Quoted(
             ref = candidate.ref,
@@ -404,7 +506,15 @@ class AddHoldingViewModel(
 
     /** Recomputes the preview line and the Save gate from the form fields. */
     private fun withDerived(form: AddHoldingUiState): AddHoldingUiState = when (form.stage) {
-        AddHoldingStage.ENTRY -> {
+        AddHoldingStage.ENTRY -> if (form.entryKind == EntryKind.PURCHASE) {
+            val resolved = purchaseEntry()
+            form.copy(
+                preview = null,
+                purchase = purchaseUi(resolved),
+                assetClass = classChoice(pickedCandidate?.type ?: form.type),
+                canSave = resolved?.draft != null,
+            )
+        } else {
             val result = entryResult(form)
             form.copy(
                 preview = result?.preview,
@@ -418,6 +528,39 @@ class AddHoldingViewModel(
             canSave = form.name.isNotBlank() && parseAmountToMinor(form.amountText, form.currency) != null,
         )
         else -> form.copy(preview = null, assetClass = AssetClassChoiceUi(), canSave = false)
+    }
+
+    /** The purchase as typed, resolved at the rate of its day; `null` while there is no price (no product picked). */
+    private fun purchaseEntry(): MovementEntry? {
+        val currency = pickedQuote?.price?.currency ?: return null
+        return resolveMovementEntry(
+            MovementEntryInput(
+                type = MovementType.BUY,
+                date = purchase.date,
+                currency = currency,
+                unitsText = purchase.unitsText,
+                amountText = purchase.amountText,
+                feeText = purchase.feeText,
+                eurText = purchase.eurText,
+                rateScaled = fx.rateOn(currency, purchase.date),
+            ),
+        )
+    }
+
+    private fun purchaseUi(resolved: MovementEntry?): PurchaseUi {
+        val currency = pickedQuote?.price?.currency ?: Currency.EUR
+        val showEur = currency != Currency.EUR
+        val missingRate = showEur && fx.rateOn(currency, purchase.date) == null && purchase.eurText.isNullOrBlank()
+        return PurchaseUi(
+            date = purchase.date,
+            unitsText = purchase.unitsText,
+            amountText = purchase.amountText,
+            feeText = purchase.feeText,
+            eurText = purchase.eurText ?: resolved?.eurPrefillText.orEmpty(),
+            showEur = showEur,
+            eurHint = MISSING_EUR_HINT.takeIf { missingRate },
+            impliedPriceText = resolved?.impliedPriceText,
+        )
     }
 
     /** `null` while the entered units or total are invalid, zero, or do not fit the fixed-point range. */
@@ -442,10 +585,12 @@ class AddHoldingViewModel(
     }
 }
 
+private const val MISSING_EUR_HINT = "No hay cambio de esa fecha: escribe el equivalente en euros."
+
 /** A provider can send a nameless result; the ISIN, ticker or code then stands in for the name. */
 internal fun InstrumentCandidate.holdingName(): String = name.trim().ifBlank { isin ?: ticker ?: ref.code }
 
-private fun InstrumentCandidate.toUi() = CandidateUi(
+internal fun InstrumentCandidate.toUi() = CandidateUi(
     ref = ref,
     name = name,
     identifier = identifierText(isin, ticker),

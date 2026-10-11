@@ -3,6 +3,7 @@ package com.denebapps.patrimonio.ui.screens.portfolio
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.denebapps.patrimonio.domain.calc.HistoryRange
+import com.denebapps.patrimonio.domain.calc.formatUnits
 import com.denebapps.patrimonio.domain.calc.holdingWeights
 import com.denebapps.patrimonio.domain.calc.mulDivHalfEven
 import com.denebapps.patrimonio.domain.calc.toEur
@@ -12,14 +13,18 @@ import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.HoldingValuation
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.Movement
+import com.denebapps.patrimonio.domain.model.MovementType
 import com.denebapps.patrimonio.domain.model.PERCENT_SCALE
 import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.PricePoint
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.InstrumentHistoryRepository
+import com.denebapps.patrimonio.domain.repository.MovementRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
+import com.denebapps.patrimonio.domain.repository.isQuotedFund
 import com.denebapps.patrimonio.ui.components.charts.ChartPoint
 import com.denebapps.patrimonio.ui.components.formatEur
 import kotlinx.coroutines.CancellationException
@@ -53,6 +58,7 @@ internal const val PERCENT_TO_FRACTION = 100L * PERCENT_SCALE
 private const val QUOTED_NOTE = "Rentabilidades del producto, no de tus compras."
 private const val MANUAL_NOTE = "Sin histórico: es un valor manual."
 private const val WEIGHT_DECIMALS = 1
+private const val EMPTY_MOVEMENTS_TEXT = "Sin movimientos: las participaciones se editan a mano."
 
 /** Whether there is a price history to draw: not applicable (manual), being downloaded, missing, or ready. */
 enum class HistoryStatus { NOT_APPLICABLE, LOADING, UNAVAILABLE, AVAILABLE }
@@ -150,13 +156,61 @@ data class PositionDetailUiState(
     val chartNote: String? = null,
     val isSyncing: Boolean = false,
     val syncError: Boolean = false,
+    val movements: MovementsUi = MovementsUi(),
+    val choice: OpeningChoiceUi? = null,
 )
+
+/**
+ * The movements section. It is [visible] for a quoted position (a manual one has no units to move). Without movements
+ * [emptyText] says that the units are edited by hand; [hasUnits] says that the position holds some, and [canTransfer]
+ * is set for a fund that holds units and has movements, the only kind that can be transferred.
+ */
+data class MovementsUi(
+    val visible: Boolean = false,
+    val rows: List<MovementRowUi> = emptyList(),
+    val emptyText: String? = null,
+    val hasUnits: Boolean = false,
+    val canTransfer: Boolean = false,
+)
+
+/** Where the question that opens the movements of a position that already has units is. */
+enum class OpeningChoiceStep { CHOOSE, WARN_ONE_BY_ONE }
+
+/**
+ * The question asked when the first movement is added to a position that already has units: record them as an
+ * opening balance ([openingLabel]) or enter the purchases one by one ([oneByOneLabel]), which first shows [warning].
+ */
+data class OpeningChoiceUi(
+    val step: OpeningChoiceStep,
+    val openingLabel: String,
+    val oneByOneLabel: String,
+    val warning: String?,
+)
+
+/** Where the position detail sends the user next. */
+sealed interface PositionNavigation {
+    /** The movement sheet: a new movement, or the one [movementId]; [openingBalance] opens the opening balance form. */
+    data class MovementForm(val movementId: String?, val openingBalance: Boolean) : PositionNavigation
+
+    /** The transfer sheet: a new transfer, or the one [transferId]. */
+    data class Transfer(val transferId: String?) : PositionNavigation
+}
 
 /** The state of the download of this position's data, kept apart from the data itself. */
 private data class SyncState(val running: Boolean, val failed: Boolean = false)
 
-/** Every holding and every portfolio, which together say how much of its portfolio and of the total a position is. */
-private data class Placement(val holdings: List<PortfolioHolding>, val portfolios: List<Portfolio>)
+/**
+ * Every holding, every portfolio and every movement: together they say how much of its portfolio and of the total a
+ * position is, and who is on the other side of its transfers.
+ */
+private data class Placement(
+    val holdings: List<PortfolioHolding>,
+    val portfolios: List<Portfolio>,
+    val movements: List<Movement>,
+)
+
+/** What the repositories say about the position, apart from what the user is doing on the screen. */
+private data class PositionData(val placed: Placement, val points: List<PricePoint>, val rates: FxRates)
 
 /**
  * Position detail of the holding [holdingId]: its header, the product's price chart over a selectable range, the
@@ -170,6 +224,7 @@ class PositionDetailViewModel(
     private val holdingId: String,
     private val portfolioRepository: PortfolioRepository,
     portfolios: PortfolioCollectionRepository,
+    private val movementRepository: MovementRepository,
     fxRepository: FxRepository,
     private val historyRepository: InstrumentHistoryRepository,
     private val clock: Clock,
@@ -186,6 +241,13 @@ class PositionDetailViewModel(
     /** One-shot signal to leave the screen. */
     val navigateBack: Flow<Unit> = navigateBackChannel.receiveAsFlow()
 
+    private val navigateChannel = Channel<PositionNavigation>(Channel.BUFFERED)
+
+    /** One-shot requests to open a movement or transfer sheet. */
+    val navigate: Flow<PositionNavigation> = navigateChannel.receiveAsFlow()
+
+    private val choiceStep = MutableStateFlow<OpeningChoiceStep?>(null)
+
     private var closed = false
 
     private val history: Flow<List<PricePoint>> = portfolioRepository.observeAll()
@@ -193,17 +255,23 @@ class PositionDetailViewModel(
         .distinctUntilChanged()
         .flatMapLatest { ref -> if (ref == null) flowOf(emptyList()) else historyRepository.observe(ref) }
 
-    private val placement = combine(portfolioRepository.observeAll(), portfolios.observePortfolios(), ::Placement)
+    private val placement = combine(
+        portfolioRepository.observeAll(),
+        portfolios.observePortfolios(),
+        movementRepository.observeAllMovements(),
+        ::Placement,
+    )
+
+    private val data = combine(placement, history, fxRepository.observeRates(), ::PositionData)
 
     val state: StateFlow<PositionDetailUiState> = combine(
-        placement,
-        history,
-        fxRepository.observeRates(),
+        data,
         selectedRange,
         sync,
-    ) { placed, points, rates, range, syncState ->
-        placed.holdings.firstOrNull { it.id == holdingId }
-            ?.let { buildState(it, placed, points, rates, range, syncState) }
+        choiceStep,
+    ) { current, range, syncState, step ->
+        current.placed.holdings.firstOrNull { it.id == holdingId }
+            ?.let { buildState(it, current, range, syncState, step) }
             ?: PositionDetailUiState()
     }.stateIn(
         scope = viewModelScope,
@@ -234,6 +302,63 @@ class PositionDetailViewModel(
 
     fun onSyncErrorDismiss() {
         sync.value = sync.value.copy(failed = false)
+    }
+
+    /**
+     * "Añadir movimiento": a position that has units but no movements first asks whether to record them as an opening
+     * balance or to enter the purchases one by one; any other goes straight to the movement sheet.
+     */
+    fun onAddMovement() {
+        val section = state.value.movements
+        if (!section.visible) return
+        if (section.rows.isEmpty() && section.hasUnits) {
+            choiceStep.value = OpeningChoiceStep.CHOOSE
+        } else {
+            navigateChannel.trySend(PositionNavigation.MovementForm(null, openingBalance = false))
+        }
+    }
+
+    /** The user keeps the units the position has as its opening balance. */
+    fun onChooseOpeningBalance() {
+        choiceStep.value = null
+        navigateChannel.trySend(PositionNavigation.MovementForm(null, openingBalance = true))
+    }
+
+    /** The user will enter the purchases one by one; shows what happens to the units they have now. */
+    fun onChooseOneByOne() {
+        choiceStep.value = OpeningChoiceStep.WARN_ONE_BY_ONE
+    }
+
+    /** The user accepts that the units will come from the movements and goes on to the first one. */
+    fun onConfirmOneByOne() {
+        choiceStep.value = null
+        navigateChannel.trySend(PositionNavigation.MovementForm(null, openingBalance = false))
+    }
+
+    fun onDismissChoice() {
+        choiceStep.value = null
+    }
+
+    /** Opens the sheet that edits the movement [movementId]; a transfer leg opens its transfer. */
+    fun onOpenMovement(movementId: String) {
+        viewModelScope.launch {
+            val movement = movementRepository.observeMovements(holdingId).first().firstOrNull { it.id == movementId }
+                ?: return@launch
+            val transferId = movement.transferId
+            navigateChannel.send(
+                if (transferId != null) {
+                    PositionNavigation.Transfer(transferId)
+                } else {
+                    PositionNavigation.MovementForm(movement.id, movement.type == MovementType.OPENING_BALANCE)
+                },
+            )
+        }
+    }
+
+    /** "Traspasar": opens the transfer sheet; ignored for a position that cannot be transferred. */
+    fun onTransfer() {
+        if (!state.value.movements.canTransfer) return
+        navigateChannel.trySend(PositionNavigation.Transfer(null))
     }
 
     private fun startSync(force: Boolean) {
@@ -289,16 +414,19 @@ class PositionDetailViewModel(
 
     private fun buildState(
         holding: PortfolioHolding,
-        placed: Placement,
-        points: List<PricePoint>,
-        rates: FxRates,
+        current: PositionData,
         range: HistoryRange,
         syncState: SyncState,
+        choice: OpeningChoiceStep?,
     ): PositionDetailUiState {
+        val (placed, points, rates) = current
+        val movements = movementsUi(holding, placed)
         val base = PositionDetailUiState(
             loaded = true,
             header = buildHeader(holding, placed, rates),
             product = productData(holding, rates),
+            movements = movements,
+            choice = choice?.let { openingChoiceUi(holding, it) },
         )
         if (holding.valuation !is HoldingValuation.Quoted) return base.copy(note = MANUAL_NOTE)
         val withSync = base.copy(note = QUOTED_NOTE, isSyncing = syncState.running)
@@ -318,6 +446,40 @@ class PositionDetailViewModel(
             risk = riskUi(points, today),
             chartNote = historyNote(holding.valuation.ref.provider),
             syncError = syncState.failed,
+        )
+    }
+
+    /** The list of this position's movements (newest first) and what can be done with them. */
+    private fun movementsUi(holding: PortfolioHolding, placed: Placement): MovementsUi {
+        val valuation = holding.valuation as? HoldingValuation.Quoted ?: return MovementsUi()
+        val own = placed.movements.filter { it.holdingId == holding.id }
+        val namesByHolding = placed.holdings.associate { it.id to it.name }
+        val transfers = placed.movements.filter { it.transferId != null }.groupBy { it.transferId }
+        val rows = movementRows(own, valuation.currency) { leg ->
+            transfers[leg.transferId]?.firstOrNull { it.id != leg.id }?.let { namesByHolding[it.holdingId] }
+        }
+        return MovementsUi(
+            visible = true,
+            rows = rows,
+            emptyText = EMPTY_MOVEMENTS_TEXT.takeIf { rows.isEmpty() },
+            hasUnits = !valuation.isClosed,
+            canTransfer = rows.isNotEmpty() && !valuation.isClosed && isQuotedFund(holding.type, isQuoted = true),
+        )
+    }
+
+    private fun openingChoiceUi(holding: PortfolioHolding, step: OpeningChoiceStep): OpeningChoiceUi? {
+        val units = (holding.valuation as? HoldingValuation.Quoted)?.units ?: return null
+        val unitsText = "${formatUnits(units)} part."
+        return OpeningChoiceUi(
+            step = step,
+            openingLabel = "Saldo inicial con tus $unitsText",
+            oneByOneLabel = "Meter mis compras una a una",
+            warning = if (step == OpeningChoiceStep.WARN_ONE_BY_ONE) {
+                "Las participaciones pasarán a salir de tus movimientos: los $unitsText que tienes ahora se " +
+                    "sustituirán por lo que registres."
+            } else {
+                null
+            },
         )
     }
 

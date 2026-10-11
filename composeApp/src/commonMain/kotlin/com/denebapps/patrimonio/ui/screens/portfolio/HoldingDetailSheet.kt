@@ -113,6 +113,15 @@ internal fun HoldingDetailContent(
                     onAssetClassChange = onAssetClassChange,
                     modifier = Modifier.padding(top = 22.dp),
                 )
+                state.error?.let {
+                    Text(
+                        text = it,
+                        color = colors.expense,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+                    )
+                }
                 Text(
                     text = "Eliminar",
                     color = colors.expense,
@@ -222,7 +231,11 @@ private fun EditSection(
     Column(modifier) {
         if (state.isQuoted) {
             FormSectionLabel("Participaciones")
-            UnitsField(text = state.editText, onTextChange = onEditChange, suffix = "part.")
+            if (state.unitsLocked) {
+                LockedUnitsField(text = state.editText, suffix = "part.", note = state.unitsNote)
+            } else {
+                UnitsField(text = state.editText, onTextChange = onEditChange, suffix = "part.")
+            }
         } else {
             FormSectionLabel("Valor manual")
             FixedCurrencyAmountField(text = state.editText, currency = state.currency, onTextChange = onEditChange)

@@ -2,6 +2,7 @@ package com.denebapps.patrimonio.ui.screens.portfolio
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.denebapps.patrimonio.domain.calc.formatUnits
 import com.denebapps.patrimonio.domain.calc.parseAmountToMinor
 import com.denebapps.patrimonio.domain.calc.parseUnitsEs
 import com.denebapps.patrimonio.domain.calc.quotedValue
@@ -19,6 +20,8 @@ import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.model.normalizeBroker
 import com.denebapps.patrimonio.domain.model.toBalance
 import com.denebapps.patrimonio.domain.repository.FxRepository
+import com.denebapps.patrimonio.domain.repository.HoldingHasTransfersException
+import com.denebapps.patrimonio.domain.repository.MovementRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioHoldingNotFoundException
 import com.denebapps.patrimonio.domain.repository.PortfolioNotFoundException
@@ -42,6 +45,8 @@ private const val HOLDING_DETAIL_STOP_TIMEOUT_MS = 5_000L
 
 private const val MANUAL_SOURCE = "Valor manual"
 
+private const val UNITS_FROM_MOVEMENTS_NOTE = "Las participaciones salen de tus movimientos."
+
 /**
  * One holding in detail. [valueText]/[valueEurText] are its current value; [priceText]/[priceDateText] the last
  * price (for a manual holding only the day it was valued). [editText] is the units of a quoted holding or the value
@@ -49,7 +54,9 @@ private const val MANUAL_SOURCE = "Valor manual"
  * the stored bank or broker (shown with the identity) and [brokerText] what the field holds. [portfolios] are the
  * portfolios to move it to and [portfolioId] the one chosen (its own until the user picks another). [assetClass] is
  * the state of the "Clase de activo" picker: its [AssetClassChoiceUi.explicit] is the class chosen (the stored one
- * until the user picks another, `null` for automatic).
+ * until the user picks another, `null` for automatic). A quoted holding with movements has its units read-only
+ * ([unitsLocked], with the reason in [unitsNote]): they come from the movements. [error] is why the last delete was
+ * refused.
  */
 data class HoldingDetailUiState(
     val loaded: Boolean = false,
@@ -70,6 +77,9 @@ data class HoldingDetailUiState(
     val portfolios: List<PortfolioOptionUi> = emptyList(),
     val portfolioId: String = "",
     val assetClass: AssetClassChoiceUi = AssetClassChoiceUi(),
+    val unitsLocked: Boolean = false,
+    val unitsNote: String? = null,
+    val error: String? = null,
     val canSave: Boolean = false,
 )
 
@@ -82,6 +92,7 @@ private data class HoldingEdits(
     val broker: String? = null,
     val portfolioId: String? = null,
     val assetClass: ClassPick? = null,
+    val error: String? = null,
 )
 
 /**
@@ -94,6 +105,7 @@ class HoldingDetailViewModel(
     private val portfolioRepository: PortfolioRepository,
     private val portfolios: PortfolioCollectionRepository,
     fxRepository: FxRepository,
+    movementRepository: MovementRepository,
     private val zoneProvider: () -> TimeZone,
 ) : ViewModel() {
     private val edits = MutableStateFlow(HoldingEdits())
@@ -109,9 +121,11 @@ class HoldingDetailViewModel(
         portfolioRepository.observeAll(),
         portfolios.observePortfolios(),
         fxRepository.observeRates(),
+        movementRepository.observeHoldingIdsWithMovements(),
         edits,
-    ) { holdings, allPortfolios, rates, typed ->
-        holdings.firstOrNull { it.id == holdingId }?.let { buildState(it, allPortfolios.toOptions(), rates, typed) }
+    ) { holdings, allPortfolios, rates, withMovements, typed ->
+        holdings.firstOrNull { it.id == holdingId }
+            ?.let { buildState(it, allPortfolios.toOptions(), rates, holdingId in withMovements, typed) }
             ?: HoldingDetailUiState()
     }.stateIn(
         scope = viewModelScope,
@@ -127,7 +141,7 @@ class HoldingDetailViewModel(
         }
     }
 
-    fun onEditChange(text: String) = edits.update { it.copy(value = text) }
+    fun onEditChange(text: String) = edits.update { it.copy(value = text, error = null) }
 
     /** The field holds at most [MAX_BROKER_LENGTH] characters; trimming happens once, when saving. */
     fun onBrokerChange(text: String) = edits.update { it.copy(broker = text.take(MAX_BROKER_LENGTH)) }
@@ -172,6 +186,9 @@ class HoldingDetailViewModel(
                 portfolioRepository.delete(holdingId)
             } catch (e: PortfolioHoldingNotFoundException) {
                 // Already gone.
+            } catch (e: HoldingHasTransfersException) {
+                edits.update { it.copy(error = e.message) }
+                return@launch
             }
             close()
         }
@@ -180,6 +197,8 @@ class HoldingDetailViewModel(
     private suspend fun saveValue(stored: PortfolioHolding, form: HoldingDetailUiState) {
         when (val valuation = stored.valuation) {
             is HoldingValuation.Quoted -> {
+                // The units of a position with movements come from them and are not edited here.
+                if (form.unitsLocked) return
                 val units = parseUnitsEs(form.editText) ?: return
                 if (units.toBalance() != valuation.units) portfolioRepository.updateUnits(holdingId, units)
             }
@@ -202,6 +221,7 @@ class HoldingDetailViewModel(
         holding: PortfolioHolding,
         options: List<PortfolioOptionUi>,
         rates: FxRates,
+        hasMovements: Boolean,
         typed: HoldingEdits,
     ): HoldingDetailUiState {
         val (valueText, valueEurText) = holdingValueTexts(holding, rates)
@@ -226,6 +246,7 @@ class HoldingDetailViewModel(
             portfolios = options,
             portfolioId = portfolioId,
             assetClass = assetClass,
+            error = typed.error,
         )
         // Editing the broker, the portfolio or the class alone may be saved, but never while the units or the value
         // being typed are invalid.
@@ -234,7 +255,14 @@ class HoldingDetailViewModel(
             assetClass.explicit != holding.assetClass
         return when (val valuation = holding.valuation) {
             is HoldingValuation.Quoted -> {
-                val editText = typed.value ?: unitsInputText(valuation.units)
+                val locked = hasMovements
+                val editText = if (locked) {
+                    formatUnits(
+                        valuation.units,
+                    )
+                } else {
+                    typed.value ?: unitsInputText(valuation.units)
+                }
                 val units = parseUnitsEs(editText)
                 base.copy(
                     source = providerLabel(valuation.ref.provider),
@@ -243,10 +271,16 @@ class HoldingDetailViewModel(
                     isQuoted = true,
                     currency = valuation.currency,
                     editText = editText,
-                    preview = units?.let { entered ->
+                    preview = units?.takeIf { !locked }?.let { entered ->
                         valuation.lastQuote?.let { quotedPreview(entered, it.price) }
                     },
-                    canSave = units != null && (units.toBalance() != valuation.units || otherChanged),
+                    unitsLocked = locked,
+                    unitsNote = UNITS_FROM_MOVEMENTS_NOTE.takeIf { locked },
+                    canSave = if (locked) {
+                        otherChanged
+                    } else {
+                        units != null && (units.toBalance() != valuation.units || otherChanged)
+                    },
                 )
             }
             is HoldingValuation.Manual -> {

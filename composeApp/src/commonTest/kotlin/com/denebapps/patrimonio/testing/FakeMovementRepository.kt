@@ -110,27 +110,57 @@ class FakeMovementRepository(
             toIsQuotedFund = destination.isTransferableFund(),
         )
         val transferId = newId()
-        val sequence = nextSequence()
-        val out = Movement(
-            id = newId(),
-            holdingId = fromHoldingId,
-            type = MovementType.TRANSFER_OUT,
-            date = outDate,
-            units = unitsOut,
-            transferId = transferId,
-            note = normalizeMovementNote(note),
-            sequence = sequence,
+        apply(
+            added = transferLegs(transferId, fromHoldingId, toHoldingId, outDate, inDate, unitsOut, unitsIn, note),
         )
-        val inn = out.copy(
-            id = newId(),
-            holdingId = toHoldingId,
-            type = MovementType.TRANSFER_IN,
-            date = inDate,
-            units = unitsIn,
-            sequence = sequence + 1,
-        )
-        apply(added = listOf(out, inn))
         return transferId
+    }
+
+    override suspend fun addTransferToNewHolding(
+        fromHoldingId: String,
+        newHolding: PortfolioHolding,
+        outDate: LocalDate,
+        inDate: LocalDate,
+        unitsOut: Units,
+        unitsIn: Units,
+        note: String?,
+    ): String {
+        val origin = holding(fromHoldingId)
+        requireTransferBetweenFunds(
+            fromId = fromHoldingId,
+            toId = newHolding.id,
+            fromIsQuotedFund = origin.isTransferableFund(),
+            toIsQuotedFund = newHolding.isTransferableFund(),
+        )
+        // The ledger is replayed before the holding exists, so a refused transfer leaves nothing behind.
+        val transferId = newId()
+        val legs = transferLegs(transferId, fromHoldingId, newHolding.id, outDate, inDate, unitsOut, unitsIn, note)
+        computeLedgers(backing.value + legs)
+        val valuation = newHolding.valuation as HoldingValuation.Quoted
+        holdings.add(newHolding.copy(valuation = valuation.copy(units = UnitsBalance.ZERO)))
+        apply(added = legs)
+        return transferId
+    }
+
+    override suspend fun updateTransfer(
+        transferId: String,
+        outDate: LocalDate,
+        inDate: LocalDate,
+        unitsOut: Units,
+        unitsIn: Units,
+        note: String?,
+    ) {
+        val legs = backing.value.filter { it.transferId == transferId }
+        val out = legs.singleOrNull { it.type == MovementType.TRANSFER_OUT }
+        val inn = legs.singleOrNull { it.type == MovementType.TRANSFER_IN }
+        if (out == null || inn == null) throw MovementNotFoundException(transferId)
+        val normalizedNote = normalizeMovementNote(note)
+        apply(
+            updated = listOf(
+                out.copy(date = outDate, units = unitsOut, note = normalizedNote),
+                inn.copy(date = inDate, units = unitsIn, note = normalizedNote),
+            ),
+        )
     }
 
     override suspend fun addOpeningBalance(
@@ -157,6 +187,38 @@ class FakeMovementRepository(
         holdings.add(holding.copy(valuation = valuation.copy(units = UnitsBalance.ZERO)))
         apply(added = listOf(movement))
         return movement
+    }
+
+    private fun transferLegs(
+        transferId: String,
+        fromHoldingId: String,
+        toHoldingId: String,
+        outDate: LocalDate,
+        inDate: LocalDate,
+        unitsOut: Units,
+        unitsIn: Units,
+        note: String?,
+    ): List<Movement> {
+        val sequence = nextSequence()
+        val out = Movement(
+            id = newId(),
+            holdingId = fromHoldingId,
+            type = MovementType.TRANSFER_OUT,
+            date = outDate,
+            units = unitsOut,
+            transferId = transferId,
+            note = normalizeMovementNote(note),
+            sequence = sequence,
+        )
+        val inn = out.copy(
+            id = newId(),
+            holdingId = toHoldingId,
+            type = MovementType.TRANSFER_IN,
+            date = inDate,
+            units = unitsIn,
+            sequence = sequence + 1,
+        )
+        return listOf(out, inn)
     }
 
     private fun apply(

@@ -373,7 +373,7 @@ private fun HoldingRow(row: HoldingRowUi, showDivider: Boolean, onClick: () -> U
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     text = row.name,
-                    color = colors.ink,
+                    color = if (row.isClosed) colors.muted else colors.ink,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -418,7 +418,7 @@ private fun HoldingRow(row: HoldingRowUi, showDivider: Boolean, onClick: () -> U
         Column(horizontalAlignment = Alignment.End) {
             Text(
                 text = row.valueText,
-                color = if (row.valueText == NO_PRICE_TEXT) colors.muted else colors.ink,
+                color = if (row.valueText == NO_PRICE_TEXT || row.isClosed) colors.muted else colors.ink,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
             )

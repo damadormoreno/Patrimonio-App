@@ -97,6 +97,20 @@ data class InstrumentPreview(val provider: String, val code: String) {
 data class PositionDetail(val holdingId: String)
 
 /**
+ * Movement sheet of one quoted holding: a new movement, or the one [movementId]; [openingBalance] opens the form of
+ * the opening balance (the units the position already had) instead of the usual one. Opened from [PositionDetail].
+ */
+@Serializable
+data class MovementForm(val holdingId: String, val movementId: String? = null, val openingBalance: Boolean = false)
+
+/**
+ * Transfer sheet of one fund ([holdingId], the one it is opened from): a new transfer out of it, or the transfer
+ * [transferId], which may be opened from either of its funds. Opened from [PositionDetail].
+ */
+@Serializable
+data class TransferForm(val holdingId: String, val transferId: String? = null)
+
+/**
  * Portfolio detail: value over time, correlation between products, split, costs and concentration (pushed). It is the
  * detail of the portfolio [portfolioId], or of all of them when it is `null`.
  */

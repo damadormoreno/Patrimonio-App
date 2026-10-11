@@ -86,6 +86,44 @@ interface MovementRepository {
     ): String
 
     /**
+     * Changes both legs of transfer [transferId] together: the date and units each leg has, and the [note] (shared by
+     * the two). The funds stay as they are; to change them, delete the transfer and make another.
+     *
+     * @throws MovementNotFoundException when there is no such transfer.
+     * @throws com.denebapps.patrimonio.domain.calc.MovementValidationException when the origin does not hold that many
+     *   units on [outDate], the units arrive before they leave, or the rest of the history needs them.
+     */
+    suspend fun updateTransfer(
+        transferId: String,
+        outDate: LocalDate,
+        inDate: LocalDate,
+        unitsOut: Units,
+        unitsIn: Units,
+        note: String? = null,
+    )
+
+    /**
+     * Like [addTransfer], to a fund that does not exist yet: stores [newHolding] (a quoted fund; the units it comes
+     * with are replaced by what it receives) and the transfer in one step, so that a refused transfer leaves no fund
+     * behind.
+     *
+     * @return the id that links the two legs.
+     * @throws PortfolioHoldingNotFoundException when [fromHoldingId] does not exist.
+     * @throws PortfolioNotFoundException when the portfolio of [newHolding] does not exist.
+     * @throws TransferNotAllowedException when [newHolding] or the origin is not a quoted fund.
+     * @throws com.denebapps.patrimonio.domain.calc.MovementValidationException as [addTransfer].
+     */
+    suspend fun addTransferToNewHolding(
+        fromHoldingId: String,
+        newHolding: PortfolioHolding,
+        outDate: LocalDate,
+        inDate: LocalDate,
+        unitsOut: Units,
+        unitsIn: Units,
+        note: String? = null,
+    ): String
+
+    /**
      * Records the units [holdingId] already had when its history starts, on [date]: [cost] is the total paid, `null`
      * when it is unknown (never zero). A holding in another currency than EUR brings [costEur] with its cost.
      *

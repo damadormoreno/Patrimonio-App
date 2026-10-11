@@ -23,6 +23,7 @@ import com.denebapps.patrimonio.domain.repository.FundamentalsSyncResult
 import com.denebapps.patrimonio.domain.repository.HistoryUnavailableException
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeInstrumentHistoryRepository
+import com.denebapps.patrimonio.testing.FakeMovementRepository
 import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
 import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
@@ -164,6 +165,7 @@ class PositionDetailViewModelTest {
             holdingId = id,
             portfolioRepository = portfolio,
             portfolios = collection,
+            movementRepository = FakeMovementRepository(portfolio),
             fxRepository = FakeFxRepository(rates),
             historyRepository = history,
             clock = clock,

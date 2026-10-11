@@ -18,6 +18,7 @@ import com.denebapps.patrimonio.domain.repository.HoldingHasTransfersException
 import com.denebapps.patrimonio.domain.repository.InvalidMovementException
 import com.denebapps.patrimonio.domain.repository.MissingEurEquivalentException
 import com.denebapps.patrimonio.domain.repository.MovementDraft
+import com.denebapps.patrimonio.domain.repository.MovementNotFoundException
 import com.denebapps.patrimonio.domain.repository.TransferNotAllowedException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -156,5 +157,54 @@ class FakeMovementRepositoryTest {
 
         assertTrue(holdings.current.isEmpty())
         assertTrue(movements.current.isEmpty())
+    }
+
+    @Test
+    fun `a transfer is edited on both legs or not at all`() = runTest {
+        val holdings = FakePortfolioRepository(listOf(fund("a"), fund("b")))
+        val movements = FakeMovementRepository(holdings)
+        movements.addMovement("a", buy(1, 10, 100_000))
+        val day = LocalDate(2026, 2, 1)
+        val transferId = movements.addTransfer("a", "b", day, day, units(4), units(4))
+
+        movements.updateTransfer(transferId, day, LocalDate(2026, 2, 3), units(6), units(60), "Nota")
+
+        val legs = movements.current.filter { it.transferId == transferId }
+        assertEquals(units(6), legs.single { it.type == MovementType.TRANSFER_OUT }.units)
+        assertEquals(LocalDate(2026, 2, 3), legs.single { it.type == MovementType.TRANSFER_IN }.date)
+        assertEquals(setOf<String?>("Nota"), legs.map { it.note }.toSet())
+        assertEquals(UnitsBalance(4 * UNITS_SCALE), unitsOf(holdings, "a"))
+        assertEquals(UnitsBalance(60 * UNITS_SCALE), unitsOf(holdings, "b"))
+
+        val before = movements.current
+        assertFailsWith<InsufficientUnitsException> {
+            movements.updateTransfer(transferId, day, day, units(11), units(11), null)
+        }
+        assertEquals(before, movements.current)
+        assertFailsWith<MovementNotFoundException> {
+            movements.updateTransfer("ghost", day, day, units(1), units(1), null)
+        }
+    }
+
+    @Test
+    fun `a transfer to a new fund creates it only when the transfer is accepted`() = runTest {
+        val holdings = FakePortfolioRepository(listOf(fund("a")))
+        val movements = FakeMovementRepository(holdings)
+        movements.addMovement("a", buy(1, 10, 100_000))
+        val day = LocalDate(2026, 2, 1)
+
+        assertFailsWith<InsufficientUnitsException> {
+            movements.addTransferToNewHolding("a", fund("b"), day, day, units(11), units(11))
+        }
+        assertFailsWith<TransferNotAllowedException> {
+            movements.addTransferToNewHolding("a", fund("etf", InstrumentType.ETF), day, day, units(1), units(1))
+        }
+        assertEquals(listOf("a"), holdings.current.map { it.id })
+
+        val transferId = movements.addTransferToNewHolding("a", fund("b"), day, day, units(4), units(40))
+
+        assertEquals(UnitsBalance(40 * UNITS_SCALE), unitsOf(holdings, "b"))
+        assertEquals(UnitsBalance(6 * UNITS_SCALE), unitsOf(holdings, "a"))
+        assertEquals(2, movements.current.count { it.transferId == transferId })
     }
 }

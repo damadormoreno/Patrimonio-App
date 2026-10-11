@@ -124,29 +124,60 @@ class MovementRepositoryImpl(
                 fromIsQuotedFund = origin.takesFundTransfers(),
                 toIsQuotedFund = destination.takesFundTransfers(),
             )
-            val transferId = newId()
-            val sequence = nextSequence()
+            recordTransfer(fromHoldingId, toHoldingId, outDate, inDate, unitsOut, unitsIn, note)
+        }
+    }
+
+    override suspend fun addTransferToNewHolding(
+        fromHoldingId: String,
+        newHolding: PortfolioHolding,
+        outDate: LocalDate,
+        inDate: LocalDate,
+        unitsOut: Units,
+        unitsIn: Units,
+        note: String?,
+    ): String {
+        seedingGate.await()
+        return appDatabase.writeTransaction {
+            val origin = requireHolding(fromHoldingId)
+            val valuation = newHolding.valuation as? HoldingValuation.Quoted
+            requireTransferBetweenFunds(
+                fromId = fromHoldingId,
+                toId = newHolding.id,
+                fromIsQuotedFund = origin.takesFundTransfers(),
+                toIsQuotedFund = valuation != null && isQuotedFund(newHolding.type, isQuoted = true),
+            )
+            if (appDatabase.portfolioDao().find(newHolding.portfolioId) == null) {
+                throw PortfolioNotFoundException(newHolding.portfolioId)
+            }
+            // Its units are those it receives, which `commit` materializes; until then it holds none.
+            val empty = newHolding.copy(valuation = checkNotNull(valuation).copy(units = UnitsBalance.ZERO))
+            holdingDao.insert(portfolioHoldingToEntity(empty, clock.now().toEpochMilliseconds()))
+            recordTransfer(fromHoldingId, newHolding.id, outDate, inDate, unitsOut, unitsIn, note)
+        }
+    }
+
+    override suspend fun updateTransfer(
+        transferId: String,
+        outDate: LocalDate,
+        inDate: LocalDate,
+        unitsOut: Units,
+        unitsIn: Units,
+        note: String?,
+    ) {
+        seedingGate.await()
+        appDatabase.writeTransaction {
+            val legs = dao.listByTransfer(transferId).map(::movementToDomain)
+            val out = legs.singleOrNull { it.type == MovementType.TRANSFER_OUT }
+            val inn = legs.singleOrNull { it.type == MovementType.TRANSFER_IN }
+            if (out == null || inn == null) throw MovementNotFoundException(transferId)
             val normalizedNote = normalizeMovementNote(note)
-            val out = Movement(
-                id = newId(),
-                holdingId = fromHoldingId,
-                type = MovementType.TRANSFER_OUT,
-                date = outDate,
-                units = unitsOut,
-                transferId = transferId,
-                note = normalizedNote,
-                sequence = sequence,
+            commit(
+                updated = listOf(
+                    out.copy(date = outDate, units = unitsOut, note = normalizedNote),
+                    inn.copy(date = inDate, units = unitsIn, note = normalizedNote),
+                ),
             )
-            val inn = out.copy(
-                id = newId(),
-                holdingId = toHoldingId,
-                type = MovementType.TRANSFER_IN,
-                date = inDate,
-                units = unitsIn,
-                sequence = sequence + 1,
-            )
-            commit(added = listOf(out, inn))
-            transferId
         }
     }
 
@@ -184,6 +215,40 @@ class MovementRepositoryImpl(
             holdingDao.insert(portfolioHoldingToEntity(empty, clock.now().toEpochMilliseconds()))
             record(holding.id, buy)
         }
+    }
+
+    /** Commits the two legs of a new transfer and returns its id. Runs inside a transaction. */
+    private suspend fun recordTransfer(
+        fromHoldingId: String,
+        toHoldingId: String,
+        outDate: LocalDate,
+        inDate: LocalDate,
+        unitsOut: Units,
+        unitsIn: Units,
+        note: String?,
+    ): String {
+        val transferId = newId()
+        val sequence = nextSequence()
+        val out = Movement(
+            id = newId(),
+            holdingId = fromHoldingId,
+            type = MovementType.TRANSFER_OUT,
+            date = outDate,
+            units = unitsOut,
+            transferId = transferId,
+            note = normalizeMovementNote(note),
+            sequence = sequence,
+        )
+        val inn = out.copy(
+            id = newId(),
+            holdingId = toHoldingId,
+            type = MovementType.TRANSFER_IN,
+            date = inDate,
+            units = unitsIn,
+            sequence = sequence + 1,
+        )
+        commit(added = listOf(out, inn))
+        return transferId
     }
 
     /** Builds and commits one new movement on [holdingId]. Runs inside a transaction. */

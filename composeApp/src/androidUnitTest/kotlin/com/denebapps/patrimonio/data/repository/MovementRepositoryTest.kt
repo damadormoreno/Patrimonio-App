@@ -32,6 +32,7 @@ import com.denebapps.patrimonio.domain.repository.MissingEurEquivalentException
 import com.denebapps.patrimonio.domain.repository.MovementDraft
 import com.denebapps.patrimonio.domain.repository.MovementNotFoundException
 import com.denebapps.patrimonio.domain.repository.PortfolioHoldingNotFoundException
+import com.denebapps.patrimonio.domain.repository.PortfolioNotFoundException
 import com.denebapps.patrimonio.domain.repository.QuoteSource
 import com.denebapps.patrimonio.domain.repository.TransferNotAllowedException
 import com.denebapps.patrimonio.testing.FakeFundamentalsSource
@@ -721,6 +722,125 @@ class MovementRepositoryTest {
             env.movements.addOpeningBalance(FUND_A, day(1, 1), units(2), cost = null, note = "Antes")
 
         assertEquals(opening, env.movements.observeAllMovements().first().single())
+        env.db.close()
+    }
+
+    @Test
+    fun `editing a transfer changes both legs in one step`() = runTest {
+        val env = envFor(buildInMemoryTestDatabase())
+        env.holdings.add(fund(FUND_A))
+        env.holdings.add(fund(FUND_B))
+        env.movements.addMovement(FUND_A, buy(day(1, 15), units(10), 100_000))
+        val transferId = env.movements.addTransfer(FUND_A, FUND_B, day(2, 1), day(2, 1), units(4), units(4), "Antes")
+
+        env.movements.updateTransfer(transferId, day(2, 2), day(2, 4), units(6), units(60), "Después")
+
+        val legs = env.movements.observeAllMovements().first().filter { it.transferId == transferId }
+        val out = legs.single { it.type == MovementType.TRANSFER_OUT }
+        val inn = legs.single { it.type == MovementType.TRANSFER_IN }
+        assertEquals(day(2, 2) to units(6), out.date to out.units)
+        assertEquals(day(2, 4) to units(60), inn.date to inn.units)
+        assertEquals(setOf<String?>("Después"), legs.map { it.note }.toSet())
+        assertEquals(UnitsBalance(4 * UNITS_SCALE), env.unitsOf(FUND_A))
+        assertEquals(UnitsBalance(60 * UNITS_SCALE), env.unitsOf(FUND_B))
+        env.db.close()
+    }
+
+    @Test
+    fun `an edit of a transfer that the history cannot take changes nothing`() = runTest {
+        val env = envFor(buildInMemoryTestDatabase())
+        env.holdings.add(fund(FUND_A))
+        env.holdings.add(fund(FUND_B))
+        env.movements.addMovement(FUND_A, buy(day(1, 15), units(10), 100_000))
+        val transferId = env.movements.addTransfer(FUND_A, FUND_B, day(2, 1), day(2, 1), units(4), units(4), null)
+        val before = env.db.movementDao().list()
+
+        assertFailsWith<InsufficientUnitsException> {
+            env.movements.updateTransfer(transferId, day(2, 1), day(2, 1), units(11), units(11), null)
+        }
+        assertFailsWith<InvalidTransferException> {
+            env.movements.updateTransfer(transferId, day(2, 5), day(2, 1), units(4), units(4), null)
+        }
+
+        assertEquals(before, env.db.movementDao().list())
+        assertEquals(UnitsBalance(6 * UNITS_SCALE), env.unitsOf(FUND_A))
+        env.db.close()
+    }
+
+    @Test
+    fun `editing a transfer that does not exist fails`() = runTest {
+        val env = envFor(buildInMemoryTestDatabase())
+        env.holdings.add(fund(FUND_A))
+        env.movements.addMovement(FUND_A, buy(day(1, 15), units(10), 100_000))
+
+        assertFailsWith<MovementNotFoundException> {
+            env.movements.updateTransfer("ghost", day(2, 1), day(2, 1), units(1), units(1), null)
+        }
+        env.db.close()
+    }
+
+    @Test
+    fun `a transfer can create its destination fund in the same step`() = runTest {
+        val env = envFor(buildInMemoryTestDatabase())
+        env.holdings.observeAll().first() // waits for the seeding, which creates the default portfolio
+        env.db.insertTestPortfolio(id = "hijos", name = "Hijos", sortOrder = 1)
+        env.holdings.add(fund(FUND_A))
+        env.movements.addMovement(FUND_A, buy(day(1, 15), units(10), 100_000))
+
+        val transferId = env.movements.addTransferToNewHolding(
+            fromHoldingId = FUND_A,
+            newHolding = fund(FUND_B, portfolioId = "hijos", units = units(99)),
+            outDate = day(2, 1),
+            inDate = day(2, 3),
+            unitsOut = units(4),
+            unitsIn = units(40),
+            note = "Cambio",
+        )
+
+        val created = env.holdings.observeAll().first().single { it.id == FUND_B }
+        assertEquals("hijos", created.portfolioId)
+        assertEquals(UnitsBalance(40 * UNITS_SCALE), env.unitsOf(FUND_B))
+        assertEquals(UnitsBalance(6 * UNITS_SCALE), env.unitsOf(FUND_A))
+        val legs = env.movements.observeAllMovements().first().filter { it.transferId == transferId }
+        assertEquals(setOf(FUND_A, FUND_B), legs.map { it.holdingId }.toSet())
+        env.db.close()
+    }
+
+    @Test
+    fun `a transfer that is refused leaves no destination fund behind`() = runTest {
+        val env = envFor(buildInMemoryTestDatabase())
+        env.holdings.add(fund(FUND_A))
+        env.movements.addMovement(FUND_A, buy(day(1, 15), units(10), 100_000))
+
+        assertFailsWith<InsufficientUnitsException> {
+            env.movements.addTransferToNewHolding(FUND_A, fund(FUND_B), day(2, 1), day(2, 1), units(11), units(11))
+        }
+        assertFailsWith<TransferNotAllowedException> {
+            env.movements.addTransferToNewHolding(
+                FUND_A,
+                fund(FUND_B, type = InstrumentType.ETF),
+                day(2, 1),
+                day(2, 1),
+                units(1),
+                units(1),
+            )
+        }
+        assertFailsWith<TransferNotAllowedException> {
+            env.movements.addTransferToNewHolding(FUND_A, painting(FUND_B), day(2, 1), day(2, 1), units(1), units(1))
+        }
+        assertFailsWith<PortfolioNotFoundException> {
+            env.movements.addTransferToNewHolding(
+                FUND_A,
+                fund(FUND_B, portfolioId = "ghost"),
+                day(2, 1),
+                day(2, 1),
+                units(1),
+                units(1),
+            )
+        }
+
+        assertEquals(listOf(FUND_A), env.holdings.observeAll().first().map { it.id })
+        assertEquals(1, env.db.movementDao().list().size)
         env.db.close()
     }
 }

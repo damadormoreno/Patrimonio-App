@@ -52,12 +52,29 @@ fun PositionDetailScreen(
     modifier: Modifier = Modifier,
     onBack: () -> Unit = {},
     onEdit: () -> Unit = {},
+    onOpenMovement: (movementId: String?, openingBalance: Boolean) -> Unit = { _, _ -> },
+    onOpenTransfer: (transferId: String?) -> Unit = {},
     viewModel: PositionDetailViewModel = koinViewModel(parameters = { parametersOf(holdingId) }),
 ) {
     val state by viewModel.state.collectAsState()
+    val movements = remember(viewModel) {
+        MovementsCallbacks(
+            onAdd = viewModel::onAddMovement,
+            onTransfer = viewModel::onTransfer,
+            onOpen = viewModel::onOpenMovement,
+        )
+    }
 
     LaunchedEffect(Unit) {
         viewModel.navigateBack.collect { onBack() }
+    }
+    LaunchedEffect(Unit) {
+        viewModel.navigate.collect { target ->
+            when (target) {
+                is PositionNavigation.MovementForm -> onOpenMovement(target.movementId, target.openingBalance)
+                is PositionNavigation.Transfer -> onOpenTransfer(target.transferId)
+            }
+        }
     }
 
     PositionDetailContent(
@@ -67,6 +84,11 @@ fun PositionDetailScreen(
         onRangeSelect = viewModel::onRangeSelect,
         onRefresh = viewModel::onRefresh,
         onDismissSyncError = viewModel::onSyncErrorDismiss,
+        movements = movements,
+        onOpeningBalance = viewModel::onChooseOpeningBalance,
+        onOneByOne = viewModel::onChooseOneByOne,
+        onConfirmOneByOne = viewModel::onConfirmOneByOne,
+        onDismissChoice = viewModel::onDismissChoice,
         modifier = modifier,
     )
 }
@@ -80,10 +102,24 @@ internal fun PositionDetailContent(
     onRangeSelect: (HistoryRange) -> Unit,
     onRefresh: () -> Unit,
     onDismissSyncError: () -> Unit,
+    movements: MovementsCallbacks,
+    onOpeningBalance: () -> Unit,
+    onOneByOne: () -> Unit,
+    onConfirmOneByOne: () -> Unit,
+    onDismissChoice: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAppColors.current
 
+    state.choice?.let {
+        OpeningChoiceDialog(
+            choice = it,
+            onOpeningBalance = onOpeningBalance,
+            onOneByOne = onOneByOne,
+            onConfirmOneByOne = onConfirmOneByOne,
+            onDismiss = onDismissChoice,
+        )
+    }
     Column(modifier.fillMaxSize().background(colors.bg)) {
         TopBar(onBack = onBack, onEdit = onEdit, canEdit = state.loaded)
         PullToRefreshBox(
@@ -102,6 +138,7 @@ internal fun PositionDetailContent(
                         )
                     }
                     HistorySections(state, onRangeSelect, onRetry = onRefresh)
+                    MovementsSection(state.movements, movements)
                     state.product?.let {
                         SectionLabel("Datos del producto")
                         ProductDataCard(it)

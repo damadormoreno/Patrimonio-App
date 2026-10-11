@@ -56,7 +56,7 @@ show the user's own results (cost, realized/unrealized gains, XIRR) separately f
 - [x] **T2 — Persistence**: `movements` table, Room v13 + migration test, repository (add/edit/delete, transfers
   atomic across holdings, materialized units, oversell validation), backup v13, clear-all/cloud (route: delegated
   writer).
-- [ ] **T3 — UI movements**: movements list in the position detail, add/edit/delete sheet, opening-balance flow,
+- [x] **T3 — UI movements**: movements list in the position detail, add/edit/delete sheet, opening-balance flow,
   add-product choice, block manual unit edits, traspaso flow (funds only) (route: delegated writer).
 - [ ] **T4 — UI own returns**: *Mi posición* section and position chart, portfolio detail gains/XIRR, closed
   positions (route: delegated writer).
@@ -100,7 +100,16 @@ show the user's own results (cost, realized/unrealized gains, XIRR) separately f
   RED: 338 compile errors; GREEN (parent re-run): check.sh (1452 tests), iOS compile.
   Notes for T3: the first movement replaces hand-typed units (offer the opening balance with current units);
   deleting the last movement leaves 0 units (confirm); no atomic transfer edit yet (T3 adds `updateTransfer`).
+- **T3** (commit below, `feat(portfolio): add, edit and transfer movements`): `MovementsSection` in the position
+  detail (newest first, transfer counterpart names, unknown cost); `MovementFormSheet` (type dropdown, `FormDateField`,
+  gross amount + implied price, fee, EUR prefill from `FxHistoryRepository.rateOn` with override, typed errors,
+  delete with last-movement/transfer warnings) via pure `resolveMovementEntry`; opening-balance dialog (keep units,
+  optional cost) or buys one by one; `TransferFormSheet` (existing funds any portfolio, or `Otro fondo…` via search
+  → atomic `addTransferToNewHolding`; `Todo`; `updateTransfer` edits both legs atomically; funds with hand-typed
+  units excluded as destinations until they have an opening balance); add product `Lo que tengo ahora | Una compra`;
+  edit sheet units read-only with movements; Cartera closed rows `Cerrada` last. RED: 409 compile errors; GREEN
+  (parent re-run): check.sh (1549 tests), iOS compile. Manual emulator test deferred to after T4 (all flows).
 
 ## Next step
 
-T3 — UI movements.
+T4 — UI own returns.
