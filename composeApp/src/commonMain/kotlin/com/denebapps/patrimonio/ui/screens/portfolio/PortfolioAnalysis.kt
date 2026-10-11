@@ -10,10 +10,10 @@ import com.denebapps.patrimonio.domain.calc.concentration
 import com.denebapps.patrimonio.domain.calc.constantCompositionSeries
 import com.denebapps.patrimonio.domain.calc.correlationMatrix
 import com.denebapps.patrimonio.domain.calc.costSummary
+import com.denebapps.patrimonio.domain.calc.eurSeriesById
 import com.denebapps.patrimonio.domain.calc.holdingWeights
 import com.denebapps.patrimonio.domain.calc.portfolioTotalEur
 import com.denebapps.patrimonio.domain.calc.riskSummary
-import com.denebapps.patrimonio.domain.calc.toEurSeries
 import com.denebapps.patrimonio.domain.calc.toPricePoints
 import com.denebapps.patrimonio.domain.model.FxHistory
 import com.denebapps.patrimonio.domain.model.FxRates
@@ -66,7 +66,7 @@ internal data class PortfolioAnalysis(
 
 internal fun analyzePortfolio(inputs: PortfolioInputs, today: LocalDate): PortfolioAnalysis {
     val holdings = inputs.holdings
-    val eurSeries = inputs.histories.mapValues { (_, points) -> toEurSeries(points, inputs.fxHistory) }
+    val eurSeries = eurSeriesById(inputs.histories, inputs.fxHistory)
     val composition = try {
         constantCompositionSeries(holdings, eurSeries)
     } catch (overflow: ArithmeticException) {

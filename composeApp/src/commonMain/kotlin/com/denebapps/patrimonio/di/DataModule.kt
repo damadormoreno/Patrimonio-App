@@ -14,11 +14,13 @@ import com.denebapps.patrimonio.data.repository.AssetRepositoryImpl
 import com.denebapps.patrimonio.data.repository.BackupRepositoryImpl
 import com.denebapps.patrimonio.data.repository.DataMaintenanceRepositoryImpl
 import com.denebapps.patrimonio.data.repository.InstrumentHistoryRepositoryImpl
+import com.denebapps.patrimonio.data.repository.InstrumentPreviewLoaderImpl
 import com.denebapps.patrimonio.data.repository.LiabilityRepositoryImpl
 import com.denebapps.patrimonio.data.repository.NetWorthRepositoryImpl
 import com.denebapps.patrimonio.data.repository.NetWorthSnapshotUpserter
 import com.denebapps.patrimonio.data.repository.PortfolioCollectionRepositoryImpl
 import com.denebapps.patrimonio.data.repository.PortfolioRepositoryImpl
+import com.denebapps.patrimonio.data.repository.PortfolioSeriesLoaderImpl
 import com.denebapps.patrimonio.data.repository.SavingsGoalRepositoryImpl
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AccountTypeRepository
@@ -27,10 +29,12 @@ import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.BackupRepository
 import com.denebapps.patrimonio.domain.repository.DataMaintenanceRepository
 import com.denebapps.patrimonio.domain.repository.InstrumentHistoryRepository
+import com.denebapps.patrimonio.domain.repository.InstrumentPreviewLoader
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioSeriesLoader
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import kotlinx.datetime.Clock
@@ -98,6 +102,10 @@ val dataModule = module {
     }
     single<InstrumentHistoryRepository> {
         InstrumentHistoryRepositoryImpl(appDatabase = get(), dao = get(), source = get(), clock = get())
+    }
+    single<InstrumentPreviewLoader> { InstrumentPreviewLoaderImpl(source = get(), fxHistory = get()) }
+    single<PortfolioSeriesLoader> {
+        PortfolioSeriesLoaderImpl(portfolios = get(), history = get(), fxHistory = get(), fx = get())
     }
     single<PreferencesRepository> { PreferencesRepositoryImpl(dataStoreFilePath(get<PlatformContext>())) }
     single<DataMaintenanceRepository> { DataMaintenanceRepositoryImpl(get()) }

@@ -69,26 +69,32 @@ data class CorrelationMatrix(val holdingIds: List<String>, val cells: List<List<
  * (its [CorrelationCell.weeks] still tells how many it had). The diagonal is exactly 1.0.
  */
 fun correlationMatrix(series: List<HoldingPriceSeries>, today: LocalDate): CorrelationMatrix {
-    val returns = series.map { holding ->
-        weeklyReturns(weeklyCloses(holding.points)).associate { it.weekStart to it.ratio }
-    }
+    val returns = series.map { weeklyReturnsByWeek(it.points) }
     val size = series.size
     val cells = List(size) { MutableList(size) { CorrelationCell(null, 0) } }
     for (i in 0 until size) {
         cells[i][i] = CorrelationCell(1.0, recentOrAll(returns[i].keys.toList(), today) { it }.size)
         for (j in i + 1 until size) {
-            val common = returns[i].keys.filter { it in returns[j] }
-            val weeks = recentOrAll(common, today) { it }
-            val correlation = if (weeks.size < MIN_WEEKLY_RETURNS) {
-                null
-            } else {
-                pearson(weeks.map { returns[i].getValue(it) }, weeks.map { returns[j].getValue(it) })
-            }
-            cells[i][j] = CorrelationCell(correlation, weeks.size)
+            cells[i][j] = pairCorrelation(returns[i], returns[j], today)
             cells[j][i] = cells[i][j]
         }
     }
     return CorrelationMatrix(series.map { it.holdingId }, cells)
+}
+
+/** The weekly returns of [points] by the Monday of their week, to correlate two series on their common weeks. */
+internal fun weeklyReturnsByWeek(points: List<PricePoint>): Map<LocalDate, Double> =
+    weeklyReturns(weeklyCloses(points)).associate { it.weekStart to it.ratio }
+
+/** The correlation of two [weeklyReturnsByWeek] over their common weeks, under the rules of [correlationMatrix]. */
+internal fun pairCorrelation(a: Map<LocalDate, Double>, b: Map<LocalDate, Double>, today: LocalDate): CorrelationCell {
+    val weeks = recentOrAll(a.keys.filter { it in b }, today) { it }
+    val correlation = if (weeks.size < MIN_WEEKLY_RETURNS) {
+        null
+    } else {
+        pearson(weeks.map { a.getValue(it) }, weeks.map { b.getValue(it) })
+    }
+    return CorrelationCell(correlation, weeks.size)
 }
 
 private fun pearson(x: List<Double>, y: List<Double>): Double? {

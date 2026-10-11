@@ -32,10 +32,12 @@ import com.denebapps.patrimonio.domain.repository.FundamentalsSource
 import com.denebapps.patrimonio.domain.repository.FxHistoryRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.InstrumentHistoryRepository
+import com.denebapps.patrimonio.domain.repository.InstrumentPreviewLoader
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioSeriesLoader
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.PriceHistorySource
 import com.denebapps.patrimonio.domain.repository.QuoteSource
@@ -319,6 +321,16 @@ class KoinModuleTest {
         assertSame(koin.get<InstrumentHistoryRepository>(), koin.get<InstrumentHistoryRepository>())
         assertNotNull(koin.get<FxHistoryRepository>())
         assertSame(koin.get<FxHistoryRepository>(), koin.get<FxHistoryRepository>())
+    }
+
+    @Test
+    fun `the preview loaders resolve via DI as singletons`() {
+        val koin = startTestKoin(fxModule, quotesModule)
+
+        assertNotNull(koin.get<InstrumentPreviewLoader>())
+        assertSame(koin.get<InstrumentPreviewLoader>(), koin.get<InstrumentPreviewLoader>())
+        assertNotNull(koin.get<PortfolioSeriesLoader>())
+        assertSame(koin.get<PortfolioSeriesLoader>(), koin.get<PortfolioSeriesLoader>())
     }
 
     @Test
