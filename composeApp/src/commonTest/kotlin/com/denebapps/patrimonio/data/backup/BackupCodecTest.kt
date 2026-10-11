@@ -280,9 +280,11 @@ class BackupCodecTest {
     @Test
     fun `a version 5 backup has no custom types nor emojis and its built-in types still read`() {
         val json = BackupCodec.encode(BackupDocument(exportedAt = "2026-10-06T10:00:00Z", assets = listOf(asset)))
-            .replace(""""version": 10""", """"version": 5""")
+            .replace(""""version": ${BackupCodec.VERSION}""", """"version": 5""")
             .replace(Regex(""",\s*"emoji": null"""), "")
             .replace(Regex(""",\s*"accountTypes": \[\s*]"""), "")
+        // Guards the fixture itself: a stale hard-coded version would leave a current-version file behind.
+        assertTrue(""""version": 5""" in json, "the fixture must really be a version 5 backup")
 
         val decoded = BackupCodec.decode(json)
 
