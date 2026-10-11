@@ -53,7 +53,7 @@ Out of scope: movements and real gains (phase 2), benchmarks/comparators, export
 
 - [x] **T1 — Data: price history + FX history caches, holding fundamentals (TER, SRRI, category,
   manager), DB/backup bumps, sync policy** (route: delegated writer).
-- [ ] **T2 — Analytics (pure calc)**: ranges, period/calendar-year/YTD returns, CAGR 1/3/5y, volatility,
+- [x] **T2 — Analytics (pure calc)**: ranges, period/calendar-year/YTD returns, CAGR 1/3/5y, volatility,
   max drawdown, weekly alignment, correlation matrix, constant-composition portfolio series in EUR,
   weighted TER/risk, allocations, concentration (route: delegated writer).
 - [ ] **T3 — Position detail screen + reusable Canvas line chart** (route: delegated writer).
@@ -86,7 +86,15 @@ Out of scope: movements and real gains (phase 2), benchmarks/comparators, export
   wins), RED→GREEN in `MorningstarApiTest`.
   RED: test sources failed to compile against missing APIs; then 2 assertion failures. GREEN (parent re-run):
   `scripts/check.sh` "All checks passed." (779 tests), iOS compile executed.
+- **T2** (commit below, `feat(portfolio): compute price and portfolio analytics`): `PriceAnalytics.kt`
+  (`HistoryRange`, `pointsIn`, `rangeChange`, `calendarYearReturns`, `annualizedReturn`, ISO-week
+  `weeklyCloses`/`weeklyReturns`, `volatility` = sample stdev × √52 over 3 y with fallback, ≥ 26 weeks,
+  `maxDrawdown`) and `PortfolioAnalytics.kt` (`toEurSeries`, Pearson `correlationMatrix`, constant-composition
+  series with ≤ 7-day forward fill, `holdingWeights`, allocation by type/broker/currency, `costSummary`,
+  `riskSummary`, `concentration` > 40 %). Money exact, ratios `Double`. RED: test sources failed to compile;
+  41 tests GREEN. Parent reviewed volatility/Pearson formulas. GREEN (parent re-run): check.sh (820 tests),
+  iOS compile.
 
 ## Next step
 
-T2 — analytics.
+T3 — position detail screen + Canvas chart.
