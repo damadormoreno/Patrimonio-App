@@ -50,7 +50,7 @@ composeApp/src/commonMain/kotlin/com/denebapps/patrimonio/
 
 ## Cartera
 
-Pestaña *Cartera*: fondos, ETF y acciones buscados por ISIN, ticker o nombre. Cada producto se
+Pestaña *Cartera*: fondos, ETF, acciones y criptomonedas buscados por ISIN, ticker o nombre. Cada producto se
 añade con las participaciones o con el importe actual (se calculan las participaciones al último
 precio) y se valora a ese precio; lo que no tenga cotización se añade con valor manual. El total en
 EUR suma al patrimonio neto como bloque propio y aparece como *Cartera* en la composición. Cada
@@ -71,6 +71,13 @@ producto puede llevar, opcionalmente, el banco o bróker que lo gestiona (*Banco
   habría que pasar a una fuente con licencia.
 - Los precios se actualizan al abrir la app si tienen más de 6 horas y con *Actualizar* (o
   deslizando hacia abajo) en la pestaña. Solo se admiten productos cotizados en EUR, USD, GBP o JPY.
+- **Criptomonedas** con [CoinGecko](https://www.coingecko.com/) (API pública, sin clave): búsqueda,
+  precio en EUR e histórico **del último año** (la API pública no da más). Las monedas que valen menos de
+  un céntimo pierden precisión (los precios se guardan con 6 decimales).
+- **Clase de activo** por producto: Renta variable, Renta fija, Monetario, Mixto, Oro y materias primas,
+  Inmobiliario, Cripto u Otros. Se deduce de la categoría de Morningstar (o del tipo, para acciones y
+  criptos) y se puede elegir a mano. El detalle de la cartera empieza por el reparto por clase; los
+  productos sin clase salen como *Sin clasificar*. Los fondos mixtos cuentan enteros como *Mixto*.
 - **Ficha previa** (al pulsar un resultado de la búsqueda, antes de añadirlo): la misma información que el
   detalle de un producto y su **encaje con tu cartera** (la seleccionada o todas): correlación con cada
   producto y con la cartera, una conclusión (*diversifica poco* ≥ 0,9 · *moderadamente* · *aporta
@@ -96,7 +103,7 @@ producto puede llevar, opcionalmente, el banco o bróker que lo gestiona (*Banco
 
 Ajustes → Datos → *Exportar copia* / *Importar copia* (selector nativo vía
 [FileKit](https://github.com/vinceglb/FileKit)). El archivo es JSON legible
-(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 11}`:
+(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 12}`:
 
 - Incluye activos, pasivos, grupos y miembros, histórico mensual y metas con sus aportaciones y
   vínculos (una meta se vincula a una cuenta **o** a un grupo), tipos de cuenta propios y los
@@ -106,7 +113,8 @@ Ajustes → Datos → *Exportar copia* / *Importar copia* (selector nativo vía
   sección de suscripciones de las copias de la 3 a la 6 se ignora (la función se eliminó en la 7);
   las anteriores a la 8 se importan sin cartera y las anteriores a la 9, sin banco o bróker,
   las anteriores a la 10, sin datos de Morningstar (se rellenan solos), y las anteriores a la 11
-  meten todos los productos en una única cartera *Mi cartera*.
+  meten todos los productos en una única cartera *Mi cartera*. Desde la 12 guardan la clase de activo
+  elegida a mano.
 - Importar **reemplaza** todos los datos en una sola transacción. El archivo se valida entero antes
   (divisas, tipos, ids únicos, referencias, reglas del ledger de metas), así que uno inválido no
   toca nada.

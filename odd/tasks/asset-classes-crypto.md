@@ -46,7 +46,7 @@ CoinGecko API key.
 - [x] **T1 — Asset classes: model, inference, Room v12, backup v12, allocation calc** (route: delegated writer).
 - [x] **T2 — CoinGecko adapter + crypto in search/quotes/history** (route: delegated writer).
 - [x] **T3 — UI: pickers, portfolio detail block, preview projection, crypto results** (route: delegated writer).
-- [ ] **T4 — Docs** (route: inline).
+- [x] **T4 — Docs** (route: inline).
 
 ## Acceptance criteria
 
@@ -92,7 +92,8 @@ CoinGecko API key.
   74.795,99 € / Mín 51.473,91 €; add 0,01 BTC (class prefilled "Cripto (según el tipo)"; ≈ 747,18 € from the
   spot price 74.718, matching the live API) → classes 79,4 / 2,7 / 17,9 %; position detail "Cripto ·
   automática"; deleted the test holding → its CoinGecko history pruned.
+- **T4** (commit below, `docs: document asset classes and crypto`): README *Cartera* and backup v12.
 
 ## Next step
 
-T4 — docs, then push + PR.
+Done; push and PR (stacked on #33 while it is open).
