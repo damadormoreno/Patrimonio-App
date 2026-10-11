@@ -176,7 +176,7 @@ class CompositeQuoteSourceTest {
         assertEquals(1, hits.morningstar.size)
         assertTrue("timeseries_price" in hits.morningstar.single())
         assertEquals(1, hits.yahoo.size)
-        assertTrue("range=max" in hits.yahoo.single())
+        assertTrue("period1=0&" in hits.yahoo.single())
     }
 
     @Test

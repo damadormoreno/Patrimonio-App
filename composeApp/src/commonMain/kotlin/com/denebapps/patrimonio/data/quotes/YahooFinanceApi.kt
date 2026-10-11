@@ -14,14 +14,13 @@ import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
-import kotlinx.datetime.daysUntil
+import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.toLocalDateTime
 
 /**
  * Yahoo Finance search and latest close. Unofficial endpoints that may change or throttle at any time; the
  * request shapes and field names follow the reference app rumbo (MIT, github.com/danidm98/rumbo, `buscar.py`
- * and `motor.py`). Failures surface as [QuoteUnavailableException]. [clock] only sizes the window of an incremental
- * history download.
+ * and `motor.py`). Failures surface as [QuoteUnavailableException]. [clock] sets the end of a history download.
  */
 class YahooFinanceApi(private val http: QuoteHttp, private val clock: Clock = Clock.System) {
     /** Equities, ETFs and mutual funds matching [query] (ISIN, ticker or name). Currency is unknown until priced. */
@@ -66,12 +65,12 @@ class YahooFinanceApi(private val http: QuoteHttp, private val clock: Clock = Cl
     /**
      * The daily closes of [symbol] from [from] to today (everything Yahoo has when `null`), one per UTC day and
      * ascending; the later bar of a day wins. Bars without a close are skipped and prices are denoised and converted
-     * from pence exactly like [latestQuote]. Yahoo's chart takes a range, not a start date, so the smallest range that
-     * covers [from] is requested and the caller upserts the overlap.
+     * from pence exactly like [latestQuote]. The window goes as an explicit `period1`/`period2` (start of [from] in
+     * UTC, or the epoch, until now): `range=max` would come back as monthly bars, which break weekly analytics.
      */
     suspend fun priceHistory(symbol: String, from: LocalDate?): List<PricePoint> {
-        val range = from?.let { rangeCovering(it.daysUntil(clock.now().toLocalDateTime(TimeZone.UTC).date)) } ?: "max"
-        val body = http.get(chartUrl(symbol, range))
+        val start = from?.atStartOfDayIn(TimeZone.UTC)?.epochSeconds ?: 0L
+        val body = http.get(historyUrl(symbol, start, clock.now().epochSeconds))
         val result = parsingQuotes("Yahoo chart") {
             QuoteJson.decodeFromString<YahooChartResponse>(body).chart?.result?.firstOrNull()
         } ?: throw QuoteUnavailableException("Yahoo has no data for $symbol")
@@ -97,27 +96,14 @@ class YahooFinanceApi(private val http: QuoteHttp, private val clock: Clock = Cl
         parameters.append("newsCount", "0")
     }.buildString()
 
-    private fun chartUrl(symbol: String, range: String = "1mo"): String =
-        "$CHART_URL/${symbol.encodeURLPathPart()}?range=$range&interval=1d"
+    private fun chartUrl(symbol: String): String = "$CHART_URL/${symbol.encodeURLPathPart()}?range=1mo&interval=1d"
 
-    /** The smallest range Yahoo offers that reaches [days] back, with some slack for weekends and holidays. */
-    private fun rangeCovering(days: Int): String =
-        RANGES.firstOrNull { (maxDays, _) -> days <= maxDays }?.second ?: "max"
+    private fun historyUrl(symbol: String, startEpochSeconds: Long, endEpochSeconds: Long): String =
+        "$CHART_URL/${symbol.encodeURLPathPart()}?period1=$startEpochSeconds&period2=$endEpochSeconds&interval=1d"
 
     private companion object {
         const val SEARCH_URL = "https://query2.finance.yahoo.com/v1/finance/search"
         const val CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart"
         const val SEARCH_COUNT = "8"
-
-        /** Yahoo chart ranges as (days they safely cover, name). */
-        val RANGES = listOf(
-            27 to "1mo",
-            85 to "3mo",
-            175 to "6mo",
-            355 to "1y",
-            715 to "2y",
-            1_790 to "5y",
-            3_600 to "10y",
-        )
     }
 }

@@ -148,7 +148,7 @@ class YahooFinanceApiTest {
             """"indicators":{"quote":[{"close":[$closes]}]}}],"error":null}}"""
 
     @Test
-    fun `a first history download asks for the whole range and skips bars without a close`() = runTest {
+    fun `a first history download asks for daily bars since the epoch and skips bars without a close`() = runTest {
         var url: String? = null
         val api = api { request ->
             url = request.url.toString()
@@ -157,7 +157,11 @@ class YahooFinanceApiTest {
 
         val points = api.priceHistory("IWDA.AS", from = null)
 
-        assertEquals("https://query1.finance.yahoo.com/v8/finance/chart/IWDA.AS?range=max&interval=1d", url)
+        // Not range=max: Yahoo downgrades it to monthly bars. FIXED_NOW (2025-10-16T10:00Z) is 1760608800.
+        assertEquals(
+            "https://query1.finance.yahoo.com/v8/finance/chart/IWDA.AS?period1=0&period2=1760608800&interval=1d",
+            url,
+        )
         assertEquals(
             listOf(
                 PricePoint(LocalDate(2025, 10, 14), Price(104_120_000L, Currency.EUR)),
@@ -168,24 +172,19 @@ class YahooFinanceApiTest {
     }
 
     @Test
-    fun `an incremental history download asks for the smallest range that covers the gap`() = runTest {
-        suspend fun rangeFor(from: LocalDate): String? {
+    fun `an incremental history download asks for daily bars from the start of that day until now`() = runTest {
+        suspend fun windowFor(from: LocalDate): String? {
             var url: String? = null
             api { request ->
                 url = request.url.toString()
                 respondJson(YAHOO_CHART_JSON)
             }.priceHistory("IWDA.AS", from)
-            return url?.substringAfter("range=")?.substringBefore('&')
+            return url?.substringAfter('?')
         }
 
-        // FIXED_NOW is 2025-10-16.
-        assertEquals("1mo", rangeFor(LocalDate(2025, 10, 9)))
-        assertEquals("3mo", rangeFor(LocalDate(2025, 8, 17)))
-        assertEquals("1y", rangeFor(LocalDate(2025, 4, 1)))
-        assertEquals("2y", rangeFor(LocalDate(2024, 9, 1)))
-        assertEquals("5y", rangeFor(LocalDate(2021, 1, 1)))
-        assertEquals("10y", rangeFor(LocalDate(2017, 1, 1)))
-        assertEquals("max", rangeFor(LocalDate(2005, 1, 1)))
+        // 2025-10-09T00:00Z is 1759968000 and 2005-01-01T00:00Z is 1104537600.
+        assertEquals("period1=1759968000&period2=1760608800&interval=1d", windowFor(LocalDate(2025, 10, 9)))
+        assertEquals("period1=1104537600&period2=1760608800&interval=1d", windowFor(LocalDate(2005, 1, 1)))
     }
 
     @Test
