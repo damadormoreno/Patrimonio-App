@@ -4,7 +4,11 @@ import com.denebapps.patrimonio.data.cloud.LocalDataChanges
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-/** Room's invalidation tracker over the tables a backup holds ([clearFinancialTables]'s list). */
+/**
+ * Room's invalidation tracker over the tables a backup holds ([clearFinancialTables]'s list). The re-downloadable
+ * caches (`instrument_prices`, `instrument_price_sync`, `fx_history`, `fx_history_sync`, `fx_rates`) are deliberately
+ * not here: syncing them is not a change of the user's data and must not upload a cloud backup.
+ */
 class RoomLocalDataChanges(private val database: AppDatabase) : LocalDataChanges {
     override fun observe(): Flow<Unit> = database.invalidationTracker.createFlow(*BACKED_UP_TABLES).map { }
 

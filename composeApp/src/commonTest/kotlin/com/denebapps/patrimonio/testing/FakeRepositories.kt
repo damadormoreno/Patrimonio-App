@@ -31,6 +31,7 @@ import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.BackupRepository
 import com.denebapps.patrimonio.domain.repository.CreateSavingsGoal
 import com.denebapps.patrimonio.domain.repository.DataMaintenanceRepository
+import com.denebapps.patrimonio.domain.repository.FundamentalsSyncResult
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalDeltaException
 import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalNameException
@@ -482,6 +483,10 @@ class FakePortfolioRepository(
     var refreshResult = PriceRefreshResult(refreshed = 0, upToDate = 0, failures = emptyList())
     var refreshFailure: Throwable? = null
 
+    /** The `(holdingId, force)` of every [syncFundamentals] call, answered with [fundamentalsResult]. */
+    val fundamentalsCalls = mutableListOf<Pair<String?, Boolean>>()
+    var fundamentalsResult = FundamentalsSyncResult(updated = 0, upToDate = 0, failures = emptyList())
+
     /** When set, [refreshPrices] suspends until it is completed, to observe a refresh in flight. */
     var refreshGate: CompletableDeferred<Unit>? = null
 
@@ -519,6 +524,11 @@ class FakePortfolioRepository(
         refreshGate?.await()
         refreshFailure?.let { throw it }
         return refreshResult
+    }
+
+    override suspend fun syncFundamentals(holdingId: String?, force: Boolean): FundamentalsSyncResult {
+        fundamentalsCalls += holdingId to force
+        return fundamentalsResult
     }
 
     fun emit(holdings: List<PortfolioHolding>) {

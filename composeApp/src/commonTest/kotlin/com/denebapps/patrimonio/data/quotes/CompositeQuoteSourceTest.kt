@@ -162,4 +162,43 @@ class CompositeQuoteSourceTest {
         assertEquals(1, hits.morningstar.size)
         assertEquals(1, hits.yahoo.size)
     }
+
+    @Test
+    fun `price history routes by provider`() = runTest {
+        val hits = Hits()
+        val source = source(hits, morningstar = { TIMESERIES_JSON }, yahoo = { YAHOO_CHART_JSON })
+
+        val nav = source.priceHistory(InstrumentRef(QuoteProvider.MORNINGSTAR, "0P00012PP6"), from = null)
+        val prices = source.priceHistory(InstrumentRef(QuoteProvider.YAHOO, "IWDA.AS"), from = null)
+
+        assertEquals(listOf(123_456_000L, 124_100_000L), nav.map { it.price.scaled })
+        assertEquals(listOf(104_120_000L, 105_300_000L), prices.map { it.price.scaled })
+        assertEquals(1, hits.morningstar.size)
+        assertTrue("timeseries_price" in hits.morningstar.single())
+        assertEquals(1, hits.yahoo.size)
+        assertTrue("period1=0&" in hits.yahoo.single())
+    }
+
+    @Test
+    fun `fundamentals are read from the Morningstar screener whichever provider the holding uses`() = runTest {
+        val hits = Hits()
+        val source = source(hits)
+
+        val fromMorningstar = source.fundamentals(ISIN_FUND, InstrumentRef(QuoteProvider.MORNINGSTAR, "0P00012PP6"))
+        val fromYahoo = source.fundamentals(ISIN_FUND, InstrumentRef(QuoteProvider.YAHOO, "IWDA.AS"))
+
+        assertEquals(1_800L, fromMorningstar?.ongoingChargePercentScaled)
+        assertEquals(6, fromMorningstar?.riskLevel)
+        // A Yahoo holding has no SecId on Morningstar: the first row with data answers.
+        assertEquals(fromMorningstar, fromYahoo)
+        assertEquals(2, hits.morningstar.size)
+        assertTrue(hits.yahoo.isEmpty())
+    }
+
+    @Test
+    fun `a failing screener makes fundamentals a domain failure`() = runTest {
+        assertFailsWith<QuoteUnavailableException> {
+            source(morningstar = { null }).fundamentals(ISIN_FUND, null)
+        }
+    }
 }

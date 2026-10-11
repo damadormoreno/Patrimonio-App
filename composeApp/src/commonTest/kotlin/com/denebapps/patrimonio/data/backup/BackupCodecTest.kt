@@ -57,6 +57,14 @@ class BackupCodecTest {
 
     private val brokerPainting = painting.copy(id = "p4", broker = "Openbank")
 
+    private val fundamentalsFund = pricedFund.copy(
+        id = "p5",
+        ongoingChargePercentScaled = 1_800,
+        riskLevel = 6,
+        category = "RV Global",
+        managementCompany = "Vanguard",
+    )
+
     private val full = BackupDocument(
         exportedAt = "2026-10-06T10:00:00Z",
         accountTypes = listOf(watches),
@@ -70,7 +78,7 @@ class BackupCodecTest {
             SavingsGoalAllocationEventBackup(1, "goal-1", 50_000, 1_000),
             SavingsGoalAllocationEventBackup(2, "goal-1", -20_000, 2_000),
         ),
-        portfolioHoldings = listOf(pricedFund, unpricedEtf, painting, brokerPainting),
+        portfolioHoldings = listOf(pricedFund, unpricedEtf, painting, brokerPainting, fundamentalsFund),
         savingsGoalLinkEvents = listOf(
             SavingsGoalLinkEventBackup(1, "goal-1", null, "a1", "LINK", 1_000),
             SavingsGoalLinkEventBackup(2, "goal-2", null, null, "LINK", 1_000, fromGroupId = null, toGroupId = "g1"),
@@ -100,7 +108,7 @@ class BackupCodecTest {
         val json = BackupCodec.encode(BackupDocument(exportedAt = "2026-10-06T10:00:00Z"))
 
         assertTrue(""""format": "patrimonio-backup"""" in json, json)
-        assertTrue(""""version": 9""" in json, json)
+        assertTrue(""""version": 10""" in json, json)
         assertTrue(""""portfolioHoldings"""" in json, json)
         assertFalse("subscriptions" in json, json)
     }
@@ -221,10 +229,10 @@ class BackupCodecTest {
     @Test
     fun `newer format version is rejected with an update hint`() {
         val error = assertFailsWith<InvalidBackupException> {
-            BackupCodec.decode("""{"format":"patrimonio-backup","version":10,"exportedAt":"x"}""")
+            BackupCodec.decode("""{"format":"patrimonio-backup","version":11,"exportedAt":"x"}""")
         }
 
-        assertTrue("v10" in error.message.orEmpty())
+        assertTrue("v11" in error.message.orEmpty())
     }
 
     @Test
@@ -261,7 +269,7 @@ class BackupCodecTest {
     @Test
     fun `a version 5 backup has no custom types nor emojis and its built-in types still read`() {
         val json = BackupCodec.encode(BackupDocument(exportedAt = "2026-10-06T10:00:00Z", assets = listOf(asset)))
-            .replace(""""version": 9""", """"version": 5""")
+            .replace(""""version": 10""", """"version": 5""")
             .replace(Regex(""",\s*"emoji": null"""), "")
             .replace(Regex(""",\s*"accountTypes": \[\s*]"""), "")
 
@@ -375,7 +383,10 @@ class BackupCodecTest {
     fun `portfolio holdings of both variants survive a round trip`() {
         val decoded = BackupCodec.decode(BackupCodec.encode(full))
 
-        assertEquals(listOf(pricedFund, unpricedEtf, painting, brokerPainting), decoded.portfolioHoldings)
+        assertEquals(
+            listOf(pricedFund, unpricedEtf, painting, brokerPainting, fundamentalsFund),
+            decoded.portfolioHoldings,
+        )
     }
 
     @Test
@@ -480,6 +491,51 @@ class BackupCodecTest {
         assertTrue("banco o bróker" in holdingReason(pricedFund.copy(broker = " Openbank")))
         assertTrue("banco o bróker" in holdingReason(pricedFund.copy(broker = "B".repeat(61))))
         val atCap = pricedFund.copy(broker = "B".repeat(60))
+        assertEquals(listOf(atCap), roundTrip(atCap))
+    }
+
+    @Test
+    fun `a holding keeps its fundamentals through a round trip and none stays none`() {
+        assertEquals(listOf(fundamentalsFund), roundTrip(fundamentalsFund))
+        val partial = pricedFund.copy(ongoingChargePercentScaled = 0, category = "Monetario")
+        assertEquals(listOf(partial), roundTrip(partial))
+        val plain = roundTrip(pricedFund).single()
+        assertNull(plain.ongoingChargePercentScaled)
+        assertNull(plain.riskLevel)
+        assertNull(plain.category)
+        assertNull(plain.managementCompany)
+    }
+
+    @Test
+    fun `a version 9 backup with holdings imports them with no fundamentals`() {
+        val document = BackupCodec.decode(
+            """
+            {
+              "format": "patrimonio-backup",
+              "version": 9,
+              "exportedAt": "2026-10-06T10:00:00Z",
+              "portfolioHoldings": [
+                {"id": "p3", "name": "Cuadro", "type": "OTHER", "kind": "MANUAL", "currency": "USD",
+                 "valueMinor": 250000, "valuedAtEpochMs": 7, "broker": "Openbank"}
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(listOf(painting.copy(broker = "Openbank")), document.portfolioHoldings)
+        assertNull(document.portfolioHoldings.single().riskLevel)
+    }
+
+    @Test
+    fun `fundamentals must be a plausible cost risk and texts`() {
+        assertTrue("gastos" in holdingReason(fundamentalsFund.copy(ongoingChargePercentScaled = -1)))
+        assertTrue("riesgo" in holdingReason(fundamentalsFund.copy(riskLevel = 0)))
+        assertTrue("riesgo" in holdingReason(fundamentalsFund.copy(riskLevel = 8)))
+        listOf("", "  ", " padded", "C".repeat(121)).forEach { text ->
+            assertTrue("categoría" in holdingReason(fundamentalsFund.copy(category = text)), text)
+            assertTrue("gestora" in holdingReason(fundamentalsFund.copy(managementCompany = text)), text)
+        }
+        val atCap = fundamentalsFund.copy(category = "C".repeat(120), riskLevel = 7, ongoingChargePercentScaled = 0)
         assertEquals(listOf(atCap), roundTrip(atCap))
     }
 

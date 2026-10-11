@@ -1,14 +1,19 @@
 package com.denebapps.patrimonio.data.quotes
 
 import com.denebapps.patrimonio.domain.model.InstrumentCandidate
+import com.denebapps.patrimonio.domain.model.InstrumentFundamentals
 import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.InstrumentType
+import com.denebapps.patrimonio.domain.model.PricePoint
 import com.denebapps.patrimonio.domain.model.Quote
 import com.denebapps.patrimonio.domain.model.QuoteProvider
+import com.denebapps.patrimonio.domain.repository.FundamentalsSource
+import com.denebapps.patrimonio.domain.repository.PriceHistorySource
 import com.denebapps.patrimonio.domain.repository.QuoteSource
 import com.denebapps.patrimonio.domain.repository.QuoteUnavailableException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.datetime.LocalDate
 
 /**
  * [QuoteSource] combining Morningstar and Yahoo Finance, following the merge rules of rumbo
@@ -21,11 +26,14 @@ import kotlinx.coroutines.coroutineScope
  * - One provider failing does not fail an ISIN search; both failing does.
  *
  * Candidates are NOT validated by fetching prices — the caller prices the one the user picks.
+ *
+ * The same adapters also serve the price history, routed by the instrument's provider, and the fundamentals, which
+ * only Morningstar publishes (its screener, by ISIN) whichever provider quotes the holding.
  */
 class CompositeQuoteSource(
     private val morningstar: MorningstarApi,
     private val yahoo: YahooFinanceApi,
-) : QuoteSource {
+) : QuoteSource, PriceHistorySource, FundamentalsSource {
     override suspend fun search(query: String): List<InstrumentCandidate> {
         val text = query.trim()
         return when {
@@ -38,6 +46,16 @@ class CompositeQuoteSource(
     override suspend fun latestQuote(ref: InstrumentRef): Quote = when (ref.provider) {
         QuoteProvider.MORNINGSTAR -> morningstar.latestNav(ref.code)
         QuoteProvider.YAHOO -> yahoo.latestQuote(ref.code)
+    }
+
+    override suspend fun priceHistory(ref: InstrumentRef, from: LocalDate?): List<PricePoint> = when (ref.provider) {
+        QuoteProvider.MORNINGSTAR -> morningstar.priceHistory(ref.code, from)
+        QuoteProvider.YAHOO -> yahoo.priceHistory(ref.code, from)
+    }
+
+    override suspend fun fundamentals(isin: String, preferred: InstrumentRef?): InstrumentFundamentals? {
+        val secId = preferred?.takeIf { it.provider == QuoteProvider.MORNINGSTAR }?.code
+        return morningstar.fundamentals(isin.trim().uppercase(), secId)
     }
 
     private suspend fun searchByIsin(isin: String): List<InstrumentCandidate> = coroutineScope {

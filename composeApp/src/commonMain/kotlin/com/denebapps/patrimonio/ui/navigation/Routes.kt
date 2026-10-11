@@ -75,6 +75,14 @@ data class GoalAllocate(val goalId: String, val withdraw: Boolean = false)
 @Serializable
 object AddHolding
 
-/** Detail of one portfolio holding: its value, units to edit, and delete. */
+/** Position detail of one portfolio holding: its price history, returns and product data (a pushed screen). */
+@Serializable
+data class PositionDetail(val holdingId: String)
+
+/** Portfolio detail: value over time, correlation between products, split, costs and concentration (pushed). */
+@Serializable
+object PortfolioDetail
+
+/** Edit sheet of one portfolio holding: its value, units to edit, and delete; opened from [PositionDetail]. */
 @Serializable
 data class HoldingDetail(val holdingId: String)

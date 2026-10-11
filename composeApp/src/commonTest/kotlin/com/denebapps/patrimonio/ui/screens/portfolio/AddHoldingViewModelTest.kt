@@ -5,6 +5,7 @@ import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.HoldingValuation
 import com.denebapps.patrimonio.domain.model.InstrumentCandidate
+import com.denebapps.patrimonio.domain.model.InstrumentFundamentals
 import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.LastQuote
@@ -474,6 +475,68 @@ class AddHoldingViewModelTest {
         )
         runCurrent()
         assertEquals(1, closed.size)
+    }
+
+    private val fundamentals = InstrumentFundamentals(
+        ongoingChargePercentScaled = 1_800L,
+        riskLevel = 6,
+        category = "RV Global",
+        managementCompany = "Vanguard",
+    )
+
+    @Test
+    fun `a quoted holding is saved with the fundamentals of the picked product`() = runTest(dispatcher) {
+        source.searchResults = listOf(fund.copy(fundamentals = fundamentals), etf)
+        val vm = viewModel()
+        pickFund(vm)
+        vm.onUnitsChange("10")
+
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertEquals(fundamentals, repository.current.single().fundamentals)
+    }
+
+    @Test
+    fun `a product without fundamentals is saved with none`() = runTest(dispatcher) {
+        val vm = viewModel()
+        pickFund(vm)
+        vm.onUnitsChange("10")
+
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertNull(repository.current.single().fundamentals)
+    }
+
+    @Test
+    fun `a manual holding from a failed quote keeps the fundamentals of the product`() = runTest(dispatcher) {
+        source.searchResults = listOf(fund.copy(fundamentals = fundamentals), etf)
+        source.quoteFailure = QuoteUnavailableException("no price")
+        val vm = viewModel()
+        search(vm)
+        vm.onPick(fundRef)
+        advanceUntilIdle()
+        vm.onAddManuallyFromPicked()
+        vm.onAmountChange("1500")
+
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertEquals(fundamentals, repository.current.single().fundamentals)
+    }
+
+    @Test
+    fun `a manual holding added from scratch has no fundamentals`() = runTest(dispatcher) {
+        val vm = viewModel()
+        vm.onStartManual()
+        vm.onNameChange("Cuadro")
+        vm.onAmountChange("2500")
+
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertNull(repository.current.single().fundamentals)
     }
 
     @Test

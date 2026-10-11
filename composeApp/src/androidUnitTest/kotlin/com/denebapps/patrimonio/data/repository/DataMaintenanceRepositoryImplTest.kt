@@ -6,6 +6,9 @@ import com.denebapps.patrimonio.data.db.buildInMemoryTestDatabase
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
 import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
+import com.denebapps.patrimonio.data.db.entity.FxHistoryEntity
+import com.denebapps.patrimonio.data.db.entity.InstrumentPriceEntity
+import com.denebapps.patrimonio.data.db.entity.InstrumentPriceSyncEntity
 import com.denebapps.patrimonio.data.db.entity.LiabilityEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
 import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
@@ -24,6 +27,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.File
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
@@ -77,6 +81,10 @@ class DataMaintenanceRepositoryImplTest {
                 null, null, null, null, 250_000, 1L,
             ),
         )
+        val price = InstrumentPriceEntity("MORNINGSTAR", "0P00012PP6", 20_000L, 5L, "EUR")
+        db.instrumentPriceDao().upsertAll(listOf(price))
+        db.instrumentPriceDao().upsertSync(InstrumentPriceSyncEntity("MORNINGSTAR", "0P00012PP6", 1L))
+        db.fxHistoryDao().upsertAll(listOf(FxHistoryEntity("USD", 20_000L, 920_000L)))
     }
 
     private suspend fun assertAllFinancialTablesEmpty(db: AppDatabase) {
@@ -87,6 +95,8 @@ class DataMaintenanceRepositoryImplTest {
         assertTrue(db.savingsGoalDao().listAllLinkedAssets().isEmpty(), "goal accounts not cleared")
         assertTrue(db.netWorthDao().observeAll().first().isEmpty(), "net-worth snapshots not cleared")
         assertTrue(db.portfolioHoldingDao().list().isEmpty(), "portfolio holdings not cleared")
+        assertEquals(0, db.instrumentPriceDao().count(), "price history not cleared")
+        assertNull(db.instrumentPriceDao().findSync("MORNINGSTAR", "0P00012PP6"), "price sync state not cleared")
     }
 
     @Test
@@ -122,6 +132,18 @@ class DataMaintenanceRepositoryImplTest {
         assertEquals(ThemeMode.DARK, prefs.observeThemeMode().first())
         assertEquals("Ana", prefs.observeFirstName().first())
         assertEquals("Gil", prefs.observeLastName().first())
+        db.close()
+    }
+
+    @Test
+    fun `clear keeps the historical fx rates because they are not tied to any holding`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        testSeedingGate(db).await()
+        populateAllTables(db)
+
+        DataMaintenanceRepositoryImpl(db).clearAllFinancialData()
+
+        assertEquals(1, db.fxHistoryDao().list().size)
         db.close()
     }
 

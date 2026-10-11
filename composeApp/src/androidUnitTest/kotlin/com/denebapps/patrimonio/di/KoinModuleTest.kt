@@ -26,11 +26,15 @@ import com.denebapps.patrimonio.domain.repository.BackupRepository
 import com.denebapps.patrimonio.domain.repository.CloudBackup
 import com.denebapps.patrimonio.domain.repository.CreateSavingsGoal
 import com.denebapps.patrimonio.domain.repository.DataMaintenanceRepository
+import com.denebapps.patrimonio.domain.repository.FundamentalsSource
+import com.denebapps.patrimonio.domain.repository.FxHistoryRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
+import com.denebapps.patrimonio.domain.repository.InstrumentHistoryRepository
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
+import com.denebapps.patrimonio.domain.repository.PriceHistorySource
 import com.denebapps.patrimonio.domain.repository.QuoteSource
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.ui.screens.account.AccountViewModel
@@ -43,6 +47,8 @@ import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.AddHoldingViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.CarteraViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.HoldingDetailViewModel
+import com.denebapps.patrimonio.ui.screens.portfolio.PortfolioDetailViewModel
+import com.denebapps.patrimonio.ui.screens.portfolio.PositionDetailViewModel
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
 import com.denebapps.patrimonio.ui.screens.settings.AccountTypesViewModel
 import com.denebapps.patrimonio.ui.screens.settings.BackupViewModel
@@ -295,6 +301,24 @@ class KoinModuleTest {
     }
 
     @Test
+    fun `the history and fundamentals ports resolve via DI as the same market data source`() {
+        val koin = startTestKoin(fxModule, quotesModule)
+
+        assertSame<Any>(koin.get<QuoteSource>(), koin.get<PriceHistorySource>())
+        assertSame<Any>(koin.get<QuoteSource>(), koin.get<FundamentalsSource>())
+    }
+
+    @Test
+    fun `the history repositories resolve via DI as singletons`() {
+        val koin = startTestKoin(fxModule, quotesModule)
+
+        assertNotNull(koin.get<InstrumentHistoryRepository>())
+        assertSame(koin.get<InstrumentHistoryRepository>(), koin.get<InstrumentHistoryRepository>())
+        assertNotNull(koin.get<FxHistoryRepository>())
+        assertSame(koin.get<FxHistoryRepository>(), koin.get<FxHistoryRepository>())
+    }
+
+    @Test
     fun `PortfolioRepository resolves via DI as a singleton and persists through the shared DAO`() = runTest {
         val koin = startTestKoin(fxModule, quotesModule)
         val repository = koin.get<PortfolioRepository>()
@@ -328,6 +352,8 @@ class KoinModuleTest {
         assertNotNull(koin.get<CarteraViewModel>())
         assertNotNull(koin.get<AddHoldingViewModel>())
         assertNotNull(koin.get<HoldingDetailViewModel> { parametersOf("holding-1") })
+        assertNotNull(koin.get<PositionDetailViewModel> { parametersOf("holding-1") })
+        assertNotNull(koin.get<PortfolioDetailViewModel>())
         assertNotNull(koin.get<SavingsGoalsViewModel>())
         assertNotNull(koin.get<ProfileViewModel>())
         assertNotNull(koin.get<AccountViewModel>())

@@ -8,6 +8,9 @@ import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.MAX_BROKER_LENGTH
+import com.denebapps.patrimonio.domain.model.MAX_FUNDAMENTALS_TEXT_LENGTH
+import com.denebapps.patrimonio.domain.model.MAX_RISK_LEVEL
+import com.denebapps.patrimonio.domain.model.MIN_RISK_LEVEL
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
@@ -36,17 +39,18 @@ import kotlin.uuid.Uuid
  * hand-edited or corrupted file is rejected with a readable reason instead of failing half-way
  * through an import or crashing a later read.
  *
- * Writes [VERSION] (9). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
+ * Writes [VERSION] (10). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
  * group-link fields, which default to null, v1–v3 files have numeric goal ids, which
  * [upgradeLegacyGoalIds] replaces before decoding, v1–v4 files link a goal to one `linkedAssetId`,
  * which [upgradeSingleLinkedAsset] turns into a list, v1–v5 files have no custom account types nor
  * emojis, which default to empty, v3–v6 files may carry a `subscriptions` section from the removed
  * subscriptions feature, which is ignored like any unknown key, v1–v7 files have no portfolio holdings, which
- * default to empty, and v1–v8 holdings have no bank or broker, which defaults to null.
+ * default to empty, v1–v8 holdings have no bank or broker, which defaults to null, and v1–v9 holdings have no
+ * fundamentals (cost, risk, category, manager), which default to null.
  */
 object BackupCodec {
     const val FORMAT = "patrimonio-backup"
-    const val VERSION = 9
+    const val VERSION = 10
 
     private val json = Json {
         prettyPrint = true
@@ -251,6 +255,7 @@ private fun validateHolding(holding: PortfolioHoldingBackup) {
     if (holding.type !in INSTRUMENT_TYPES) invalid("$label tiene un tipo desconocido: ${holding.type}.")
     if (holding.currency !in CURRENCIES) invalid("$label tiene una divisa no soportada: ${holding.currency}.")
     if (holding.broker != null) validateBroker(holding.broker, label)
+    validateFundamentals(holding, label)
     when (holding.kind) {
         HoldingKind.QUOTED.name -> validateQuotedHolding(holding, label)
         HoldingKind.MANUAL.name -> validateManualHolding(holding, label)
@@ -267,6 +272,31 @@ private fun validateBroker(broker: String, label: String) {
         invalid("$label tiene un banco o bróker de más de $MAX_BROKER_LENGTH caracteres.")
     }
 }
+
+/** Mirrors `InstrumentFundamentals`: a stored value outside its range would crash the read that rebuilds it. */
+private fun validateFundamentals(holding: PortfolioHoldingBackup, label: String) {
+    if (holding.ongoingChargePercentScaled != null && holding.ongoingChargePercentScaled < 0) {
+        invalid("$label tiene unos gastos corrientes negativos.")
+    }
+    if (holding.riskLevel != null && holding.riskLevel !in MIN_RISK_LEVEL..MAX_RISK_LEVEL) {
+        invalid("$label tiene un nivel de riesgo fuera de $MIN_RISK_LEVEL a $MAX_RISK_LEVEL.")
+    }
+    if (holding.category != null && !isStoredFundamentalsText(holding.category)) {
+        invalid(
+            "$label tiene una categoría vacía, con espacios sobrantes o de más de " +
+                "$MAX_FUNDAMENTALS_TEXT_LENGTH caracteres.",
+        )
+    }
+    if (holding.managementCompany != null && !isStoredFundamentalsText(holding.managementCompany)) {
+        invalid(
+            "$label tiene una gestora vacía, con espacios sobrantes o de más de " +
+                "$MAX_FUNDAMENTALS_TEXT_LENGTH caracteres.",
+        )
+    }
+}
+
+private fun isStoredFundamentalsText(text: String): Boolean =
+    text.isNotBlank() && text == text.trim() && text.length <= MAX_FUNDAMENTALS_TEXT_LENGTH
 
 private fun validateQuotedHolding(holding: PortfolioHoldingBackup, label: String) {
     if (holding.provider !in QUOTE_PROVIDERS) {

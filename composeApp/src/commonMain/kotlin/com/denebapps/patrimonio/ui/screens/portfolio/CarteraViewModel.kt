@@ -120,7 +120,7 @@ class CarteraViewModel(
 
 private const val REFRESH_FAILED = "No se pudieron actualizar los precios"
 
-private fun countLabel(count: Int): String = when (count) {
+internal fun countLabel(count: Int): String = when (count) {
     0 -> "Sin productos"
     1 -> "1 producto"
     else -> "$count productos"

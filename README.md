@@ -65,22 +65,36 @@ producto puede llevar, opcionalmente, el banco o bróker que lo gestiona (*Banco
   habría que pasar a una fuente con licencia.
 - Los precios se actualizan al abrir la app si tienen más de 6 horas y con *Actualizar* (o
   deslizando hacia abajo) en la pestaña. Solo se admiten productos cotizados en EUR, USD, GBP o JPY.
-- Fuera de esta primera fase: movimientos (compras, ventas, traspasos), coste y plusvalías,
-  histórico de precios, rentabilidad (XIRR/TWR) e importación desde brókeres.
+- **Detalle de un producto** (al pulsarlo): gráfica del precio (1M · 6M · 1A · 5A · Máx, deslizando el
+  dedo se ve cada día), rentabilidad por año natural y anualizada a 1, 3 y 5 años, volatilidad
+  (semanal anualizada, 3 años), máxima caída y, si Morningstar los tiene, gastos corrientes (TER) con
+  su coste anual para tu posición, riesgo 1–7, categoría y gestora.
+- **Detalle de la cartera** (al pulsar el total): evolución del valor con la composición actual (tus
+  participaciones de hoy a precios pasados) con sus rentabilidades y riesgo, **matriz de correlación**
+  de las rentabilidades semanales en EUR (últimos 3 años), reparto por tipo, banco y divisa, TER y
+  riesgo medios ponderados y aviso de concentración si un producto supera el 40 %.
+- Son rentabilidades **del producto**, no de tus compras: cuando lleguen los movimientos, el histórico
+  de tu posición será otro distinto y el del producto se mantiene.
+- **Histórico**: precios diarios de Morningstar y Yahoo y tipos de cambio históricos de Frankfurter
+  (para valorar en EUR productos en otra divisa). Se guardan en el dispositivo como caché, se
+  descargan solo los días nuevos y no van en las copias de seguridad (se vuelven a descargar).
+- Fuera de esta fase: movimientos (compras, ventas, traspasos), coste y plusvalías propias, XIRR/TWR
+  e importación desde brókeres.
 
 ## Copias de seguridad
 
 Ajustes → Datos → *Exportar copia* / *Importar copia* (selector nativo vía
 [FileKit](https://github.com/vinceglb/FileKit)). El archivo es JSON legible
-(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 9}`:
+(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 10}`:
 
 - Incluye activos, pasivos, grupos y miembros, histórico mensual y metas con sus aportaciones y
   vínculos (una meta se vincula a una cuenta **o** a un grupo), tipos de cuenta propios y los
-  productos de la cartera con su último precio. No incluye
-  tipos de cambio (caché) ni preferencias. Las copias de versiones anteriores se siguen importando;
+  productos de la cartera con su último precio y los datos de Morningstar (TER, riesgo, categoría y
+  gestora). No incluye tipos de cambio ni históricos de precios (cachés) ni preferencias. Las copias de versiones anteriores se siguen importando;
   en las de la 1 a la 3 las metas tenían id numérico y reciben un UUID nuevo al importarlas, y la
   sección de suscripciones de las copias de la 3 a la 6 se ignora (la función se eliminó en la 7);
-  las anteriores a la 8 se importan sin cartera y las anteriores a la 9, sin banco o bróker.
+  las anteriores a la 8 se importan sin cartera y las anteriores a la 9, sin banco o bróker,
+  y las anteriores a la 10, sin datos de Morningstar (se rellenan solos).
 - Importar **reemplaza** todos los datos en una sola transacción. El archivo se valida entero antes
   (divisas, tipos, ids únicos, referencias, reglas del ledger de metas), así que uno inválido no
   toca nada.
@@ -94,8 +108,9 @@ dispositivo.
 
 1. ~~**Backup**~~: export/import JSON desde Ajustes (ver *Copias de seguridad*).
 2. ~~**Cartera** (fase 1)~~: sustituye a Suscripciones, que se eliminaron junto con los avisos de
-   renovación (ver *Cartera*). Siguientes fases: movimientos (compras, ventas, comisiones,
-   dividendos y traspasos), coste FIFO, histórico de precios, rentabilidad e importación.
+   renovación (ver *Cartera*); incluye el detalle de cada producto y de la cartera. Fase 2:
+   movimientos (compras, ventas, comisiones, dividendos y traspasos), coste FIFO, rentabilidad propia
+   (XIRR/TWR, separada de la del producto) e importación.
 3. **Login + sync** (opcional): Google / Apple / email junto con sincronización. Activos, pasivos,
    grupos y metas ya tienen id `String` (UUID); la migración 3 → 4 (`MIGRATION_3_4`)
    dio un UUID nuevo a las metas existentes. Las aportaciones y cambios de vínculo de cada meta

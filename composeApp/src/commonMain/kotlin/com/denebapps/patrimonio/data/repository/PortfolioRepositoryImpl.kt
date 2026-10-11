@@ -3,6 +3,7 @@ package com.denebapps.patrimonio.data.repository
 import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.SeedingGate
 import com.denebapps.patrimonio.data.db.dao.PortfolioHoldingDao
+import com.denebapps.patrimonio.data.db.dao.pruneUnreferenced
 import com.denebapps.patrimonio.data.db.entity.HoldingKind
 import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
 import com.denebapps.patrimonio.data.db.writeTransaction
@@ -10,6 +11,7 @@ import com.denebapps.patrimonio.data.platform.AppLogger
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.HoldingValuation
+import com.denebapps.patrimonio.domain.model.InstrumentFundamentals
 import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.LastQuote
@@ -19,6 +21,9 @@ import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.model.normalizeBroker
+import com.denebapps.patrimonio.domain.repository.FundamentalsSource
+import com.denebapps.patrimonio.domain.repository.FundamentalsSyncFailure
+import com.denebapps.patrimonio.domain.repository.FundamentalsSyncResult
 import com.denebapps.patrimonio.domain.repository.PortfolioHoldingNotFoundException
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.PriceRefreshFailure
@@ -40,12 +45,16 @@ import kotlinx.datetime.LocalDate
 /** A price fetched more than this long ago is refreshed on the next non-forced refresh. */
 private const val STALE_WINDOW_MS = 6L * 60 * 60 * 1000
 
+/** The fundamentals of a holding are asked at most once in this long, unless forced. */
+private const val FUNDAMENTALS_WINDOW_MS = 24L * 60 * 60 * 1000
+
 /** Quote requests in flight at once: enough to be quick, few enough to stay polite to the public endpoints. */
 private const val MAX_CONCURRENT_QUOTES = 4
 
 /**
- * [PortfolioRepository] over Room and the [QuoteSource] port. A price refresh writes only the price columns of its
- * own row, so units edited while the requests are in flight are never overwritten.
+ * [PortfolioRepository] over Room and the [QuoteSource] and [FundamentalsSource] ports. A price refresh writes only the
+ * price columns of its own row, and a fundamentals sync only the fundamentals columns of its own, so units edited while
+ * the requests are in flight are never overwritten.
  */
 class PortfolioRepositoryImpl(
     private val appDatabase: AppDatabase,
@@ -54,6 +63,7 @@ class PortfolioRepositoryImpl(
     private val snapshotUpserter: NetWorthSnapshotUpserter,
     private val seedingGate: SeedingGate,
     private val clock: Clock,
+    private val fundamentalsSource: FundamentalsSource,
 ) : PortfolioRepository {
     override fun observeAll(): Flow<List<PortfolioHolding>> = flow {
         seedingGate.await()
@@ -63,7 +73,7 @@ class PortfolioRepositoryImpl(
     override suspend fun add(holding: PortfolioHolding) {
         seedingGate.await()
         appDatabase.writeTransaction {
-            dao.insert(toEntity(holding))
+            dao.insert(toEntity(holding, clock.now().toEpochMilliseconds()))
             snapshotUpserter.refreshCurrentMonth()
         }
     }
@@ -100,6 +110,8 @@ class PortfolioRepositoryImpl(
         seedingGate.await()
         appDatabase.writeTransaction {
             if (dao.delete(id) == 0) throw PortfolioHoldingNotFoundException(id)
+            // The cached price history of a product nobody holds any more is useless.
+            appDatabase.instrumentPriceDao().pruneUnreferenced()
             snapshotUpserter.refreshCurrentMonth()
         }
     }
@@ -121,6 +133,61 @@ class PortfolioRepositoryImpl(
             upToDate = quoted.size - due.size,
             failures = failures,
         )
+    }
+
+    override suspend fun syncFundamentals(holdingId: String?, force: Boolean): FundamentalsSyncResult {
+        seedingGate.await()
+        val now = clock.now().toEpochMilliseconds()
+        val rows = if (holdingId == null) {
+            dao.list()
+        } else {
+            listOf(dao.find(holdingId) ?: throw PortfolioHoldingNotFoundException(holdingId))
+        }
+        val eligible = rows.filter { it.kind == HoldingKind.QUOTED.name && !it.isin.isNullOrBlank() }
+        val due = if (force) eligible else eligible.filter { fundamentalsAreDue(it, now) }
+        val limiter = Semaphore(MAX_CONCURRENT_QUOTES)
+        val outcomes = coroutineScope {
+            due.map { row -> async { limiter.withPermit { fetchFundamentals(row, now) } } }.awaitAll()
+        }
+        return FundamentalsSyncResult(
+            updated = outcomes.count { it == FundamentalsOutcome.Updated },
+            upToDate = eligible.size - due.size,
+            failures = outcomes.filterIsInstance<FundamentalsOutcome.Failed>().map { it.failure },
+        )
+    }
+
+    private sealed interface FundamentalsOutcome {
+        data object Updated : FundamentalsOutcome
+
+        data object NothingKnown : FundamentalsOutcome
+
+        data class Failed(val failure: FundamentalsSyncFailure) : FundamentalsOutcome
+    }
+
+    private suspend fun fetchFundamentals(row: PortfolioHoldingEntity, now: Long): FundamentalsOutcome {
+        val fundamentals = try {
+            fundamentalsSource.fundamentals(row.isin.orEmpty(), instrumentRefOrNull(row))
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Exception) {
+            val reason = error.message ?: error::class.simpleName.orEmpty()
+            AppLogger.error("PortfolioRepository", "fundamentals of '${row.name}' failed: $reason", error)
+            return FundamentalsOutcome.Failed(FundamentalsSyncFailure(row.id, row.name, reason))
+        }
+        // A source that knows nothing leaves what is stored (a gap never erases data) but counts as asked.
+        if (fundamentals == null) {
+            dao.touchFundamentals(row.id, now)
+            return FundamentalsOutcome.NothingKnown
+        }
+        dao.updateFundamentals(
+            id = row.id,
+            ongoingChargePercentScaled = fundamentals.ongoingChargePercentScaled,
+            riskLevel = fundamentals.riskLevel,
+            category = fundamentals.category,
+            managementCompany = fundamentals.managementCompany,
+            fetchedAtEpochMs = now,
+        )
+        return FundamentalsOutcome.Updated
     }
 
     /** @return `null` when the price was stored, the failure otherwise (the previous price stays untouched). */
@@ -149,6 +216,16 @@ class PortfolioRepositoryImpl(
 private fun instrumentRef(row: PortfolioHoldingEntity) =
     InstrumentRef(QuoteProvider.valueOf(row.provider.orEmpty()), row.providerCode.orEmpty())
 
+/** The instrument a quoted row is priced as, or `null` for a row without a provider. */
+private fun instrumentRefOrNull(row: PortfolioHoldingEntity): InstrumentRef? =
+    if (row.provider == null || row.providerCode == null) null else instrumentRef(row)
+
+/** Never asked, asked a day or more ago, or "asked in the future" (the device clock went backwards). */
+private fun fundamentalsAreDue(row: PortfolioHoldingEntity, now: Long): Boolean {
+    val askedAt = row.fundamentalsFetchedAtEpochMs ?: return true
+    return now - askedAt !in 0 until FUNDAMENTALS_WINDOW_MS
+}
+
 /** Never fetched, fetched too long ago, or "fetched in the future" (the device clock went backwards). */
 private fun isStale(row: PortfolioHoldingEntity, now: Long): Boolean {
     val fetchedAt = row.priceFetchedAtEpochMs ?: return true
@@ -156,7 +233,10 @@ private fun isStale(row: PortfolioHoldingEntity, now: Long): Boolean {
     return age < 0 || age > STALE_WINDOW_MS
 }
 
-private fun toEntity(holding: PortfolioHolding): PortfolioHoldingEntity = when (val valuation = holding.valuation) {
+/** [nowMs] stamps the fundamentals of a holding that arrives with them, so they are not asked again right away. */
+private fun toEntity(holding: PortfolioHolding, nowMs: Long): PortfolioHoldingEntity = when (
+    val valuation = holding.valuation
+) {
     is HoldingValuation.Quoted -> PortfolioHoldingEntity(
         id = holding.id,
         name = holding.name,
@@ -174,6 +254,11 @@ private fun toEntity(holding: PortfolioHolding): PortfolioHoldingEntity = when (
         valueMinor = null,
         valuedAtEpochMs = null,
         broker = holding.broker,
+        ongoingChargePercentScaled = holding.fundamentals?.ongoingChargePercentScaled,
+        riskLevel = holding.fundamentals?.riskLevel,
+        category = holding.fundamentals?.category,
+        managementCompany = holding.fundamentals?.managementCompany,
+        fundamentalsFetchedAtEpochMs = nowMs.takeIf { holding.fundamentals != null },
     )
     is HoldingValuation.Manual -> PortfolioHoldingEntity(
         id = holding.id,
@@ -192,6 +277,11 @@ private fun toEntity(holding: PortfolioHolding): PortfolioHoldingEntity = when (
         valueMinor = valuation.value.amount.minorUnits,
         valuedAtEpochMs = valuation.valuedAtEpochMs,
         broker = holding.broker,
+        ongoingChargePercentScaled = holding.fundamentals?.ongoingChargePercentScaled,
+        riskLevel = holding.fundamentals?.riskLevel,
+        category = holding.fundamentals?.category,
+        managementCompany = holding.fundamentals?.managementCompany,
+        fundamentalsFetchedAtEpochMs = nowMs.takeIf { holding.fundamentals != null },
     )
 }
 
@@ -226,5 +316,11 @@ internal fun portfolioHoldingToDomain(row: PortfolioHoldingEntity): PortfolioHol
         ticker = row.ticker,
         valuation = valuation,
         broker = row.broker,
+        fundamentals = InstrumentFundamentals(
+            ongoingChargePercentScaled = row.ongoingChargePercentScaled,
+            riskLevel = row.riskLevel,
+            category = row.category,
+            managementCompany = row.managementCompany,
+        ).takeUnless { it.isEmpty },
     )
 }

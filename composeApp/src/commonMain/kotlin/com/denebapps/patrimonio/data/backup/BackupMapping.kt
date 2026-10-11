@@ -93,6 +93,10 @@ internal fun PortfolioHoldingEntity.toBackup() = PortfolioHoldingBackup(
     valueMinor,
     valuedAtEpochMs,
     broker,
+    ongoingChargePercentScaled,
+    riskLevel,
+    category,
+    managementCompany,
 )
 
 internal fun PortfolioHoldingBackup.toEntity() = PortfolioHoldingEntity(
@@ -112,4 +116,8 @@ internal fun PortfolioHoldingBackup.toEntity() = PortfolioHoldingEntity(
     valueMinor,
     valuedAtEpochMs,
     broker,
+    ongoingChargePercentScaled,
+    riskLevel,
+    category,
+    managementCompany,
 )

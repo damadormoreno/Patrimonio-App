@@ -415,6 +415,57 @@ class AppDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun `migration 9 to 10 keeps every holding without fundamentals and adds the empty history caches`() {
+        helper.createDatabase(9).use { connection ->
+            connection.execSQL(
+                "INSERT INTO portfolio_holdings (id, name, type, isin, ticker, kind, provider, providerCode, " +
+                    "currency, unitsScaled, priceScaled, priceDateEpochDay, priceFetchedAtEpochMs, valueMinor, " +
+                    "valuedAtEpochMs, broker) VALUES ('p1', 'Vanguard Global', 'FUND', 'IE00B03HCZ61', NULL, " +
+                    "'QUOTED', 'MORNINGSTAR', '0P00012PP6', 'EUR', 8100001, 12345678, 20000, 1000, NULL, NULL, " +
+                    "'Openbank')",
+            )
+            connection.execSQL(
+                "INSERT INTO portfolio_holdings (id, name, type, isin, ticker, kind, provider, providerCode, " +
+                    "currency, unitsScaled, priceScaled, priceDateEpochDay, priceFetchedAtEpochMs, valueMinor, " +
+                    "valuedAtEpochMs, broker) VALUES ('p2', 'Cuadro', 'OTHER', NULL, NULL, 'MANUAL', NULL, NULL, " +
+                    "'EUR', NULL, NULL, NULL, NULL, 250000, 2000, NULL)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(10, emptyList()).use { connection ->
+            assertEquals(2L, connection.count("portfolio_holdings"))
+            connection.prepare(
+                "SELECT id, unitsScaled, broker, ongoingChargePercentScaled, riskLevel, category, " +
+                    "managementCompany, fundamentalsFetchedAtEpochMs FROM portfolio_holdings ORDER BY id",
+            ).use { rows ->
+                assertTrue(rows.step())
+                assertEquals("p1", rows.getText(0))
+                assertEquals(8_100_001L, rows.getLong(1))
+                assertEquals("Openbank", rows.getText(2))
+                (3..7).forEach { assertTrue(rows.isNull(it), "column $it of p1 must start null") }
+                assertTrue(rows.step())
+                assertEquals("p2", rows.getText(0))
+                (3..7).forEach { assertTrue(rows.isNull(it), "column $it of p2 must start null") }
+                assertFalse(rows.step())
+            }
+            listOf("instrument_prices", "instrument_price_sync", "fx_history", "fx_history_sync").forEach { table ->
+                assertTrue(connection.tableExists(table), "$table missing")
+                assertEquals(0L, connection.count(table), "$table must start empty")
+            }
+
+            connection.execSQL(
+                "UPDATE portfolio_holdings SET ongoingChargePercentScaled = 1800, riskLevel = 6, " +
+                    "category = 'RV Global', managementCompany = 'Vanguard' WHERE id = 'p1'",
+            )
+            connection.execSQL(
+                "INSERT INTO instrument_prices (provider, code, epochDay, priceScaled, currency) " +
+                    "VALUES ('MORNINGSTAR', '0P00012PP6', 20000, 12345678, 'EUR')",
+            )
+            assertEquals(1L, connection.count("instrument_prices"))
+        }
+    }
+
     /** Version 1 data: an asset, two groups (one with a member), two goals (one linked to the asset),
      *  allocation events and one link event. */
     private fun SQLiteConnection.seedVersion1() {

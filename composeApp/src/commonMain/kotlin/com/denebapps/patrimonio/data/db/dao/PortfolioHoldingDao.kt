@@ -41,6 +41,25 @@ interface PortfolioHoldingDao {
     @Query("UPDATE portfolio_holdings SET broker = :broker WHERE id = :id")
     suspend fun updateBroker(id: String, broker: String?): Int
 
+    /** Targeted so a fundamentals sync never touches the value or the price. @return rows touched (0 or 1). */
+    @Query(
+        "UPDATE portfolio_holdings SET ongoingChargePercentScaled = :ongoingChargePercentScaled, " +
+            "riskLevel = :riskLevel, category = :category, managementCompany = :managementCompany, " +
+            "fundamentalsFetchedAtEpochMs = :fetchedAtEpochMs WHERE id = :id",
+    )
+    suspend fun updateFundamentals(
+        id: String,
+        ongoingChargePercentScaled: Long?,
+        riskLevel: Int?,
+        category: String?,
+        managementCompany: String?,
+        fetchedAtEpochMs: Long,
+    ): Int
+
+    /** Records that the provider was asked, keeping the stored fundamentals. @return rows touched (0 or 1). */
+    @Query("UPDATE portfolio_holdings SET fundamentalsFetchedAtEpochMs = :fetchedAtEpochMs WHERE id = :id")
+    suspend fun touchFundamentals(id: String, fetchedAtEpochMs: Long): Int
+
     @Query(
         "UPDATE portfolio_holdings SET priceScaled = :priceScaled, priceDateEpochDay = :priceDateEpochDay, " +
             "priceFetchedAtEpochMs = :fetchedAtEpochMs WHERE id = :id AND kind = 'QUOTED'",

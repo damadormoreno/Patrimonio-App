@@ -2,12 +2,15 @@ package com.denebapps.patrimonio.data.repository
 
 import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.buildInMemoryTestDatabase
+import com.denebapps.patrimonio.data.db.entity.InstrumentPriceEntity
+import com.denebapps.patrimonio.data.db.entity.InstrumentPriceSyncEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
 import com.denebapps.patrimonio.data.db.testSeedingGate
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.HoldingValuation
 import com.denebapps.patrimonio.domain.model.InstrumentCandidate
+import com.denebapps.patrimonio.domain.model.InstrumentFundamentals
 import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.LastQuote
@@ -17,10 +20,12 @@ import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.Quote
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.Units
+import com.denebapps.patrimonio.domain.repository.FundamentalsSource
 import com.denebapps.patrimonio.domain.repository.PortfolioHoldingNotFoundException
 import com.denebapps.patrimonio.domain.repository.PriceRefreshFailure
 import com.denebapps.patrimonio.domain.repository.QuoteSource
 import com.denebapps.patrimonio.domain.repository.QuoteUnavailableException
+import com.denebapps.patrimonio.testing.FakeFundamentalsSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -34,6 +39,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 private val NOW = Instant.parse("2026-10-11T12:00:00Z")
@@ -43,6 +49,12 @@ private val TODAY = LocalDate(2026, 10, 9)
 private class PortfolioFixedClock(private val instant: Instant) : Clock {
     override fun now(): Instant = instant
 }
+
+private class SteppingClock(var instant: Instant) : Clock {
+    override fun now(): Instant = instant
+}
+
+private const val DAY_MS = 24 * HOUR_MS
 
 /** Answers [latestQuote] from [answers] (a quote, or the failure to throw) and records every call. */
 private class FakeQuoteSource(
@@ -114,6 +126,7 @@ class PortfolioRepositoryTest {
         db: AppDatabase,
         source: QuoteSource = FakeQuoteSource(),
         clock: Clock = PortfolioFixedClock(NOW),
+        fundamentals: FundamentalsSource = FakeFundamentalsSource(),
     ) = PortfolioRepositoryImpl(
         db,
         db.portfolioHoldingDao(),
@@ -128,6 +141,7 @@ class PortfolioRepositoryTest {
         ) { TimeZone.UTC },
         testSeedingGate(db),
         clock,
+        fundamentals,
     )
 
     private suspend fun AppDatabase.snapshotAssets(): Long? = netWorthDao().find("2026-10")?.assetsMinor
@@ -571,6 +585,206 @@ class PortfolioRepositoryTest {
 
         assertEquals(1, result.failures.size)
         assertEquals(1L, db.snapshotAssets())
+        db.close()
+    }
+
+    private val fundamentals = InstrumentFundamentals(
+        ongoingChargePercentScaled = 1_800L,
+        riskLevel = 6,
+        category = "RV Global",
+        managementCompany = "Vanguard",
+    )
+
+    private val otherFundamentals = InstrumentFundamentals(ongoingChargePercentScaled = 2_000L, riskLevel = 5)
+
+    private fun quotedWithoutIsin(id: String) = quoted(id).copy(isin = null)
+
+    @Test
+    fun `fundamentals are stored with a holding of either variant and read back`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repository = repositoryFor(db)
+        val fund = quoted("f").copy(fundamentals = fundamentals)
+        val painting = manual("m").copy(fundamentals = otherFundamentals)
+        val plain = quoted("p")
+
+        listOf(fund, painting, plain).forEach { repository.add(it) }
+
+        val stored = repository.observeAll().first().associateBy { it.id }
+        assertEquals(fundamentals, stored.getValue("f").fundamentals)
+        assertEquals(otherFundamentals, stored.getValue("m").fundamentals)
+        assertNull(stored.getValue("p").fundamentals)
+        db.close()
+    }
+
+    @Test
+    fun `syncFundamentals backfills quoted holdings that have an ISIN and reports what it did`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val source = FakeFundamentalsSource().apply { answers["IE00B03HCZ61"] = fundamentals }
+        val repository = repositoryFor(db, fundamentals = source)
+        repository.add(quoted("a"))
+        repository.add(quotedWithoutIsin("noIsin"))
+        repository.add(manual("m").copy(isin = "IE00B03HCZ61"))
+
+        val result = repository.syncFundamentals(holdingId = null, force = false)
+
+        assertEquals(1, result.updated)
+        assertEquals(emptyList(), result.failures)
+        assertEquals(listOf<Pair<String, InstrumentRef?>>("IE00B03HCZ61" to ref("a")), source.calls)
+        val stored = repository.observeAll().first().associateBy { it.id }
+        assertEquals(fundamentals, stored.getValue("a").fundamentals)
+        assertNull(stored.getValue("noIsin").fundamentals)
+        assertNull(stored.getValue("m").fundamentals)
+        db.close()
+    }
+
+    @Test
+    fun `fundamentals are asked once a day per holding unless forced`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val clock = SteppingClock(NOW)
+        val source = FakeFundamentalsSource().apply { answers["IE00B03HCZ61"] = fundamentals }
+        val repository = repositoryFor(db, clock = clock, fundamentals = source)
+        repository.add(quoted("a"))
+        repository.syncFundamentals(null, force = false)
+
+        clock.instant = Instant.fromEpochMilliseconds(NOW.toEpochMilliseconds() + DAY_MS - 1)
+        val fresh = repository.syncFundamentals(null, force = false)
+        assertEquals(1, source.calls.size)
+        assertEquals(0, fresh.updated)
+        assertEquals(1, fresh.upToDate)
+
+        repository.syncFundamentals(null, force = true)
+        assertEquals(2, source.calls.size)
+
+        clock.instant = Instant.fromEpochMilliseconds(NOW.toEpochMilliseconds() + 2 * DAY_MS)
+        repository.syncFundamentals(null, force = false)
+        assertEquals(3, source.calls.size)
+        db.close()
+    }
+
+    @Test
+    fun `a holding added with its fundamentals is not asked again the same day`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val source = FakeFundamentalsSource().apply { answers["IE00B03HCZ61"] = otherFundamentals }
+        val repository = repositoryFor(db, fundamentals = source)
+        repository.add(quoted("a").copy(fundamentals = fundamentals))
+
+        val result = repository.syncFundamentals(null, force = false)
+
+        assertEquals(emptyList(), source.calls)
+        assertEquals(1, result.upToDate)
+        assertEquals(fundamentals, repository.observeAll().first().single().fundamentals)
+        db.close()
+    }
+
+    @Test
+    fun `a forced sync replaces what is stored with what the source says now`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val source = FakeFundamentalsSource().apply { answers["IE00B03HCZ61"] = otherFundamentals }
+        val repository = repositoryFor(db, fundamentals = source)
+        repository.add(quoted("a").copy(fundamentals = fundamentals))
+
+        repository.syncFundamentals(null, force = true)
+
+        assertEquals(otherFundamentals, repository.observeAll().first().single().fundamentals)
+        db.close()
+    }
+
+    @Test
+    fun `a failing source keeps what is stored, is reported and does not count as done`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val source = FakeFundamentalsSource().apply { failure = QuoteUnavailableException("offline") }
+        val repository = repositoryFor(db, fundamentals = source)
+        repository.add(quoted("a", name = "Global").copy(fundamentals = fundamentals))
+        repository.add(quoted("b", name = "Other"))
+
+        val result = repository.syncFundamentals(null, force = true)
+
+        assertEquals(0, result.updated)
+        assertEquals(setOf("a", "b"), result.failures.map { it.holdingId }.toSet())
+        assertEquals("Global", result.failures.first { it.holdingId == "a" }.holdingName)
+        val stored = repository.observeAll().first().associateBy { it.id }
+        assertEquals(fundamentals, stored.getValue("a").fundamentals)
+        assertNull(stored.getValue("b").fundamentals)
+
+        source.failure = null
+        source.answers["IE00B03HCZ61"] = otherFundamentals
+        val retry = repository.syncFundamentals(null, force = false)
+        // "a" still has its day-old stamp from when it was added, so only "b" is asked.
+        assertEquals(1, retry.updated)
+        assertEquals(otherFundamentals, repository.observeAll().first().first { it.id == "b" }.fundamentals)
+        db.close()
+    }
+
+    @Test
+    fun `a source that knows nothing keeps what is stored and is not asked again the same day`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val source = FakeFundamentalsSource()
+        val repository = repositoryFor(db, fundamentals = source)
+        repository.add(quoted("a").copy(fundamentals = fundamentals))
+
+        val first = repository.syncFundamentals(null, force = true)
+        val second = repository.syncFundamentals(null, force = false)
+
+        assertEquals(0, first.updated)
+        assertEquals(emptyList(), first.failures)
+        assertEquals(1, second.upToDate)
+        assertEquals(1, source.calls.size)
+        assertEquals(fundamentals, repository.observeAll().first().single().fundamentals)
+        db.close()
+    }
+
+    @Test
+    fun `a single holding can be synced and an unknown one is reported`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val source = FakeFundamentalsSource().apply { answers["IE00B03HCZ61"] = fundamentals }
+        val repository = repositoryFor(db, fundamentals = source)
+        repository.add(quoted("a"))
+        repository.add(quoted("b"))
+
+        val result = repository.syncFundamentals(holdingId = "b", force = false)
+
+        assertEquals(1, result.updated)
+        assertEquals(listOf<Pair<String, InstrumentRef?>>("IE00B03HCZ61" to ref("b")), source.calls)
+        val stored = repository.observeAll().first().associateBy { it.id }
+        assertNull(stored.getValue("a").fundamentals)
+        assertEquals(fundamentals, stored.getValue("b").fundamentals)
+        assertFailsWith<PortfolioHoldingNotFoundException> { repository.syncFundamentals("ghost", force = false) }
+        db.close()
+    }
+
+    @Test
+    fun `a fundamentals sync touches neither the price nor the units nor the broker`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val source = FakeFundamentalsSource().apply { answers["IE00B03HCZ61"] = fundamentals }
+        val repository = repositoryFor(db, fundamentals = source)
+        val original = quoted("a", lastQuote = lastQuote(12_000_000, fetchedAgoMs = HOUR_MS), broker = "Openbank")
+        repository.add(original)
+
+        repository.syncFundamentals(null, force = false)
+
+        assertEquals(original.copy(fundamentals = fundamentals), repository.observeAll().first().single())
+        db.close()
+    }
+
+    @Test
+    fun `deleting a holding drops its price history unless another holding shares the series`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repository = repositoryFor(db)
+        repository.add(quoted("a", code = "SHARED"))
+        repository.add(quoted("b", code = "SHARED"))
+        repository.add(quoted("c", code = "ALONE"))
+        listOf("SHARED", "ALONE").forEach { code ->
+            db.instrumentPriceDao().upsertAll(listOf(InstrumentPriceEntity("MORNINGSTAR", code, 20_000L, 5L, "EUR")))
+            db.instrumentPriceDao().upsertSync(InstrumentPriceSyncEntity("MORNINGSTAR", code, 1L))
+        }
+
+        repository.delete("a")
+        assertEquals(2, db.instrumentPriceDao().count())
+
+        repository.delete("c")
+        assertEquals(1, db.instrumentPriceDao().count())
+        assertEquals("SHARED", db.instrumentPriceDao().list("MORNINGSTAR", "SHARED").single().code)
+        assertNull(db.instrumentPriceDao().findSync("MORNINGSTAR", "ALONE"))
         db.close()
     }
 }

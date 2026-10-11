@@ -50,7 +50,31 @@ interface PortfolioRepository {
      * one failure never stops the others. Manual holdings are never fetched.
      */
     suspend fun refreshPrices(force: Boolean): PriceRefreshResult
+
+    /**
+     * Fills in or updates the fundamentals (cost, risk, category, manager) of quoted holdings that have an ISIN, from
+     * the [FundamentalsSource]: the holding [holdingId], or every eligible one when it is `null`. A holding whose
+     * fundamentals were fetched less than a day ago is left alone unless [force]. A failure keeps what is stored and
+     * is reported in the result; a source that knows nothing about the product also keeps it, and counts as asked.
+     *
+     * @throws PortfolioHoldingNotFoundException when [holdingId] is given and there is no such holding.
+     */
+    suspend fun syncFundamentals(holdingId: String?, force: Boolean): FundamentalsSyncResult
 }
+
+/**
+ * Outcome of [PortfolioRepository.syncFundamentals]: how many holdings got [updated] fundamentals, how many were left
+ * alone because they were asked within a day ([upToDate]), and the [failures]. Holdings that are not eligible (manual,
+ * or without an ISIN) are not counted.
+ */
+data class FundamentalsSyncResult(
+    val updated: Int,
+    val upToDate: Int,
+    val failures: List<FundamentalsSyncFailure>,
+)
+
+/** A holding whose fundamentals could not be fetched; [reason] is a short technical description for logs. */
+data class FundamentalsSyncFailure(val holdingId: String, val holdingName: String, val reason: String)
 
 /**
  * Outcome of [PortfolioRepository.refreshPrices]: how many prices were [refreshed], how many quoted holdings were
