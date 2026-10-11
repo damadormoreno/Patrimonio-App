@@ -110,6 +110,10 @@ class BackupRepositoryImplTest {
             PortfolioHoldingEntity(
                 "p1", "Vanguard Global", "FUND", "IE00B03HCZ61", null, "QUOTED", "MORNINGSTAR", "0P00012PP6", "EUR",
                 8_100_001, 12_345_678, 20_000, 1_000, null, null,
+                ongoingChargePercentScaled = 1_800,
+                riskLevel = 6,
+                category = "RV Global",
+                managementCompany = "Vanguard",
             ),
         )
         db.portfolioHoldingDao().insert(

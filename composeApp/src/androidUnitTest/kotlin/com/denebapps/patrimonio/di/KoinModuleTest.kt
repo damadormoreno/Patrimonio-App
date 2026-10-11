@@ -26,11 +26,15 @@ import com.denebapps.patrimonio.domain.repository.BackupRepository
 import com.denebapps.patrimonio.domain.repository.CloudBackup
 import com.denebapps.patrimonio.domain.repository.CreateSavingsGoal
 import com.denebapps.patrimonio.domain.repository.DataMaintenanceRepository
+import com.denebapps.patrimonio.domain.repository.FundamentalsSource
+import com.denebapps.patrimonio.domain.repository.FxHistoryRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
+import com.denebapps.patrimonio.domain.repository.InstrumentHistoryRepository
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
+import com.denebapps.patrimonio.domain.repository.PriceHistorySource
 import com.denebapps.patrimonio.domain.repository.QuoteSource
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.ui.screens.account.AccountViewModel
@@ -292,6 +296,24 @@ class KoinModuleTest {
 
         assertNotNull(koin.get<QuoteSource>())
         assertSame(koin.get<QuoteSource>(), koin.get<QuoteSource>())
+    }
+
+    @Test
+    fun `the history and fundamentals ports resolve via DI as the same market data source`() {
+        val koin = startTestKoin(fxModule, quotesModule)
+
+        assertSame<Any>(koin.get<QuoteSource>(), koin.get<PriceHistorySource>())
+        assertSame<Any>(koin.get<QuoteSource>(), koin.get<FundamentalsSource>())
+    }
+
+    @Test
+    fun `the history repositories resolve via DI as singletons`() {
+        val koin = startTestKoin(fxModule, quotesModule)
+
+        assertNotNull(koin.get<InstrumentHistoryRepository>())
+        assertSame(koin.get<InstrumentHistoryRepository>(), koin.get<InstrumentHistoryRepository>())
+        assertNotNull(koin.get<FxHistoryRepository>())
+        assertSame(koin.get<FxHistoryRepository>(), koin.get<FxHistoryRepository>())
     }
 
     @Test

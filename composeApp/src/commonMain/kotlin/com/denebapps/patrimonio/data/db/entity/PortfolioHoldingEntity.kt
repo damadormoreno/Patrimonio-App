@@ -15,6 +15,11 @@ enum class HoldingKind { QUOTED, MANUAL }
  * - `MANUAL`: [valueMinor] and [valuedAtEpochMs].
  *
  * [broker] is the optional bank or broker, for either kind; `null` when none was given.
+ *
+ * The fundamentals a data provider published about the product, for either kind, all `null` when unknown:
+ * [ongoingChargePercentScaled] (percent x 1e4), [riskLevel] (SRRI 1 to 7), [category] and [managementCompany].
+ * [fundamentalsFetchedAtEpochMs] is local sync state, not part of the backup: when the provider was last asked, so the
+ * lookup runs at most once a day per holding; `null` until then.
  */
 @Entity(tableName = "portfolio_holdings")
 data class PortfolioHoldingEntity(
@@ -34,4 +39,9 @@ data class PortfolioHoldingEntity(
     val valueMinor: Long?,
     val valuedAtEpochMs: Long?,
     val broker: String? = null,
+    val ongoingChargePercentScaled: Long? = null,
+    val riskLevel: Int? = null,
+    val category: String? = null,
+    val managementCompany: String? = null,
+    val fundamentalsFetchedAtEpochMs: Long? = null,
 )

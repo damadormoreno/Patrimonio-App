@@ -5,6 +5,7 @@ import com.denebapps.patrimonio.domain.model.InstrumentCandidate
 import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.Price
+import com.denebapps.patrimonio.domain.model.PricePoint
 import com.denebapps.patrimonio.domain.model.Quote
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.repository.QuoteUnavailableException
@@ -16,7 +17,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 class YahooFinanceApiTest {
-    private fun api(handler: MockHandler) = YahooFinanceApi(quoteHttp(handler = handler))
+    private fun api(handler: MockHandler) = YahooFinanceApi(quoteHttp(handler = handler), FixedClock(FIXED_NOW))
 
     private fun chart(currency: String, close: String, timestamp: Long = 1760515200) =
         """{"chart":{"result":[{"meta":{"currency":"$currency"},"timestamp":[$timestamp],""" +
@@ -139,6 +140,102 @@ class YahooFinanceApiTest {
         assertFailsWith<QuoteUnavailableException> { api { respondJson("not json") }.latestQuote("X") }
         assertFailsWith<QuoteUnavailableException> {
             api { respondJson("{}", HttpStatusCode.NotFound) }.latestQuote("X")
+        }
+    }
+
+    private fun history(currency: String, timestamps: String, closes: String) =
+        """{"chart":{"result":[{"meta":{"currency":"$currency"},"timestamp":[$timestamps],""" +
+            """"indicators":{"quote":[{"close":[$closes]}]}}],"error":null}}"""
+
+    @Test
+    fun `a first history download asks for the whole range and skips bars without a close`() = runTest {
+        var url: String? = null
+        val api = api { request ->
+            url = request.url.toString()
+            respondJson(YAHOO_CHART_JSON)
+        }
+
+        val points = api.priceHistory("IWDA.AS", from = null)
+
+        assertEquals("https://query1.finance.yahoo.com/v8/finance/chart/IWDA.AS?range=max&interval=1d", url)
+        assertEquals(
+            listOf(
+                PricePoint(LocalDate(2025, 10, 14), Price(104_120_000L, Currency.EUR)),
+                PricePoint(LocalDate(2025, 10, 15), Price(105_300_000L, Currency.EUR)),
+            ),
+            points,
+        )
+    }
+
+    @Test
+    fun `an incremental history download asks for the smallest range that covers the gap`() = runTest {
+        suspend fun rangeFor(from: LocalDate): String? {
+            var url: String? = null
+            api { request ->
+                url = request.url.toString()
+                respondJson(YAHOO_CHART_JSON)
+            }.priceHistory("IWDA.AS", from)
+            return url?.substringAfter("range=")?.substringBefore('&')
+        }
+
+        // FIXED_NOW is 2025-10-16.
+        assertEquals("1mo", rangeFor(LocalDate(2025, 10, 9)))
+        assertEquals("3mo", rangeFor(LocalDate(2025, 8, 17)))
+        assertEquals("1y", rangeFor(LocalDate(2025, 4, 1)))
+        assertEquals("2y", rangeFor(LocalDate(2024, 9, 1)))
+        assertEquals("5y", rangeFor(LocalDate(2021, 1, 1)))
+        assertEquals("10y", rangeFor(LocalDate(2017, 1, 1)))
+        assertEquals("max", rangeFor(LocalDate(2005, 1, 1)))
+    }
+
+    @Test
+    fun `history drops float noise and converts pence like the latest quote`() = runTest {
+        val noisy = history("EUR", "1760428800,1760515200", "131.669998,131.67")
+        assertEquals(
+            listOf(
+                PricePoint(LocalDate(2025, 10, 14), Price(131_670_000L, Currency.EUR)),
+                PricePoint(LocalDate(2025, 10, 15), Price(131_670_000L, Currency.EUR)),
+            ),
+            api { respondJson(noisy) }.priceHistory("X", from = null),
+        )
+
+        val pence = history("GBp", "1760428800", "812.3")
+        assertEquals(
+            listOf(PricePoint(LocalDate(2025, 10, 14), Price(8_123_000L, Currency.GBP))),
+            api { respondJson(pence) }.priceHistory("VOD.L", from = null),
+        )
+    }
+
+    @Test
+    fun `history is ascending with one price per UTC day and the later bar wins`() = runTest {
+        // 2025-10-15T23:00Z, 2025-10-14T10:00Z and 2025-10-15T10:00Z.
+        val body = history("EUR", "1760569200,1760436000,1760522400", "9.0,7.0,8.0")
+
+        val points = api { respondJson(body) }.priceHistory("X", from = null)
+
+        assertEquals(
+            listOf(
+                PricePoint(LocalDate(2025, 10, 14), Price(7_000_000L, Currency.EUR)),
+                PricePoint(LocalDate(2025, 10, 15), Price(9_000_000L, Currency.EUR)),
+            ),
+            points,
+        )
+    }
+
+    @Test
+    fun `history without bars is empty while unusable history is a domain failure`() = runTest {
+        assertEquals(emptyList(), api { respondJson(history("EUR", "", "")) }.priceHistory("X", from = null))
+        assertEquals(emptyList(), api { respondJson(history("EUR", "1760428800", "null")) }.priceHistory("X", null))
+
+        assertFailsWith<QuoteUnavailableException> {
+            api { respondJson(history("CHF", "1760428800", "10.0")) }.priceHistory("NESN.SW", from = null)
+        }
+        assertFailsWith<QuoteUnavailableException> {
+            api { respondJson("""{"chart":{"result":null,"error":{"code":"Not Found"}}}""") }.priceHistory("X", null)
+        }
+        assertFailsWith<QuoteUnavailableException> { api { respondJson("not json") }.priceHistory("X", null) }
+        assertFailsWith<QuoteUnavailableException> {
+            api { respondJson("{}", HttpStatusCode.NotFound) }.priceHistory("X", null)
         }
     }
 }

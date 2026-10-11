@@ -6,7 +6,9 @@ import kotlinx.datetime.LocalDate
  * One position of the investment portfolio. The identity shared by every position lives here; how it is valued is
  * the [valuation]: priced by a quote source ([HoldingValuation.Quoted]) or entered by hand ([HoldingValuation.Manual]).
  * Ids are random UUID strings, like the rest of the app. [broker] is the optional bank or broker that manages the
- * position (free text, kept as typed); it is a property of the holding, whichever way it is valued.
+ * position (free text, kept as typed); it is a property of the holding, whichever way it is valued. So are the
+ * product's [fundamentals] (cost, risk, category, manager), which a data provider supplies and which stay `null` when
+ * it knows nothing about the product.
  */
 data class PortfolioHolding(
     val id: String,
@@ -16,6 +18,7 @@ data class PortfolioHolding(
     val ticker: String?,
     val valuation: HoldingValuation,
     val broker: String? = null,
+    val fundamentals: InstrumentFundamentals? = null,
 ) {
     init {
         require(id.isNotBlank()) { "holding id must not be blank" }

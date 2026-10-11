@@ -96,7 +96,8 @@ private class EntryResult(val units: Units, val preview: String)
  * Add-a-holding form. The user searches a product (debounced, [MIN_SEARCH_LENGTH] characters at least), picks one,
  * and its latest price is fetched; then they enter either the units held or what the position is worth now (the units
  * are derived from the price). A product that cannot be found, or whose price cannot be fetched, is added by hand
- * with a value of the user's own. Save stores the holding and emits one [navigateBack].
+ * with a value of the user's own. Save stores the holding, with the fundamentals (cost, risk, category, manager) the
+ * search already knew about the picked product, and emits one [navigateBack].
  */
 class AddHoldingViewModel(
     private val quoteSource: QuoteSource,
@@ -264,6 +265,7 @@ class AddHoldingViewModel(
                 lastQuote = LastQuote(quote.price, quote.date, clock.now().toEpochMilliseconds()),
             ),
             broker = normalizeBroker(form.broker),
+            fundamentals = candidate.fundamentals,
         )
     }
 
@@ -280,6 +282,7 @@ class AddHoldingViewModel(
                 valuedAtEpochMs = clock.now().toEpochMilliseconds(),
             ),
             broker = normalizeBroker(form.broker),
+            fundamentals = pickedCandidate?.fundamentals,
         )
     }
 

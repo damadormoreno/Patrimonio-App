@@ -24,6 +24,8 @@ internal fun Module.bindDatabaseDependents() {
     single { get<AppDatabase>().fxRateDao() }
     single { get<AppDatabase>().savingsGoalDao() }
     single { get<AppDatabase>().portfolioHoldingDao() }
+    single { get<AppDatabase>().instrumentPriceDao() }
+    single { get<AppDatabase>().fxHistoryDao() }
     single { DatabaseInitializer(get(), get()) }
     single<CoroutineScope> { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
     single { SeedingGate(get(), get()) }

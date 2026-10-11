@@ -14,7 +14,8 @@ data class InstrumentRef(val provider: QuoteProvider, val code: String)
 
 /**
  * A search result the user can pick. [currency] is `null` when the provider's search does not expose it (Yahoo):
- * the real currency arrives with the first [Quote].
+ * the real currency arrives with the first [Quote]. [fundamentals] is what the search already says about the product
+ * (Morningstar's screener rows carry it); `null` for providers that do not.
  */
 data class InstrumentCandidate(
     val ref: InstrumentRef,
@@ -24,4 +25,5 @@ data class InstrumentCandidate(
     val type: InstrumentType,
     val currency: Currency?,
     val exchange: String?,
+    val fundamentals: InstrumentFundamentals? = null,
 )

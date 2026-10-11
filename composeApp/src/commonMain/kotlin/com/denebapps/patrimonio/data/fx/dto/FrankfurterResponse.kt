@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.data.fx.dto
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -14,4 +15,17 @@ data class FrankfurterResponse(
     val base: String,
     val date: String,
     val rates: Map<String, Double>,
+)
+
+/**
+ * Transport DTO for the Frankfurter time-series endpoint (`/v1/{start}..{end}`): [rates] maps each working day
+ * (`YYYY-MM-DD`) to the amount of every requested currency per 1 [base], like [FrankfurterResponse.rates]. Weekends
+ * and bank holidays are absent. `start_date` may be earlier than requested (the API snaps it to a working day).
+ */
+@Serializable
+data class FrankfurterSeriesResponse(
+    val base: String,
+    @SerialName("start_date") val startDate: String,
+    @SerialName("end_date") val endDate: String,
+    val rates: Map<String, Map<String, Double>>,
 )

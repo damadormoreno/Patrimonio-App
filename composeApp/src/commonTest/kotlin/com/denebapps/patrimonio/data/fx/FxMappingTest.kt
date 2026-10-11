@@ -1,6 +1,8 @@
 package com.denebapps.patrimonio.data.fx
 
 import com.denebapps.patrimonio.domain.model.Currency
+import com.denebapps.patrimonio.domain.model.DatedFxRate
+import kotlinx.datetime.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -67,6 +69,56 @@ class FxMappingTest {
                 mapOf("USD" to 1.0870, "GBP" to 0.0, "JPY" to 163.9),
                 listOf(Currency.USD, Currency.GBP, Currency.JPY),
             )
+        }
+    }
+
+    @Test
+    fun `scales a time series per currency with the same inversion as the latest rates`() {
+        val series = scaleSeries(
+            rates = mapOf(
+                "2025-01-02" to mapOf("USD" to 1.0870, "GBP" to 0.85),
+                "2025-01-03" to mapOf("USD" to 1.1, "GBP" to 0.0),
+                "2025-01-06" to mapOf("USD" to 1.0870, "JPY" to 163.9),
+            ),
+            requested = listOf(Currency.USD, Currency.GBP),
+        )
+
+        assertEquals(
+            mapOf(
+                Currency.USD to listOf(
+                    DatedFxRate(LocalDate(2025, 1, 2), 919_963L),
+                    DatedFxRate(LocalDate(2025, 1, 3), 909_091L),
+                    DatedFxRate(LocalDate(2025, 1, 6), 919_963L),
+                ),
+                // 2025-01-03 carries an unusable zero rate and 2025-01-06 no GBP at all: both days are skipped.
+                Currency.GBP to listOf(DatedFxRate(LocalDate(2025, 1, 2), 1_176_471L)),
+            ),
+            series,
+        )
+        assertEquals(invertAndScale(1.0870), series.getValue(Currency.USD).first().rateToEurScaled)
+    }
+
+    @Test
+    fun `a time series comes out ascending whatever the order of the answer`() {
+        val series = scaleSeries(
+            rates = mapOf("2025-01-06" to mapOf("USD" to 1.1), "2025-01-02" to mapOf("USD" to 1.2)),
+            requested = listOf(Currency.USD),
+        )
+
+        assertEquals(
+            listOf(LocalDate(2025, 1, 2), LocalDate(2025, 1, 6)),
+            series.getValue(Currency.USD).map { it.date },
+        )
+    }
+
+    @Test
+    fun `a currency without any rate still appears with an empty series and a bad date is rejected`() {
+        assertEquals(
+            mapOf(Currency.JPY to emptyList()),
+            scaleSeries(mapOf("2025-01-02" to mapOf("USD" to 1.1)), listOf(Currency.JPY)),
+        )
+        assertFailsWith<IllegalArgumentException> {
+            scaleSeries(mapOf("not-a-date" to mapOf("USD" to 1.1)), listOf(Currency.USD))
         }
     }
 }

@@ -1,7 +1,9 @@
 package com.denebapps.patrimonio.data.fx
 
 import com.denebapps.patrimonio.domain.model.Currency
+import com.denebapps.patrimonio.domain.model.DatedFxRate
 import com.denebapps.patrimonio.domain.model.RATE_SCALE
+import kotlinx.datetime.LocalDate
 import kotlin.math.round
 
 /**
@@ -31,3 +33,21 @@ fun validateRates(rates: Map<String, Double>, requested: List<Currency>): Map<Cu
             ?: error("Frankfurter response missing requested symbol ${currency.code}")
         invertAndScale(rate)
     }
+
+/**
+ * Inverts a Frankfurter time series ([rates]: day -> currency code -> amount per EUR) into the scaled
+ * currency-to-EUR rates of each [requested] currency, ascending by date, with the same [invertAndScale] as the latest
+ * rates. Unlike [validateRates], a gap is not fatal for a history: a day without a usable rate for a currency (missing,
+ * zero, negative) is simply skipped, so one bad day never discards years of good ones.
+ *
+ * @throws IllegalArgumentException when a day key is not a `YYYY-MM-DD` date.
+ */
+fun scaleSeries(rates: Map<String, Map<String, Double>>, requested: List<Currency>): Map<Currency, List<DatedFxRate>> {
+    val days = rates.map { (day, perCurrency) -> LocalDate.parse(day) to perCurrency }.sortedBy { it.first }
+    return requested.associateWith { currency ->
+        days.mapNotNull { (day, perCurrency) ->
+            val rate = perCurrency[currency.code]?.takeIf { it.isFinite() && it > 0 } ?: return@mapNotNull null
+            DatedFxRate(day, invertAndScale(rate))
+        }
+    }
+}
