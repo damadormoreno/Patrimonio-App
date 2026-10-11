@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -25,6 +26,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.denebapps.patrimonio.domain.model.Currency
+import com.denebapps.patrimonio.ui.components.FormSectionLabel
+import com.denebapps.patrimonio.ui.components.FormTextField
 import com.denebapps.patrimonio.ui.components.currencySymbol
 import com.denebapps.patrimonio.ui.components.filterAmountInput
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
@@ -129,6 +132,15 @@ internal fun FixedCurrencyAmountField(
             modifier = Modifier.weight(1f),
         )
         Text(text = currency.code, color = colors.muted2, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/** The optional "Banco o bróker" field of the add and detail forms: free text, no suggestions. */
+@Composable
+internal fun BrokerField(text: String, onTextChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        FormSectionLabel("Banco o bróker")
+        FormTextField(value = text, placeholder = "Opcional · p. ej. MyInvestor", onValueChange = onTextChange)
     }
 }
 

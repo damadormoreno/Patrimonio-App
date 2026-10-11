@@ -306,6 +306,18 @@ private fun HoldingRow(row: HoldingRowUi, showDivider: Boolean, onClick: () -> U
                 )
                 Pill(text = row.typeLabel)
             }
+            // Own line, ellipsized, so a long name never pushes the units and price of the detail line out.
+            row.broker?.let {
+                Text(
+                    text = it,
+                    color = colors.ink2,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
             Text(
                 text = row.detail,
                 color = colors.muted,

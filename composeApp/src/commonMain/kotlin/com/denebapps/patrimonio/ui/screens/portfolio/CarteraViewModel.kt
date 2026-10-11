@@ -20,11 +20,15 @@ import kotlinx.datetime.TimeZone
 
 private const val CARTERA_STOP_TIMEOUT_MS = 5_000L
 
-/** One line of the Cartera list: texts ready to show. [valueEurText] is only set for a holding not in euros. */
+/**
+ * One line of the Cartera list: texts ready to show. [valueEurText] is only set for a holding not in euros, [broker]
+ * for one that has a bank or broker.
+ */
 data class HoldingRowUi(
     val id: String,
     val name: String,
     val typeLabel: String,
+    val broker: String?,
     val detail: String,
     val valueText: String,
     val valueEurText: String?,
@@ -106,6 +110,7 @@ class CarteraViewModel(
             id = id,
             name = name,
             typeLabel = instrumentTypeLabel(type),
+            broker = broker,
             detail = holdingDetailLine(this, zoneProvider()),
             valueText = valueText,
             valueEurText = valueEurText,

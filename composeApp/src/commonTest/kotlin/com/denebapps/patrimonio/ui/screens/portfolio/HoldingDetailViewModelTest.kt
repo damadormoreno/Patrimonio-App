@@ -7,6 +7,7 @@ import com.denebapps.patrimonio.domain.model.HoldingValuation
 import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.LastQuote
+import com.denebapps.patrimonio.domain.model.MAX_BROKER_LENGTH
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Price
@@ -337,6 +338,164 @@ class HoldingDetailViewModelTest {
 
         runCurrent()
         assertEquals(1, closed.size)
+        job.cancel()
+    }
+
+    @Test
+    fun `a holding without a bank or broker shows none and an empty field`() = runTest(dispatcher) {
+        val vm = viewModel("fund", FakePortfolioRepository(listOf(fund)))
+        val job = collect(vm)
+        advanceUntilIdle()
+
+        assertNull(vm.state.value.broker)
+        assertEquals("", vm.state.value.brokerText)
+        job.cancel()
+    }
+
+    @Test
+    fun `the bank or broker is shown and fills the field`() = runTest(dispatcher) {
+        val vm = viewModel("fund", FakePortfolioRepository(listOf(fund.copy(broker = "Openbank"))))
+        val job = collect(vm)
+        advanceUntilIdle()
+
+        assertEquals("Openbank", vm.state.value.broker)
+        assertEquals("Openbank", vm.state.value.brokerText)
+        assertFalse(vm.state.value.canSave)
+        job.cancel()
+    }
+
+    @Test
+    fun `typing a broker alone enables saving and persists it without touching the value`() = runTest(dispatcher) {
+        val repository = FakePortfolioRepository(listOf(manual), valuedAtEpochMs = stampedAt)
+        val vm = viewModel("art", repository)
+        val job = collect(vm)
+        val closed = collectNavigateBack(vm)
+        advanceUntilIdle()
+
+        vm.onBrokerChange("  MyInvestor ")
+        advanceUntilIdle()
+        assertTrue(vm.state.value.canSave)
+
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertEquals(listOf(manual.copy(broker = "MyInvestor")), repository.current)
+        runCurrent()
+        assertEquals(1, closed.size)
+        job.cancel()
+    }
+
+    @Test
+    fun `changing only the broker of a quoted holding keeps its units`() = runTest(dispatcher) {
+        val repository = FakePortfolioRepository(listOf(fund))
+        val vm = viewModel("fund", repository)
+        val job = collect(vm)
+        advanceUntilIdle()
+
+        vm.onBrokerChange("Openbank")
+        advanceUntilIdle()
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertEquals(listOf(fund.copy(broker = "Openbank")), repository.current)
+        job.cancel()
+    }
+
+    @Test
+    fun `units and broker edited together are both saved`() = runTest(dispatcher) {
+        val repository = FakePortfolioRepository(listOf(fund))
+        val vm = viewModel("fund", repository)
+        val job = collect(vm)
+        advanceUntilIdle()
+
+        vm.onEditChange("11")
+        vm.onBrokerChange("Openbank")
+        advanceUntilIdle()
+        vm.onSave()
+        advanceUntilIdle()
+
+        val saved = repository.current.single()
+        assertEquals(Units(11_000_000), (saved.valuation as HoldingValuation.Quoted).units)
+        assertEquals("Openbank", saved.broker)
+        job.cancel()
+    }
+
+    @Test
+    fun `clearing the field removes the broker`() = runTest(dispatcher) {
+        val repository = FakePortfolioRepository(listOf(fund.copy(broker = "Openbank")))
+        val vm = viewModel("fund", repository)
+        val job = collect(vm)
+        advanceUntilIdle()
+
+        vm.onBrokerChange("")
+        advanceUntilIdle()
+        assertTrue(vm.state.value.canSave)
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertNull(repository.current.single().broker)
+        job.cancel()
+    }
+
+    @Test
+    fun `a broker that only differs by surrounding spaces is not a change`() = runTest(dispatcher) {
+        val vm = viewModel("fund", FakePortfolioRepository(listOf(fund.copy(broker = "Openbank"))))
+        val job = collect(vm)
+        advanceUntilIdle()
+
+        vm.onBrokerChange(" Openbank ")
+        advanceUntilIdle()
+
+        assertFalse(vm.state.value.canSave)
+        job.cancel()
+    }
+
+    @Test
+    fun `a new broker cannot be saved while the units are invalid`() = runTest(dispatcher) {
+        val repository = FakePortfolioRepository(listOf(fund))
+        val vm = viewModel("fund", repository)
+        val job = collect(vm)
+        advanceUntilIdle()
+
+        vm.onEditChange("0")
+        vm.onBrokerChange("Openbank")
+        advanceUntilIdle()
+        assertFalse(vm.state.value.canSave)
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertEquals(listOf(fund), repository.current)
+        job.cancel()
+    }
+
+    @Test
+    fun `the broker field holds at most the maximum length`() = runTest(dispatcher) {
+        val vm = viewModel("fund", FakePortfolioRepository(listOf(fund)))
+        val job = collect(vm)
+        advanceUntilIdle()
+
+        vm.onBrokerChange("B".repeat(MAX_BROKER_LENGTH + 10))
+        advanceUntilIdle()
+
+        assertEquals("B".repeat(MAX_BROKER_LENGTH), vm.state.value.brokerText)
+        job.cancel()
+    }
+
+    @Test
+    fun `a price refresh keeps the broker the user is typing`() = runTest(dispatcher) {
+        val repository = FakePortfolioRepository(listOf(fund))
+        val vm = viewModel("fund", repository)
+        val job = collect(vm)
+        advanceUntilIdle()
+        vm.onBrokerChange("Open")
+        advanceUntilIdle()
+
+        val quoted = fund.valuation as HoldingValuation.Quoted
+        val refreshed = quoted.copy(lastQuote = LastQuote(Price(250_000_000, Currency.EUR), quoteDate, 2L))
+        repository.emit(listOf(fund.copy(valuation = refreshed)))
+        advanceUntilIdle()
+
+        assertEquals("Open", vm.state.value.brokerText)
         job.cancel()
     }
 

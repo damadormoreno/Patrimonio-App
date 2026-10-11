@@ -14,10 +14,12 @@ import com.denebapps.patrimonio.domain.model.InstrumentCandidate
 import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.LastQuote
+import com.denebapps.patrimonio.domain.model.MAX_BROKER_LENGTH
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Quote
 import com.denebapps.patrimonio.domain.model.Units
+import com.denebapps.patrimonio.domain.model.normalizeBroker
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.QuoteSource
 import com.denebapps.patrimonio.ui.components.formatMoney
@@ -66,7 +68,8 @@ data class QuoteUi(val priceText: String, val dateText: String, val currency: Cu
 /**
  * Everything the add form shows. Only the fields of the current [stage] matter: the search ones in `SEARCH`, the
  * entry ones in `ENTRY`, the manual ones (name, type, currency and [amountText] as the value) in `MANUAL`. [preview]
- * is the live "≈ ..." line of the entry form and [canSave] says whether Save is enabled.
+ * is the live "≈ ..." line of the entry form and [canSave] says whether Save is enabled. [broker] is the optional bank
+ * or broker field, as typed, shared by the entry and the manual forms.
  */
 data class AddHoldingUiState(
     val stage: AddHoldingStage = AddHoldingStage.SEARCH,
@@ -82,6 +85,7 @@ data class AddHoldingUiState(
     val name: String = "",
     val type: InstrumentType = InstrumentType.OTHER,
     val currency: Currency = Currency.EUR,
+    val broker: String = "",
     val canSave: Boolean = false,
 )
 
@@ -214,6 +218,7 @@ class AddHoldingViewModel(
                 name = "",
                 type = InstrumentType.OTHER,
                 currency = Currency.EUR,
+                broker = "",
             )
         }
     }
@@ -223,6 +228,9 @@ class AddHoldingViewModel(
     fun onTypeChange(type: InstrumentType) = update { it.copy(type = type) }
 
     fun onCurrencyChange(currency: Currency) = update { it.copy(currency = currency) }
+
+    /** The field holds at most [MAX_BROKER_LENGTH] characters; trimming happens once, when saving. */
+    fun onBrokerChange(text: String) = update { it.copy(broker = text.take(MAX_BROKER_LENGTH)) }
 
     fun onSave() {
         val form = mutableState.value
@@ -255,6 +263,7 @@ class AddHoldingViewModel(
                 units = units,
                 lastQuote = LastQuote(quote.price, quote.date, clock.now().toEpochMilliseconds()),
             ),
+            broker = normalizeBroker(form.broker),
         )
     }
 
@@ -270,6 +279,7 @@ class AddHoldingViewModel(
                 value = CurrencyAmount(Money(minor), form.currency),
                 valuedAtEpochMs = clock.now().toEpochMilliseconds(),
             ),
+            broker = normalizeBroker(form.broker),
         )
     }
 
