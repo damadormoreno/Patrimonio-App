@@ -33,7 +33,7 @@ data class SimilarHoldingUi(val name: String, val correlationText: String, val n
 /**
  * The portfolio after adding the amount entered: the [weightText] of the new product, the average cost ([terText])
  * and risk ([riskText]) before and after, with a coverage note each when only some products have the data, and the
- * concentration [warning] when it would fire.
+ * concentration [warning] when it would fire. [classMix] is the asset class mix before and after.
  */
 data class ProjectionUi(
     val weightText: String,
@@ -42,7 +42,20 @@ data class ProjectionUi(
     val riskText: String?,
     val riskCoverage: String?,
     val warning: String?,
+    val classMix: ClassMixUi?,
 )
+
+/** A class of the mix: its [label] and its share of the portfolio [beforeText] and [afterText] adding the amount. */
+data class ClassMixRowUi(val label: String, val beforeText: String, val afterText: String) {
+    /** "100,0 % → 84,5 %"; a class that is not in the portfolio yet reads "— → 15,5 %". */
+    val changeText: String get() = "$beforeText → $afterText"
+}
+
+/**
+ * The asset class mix of the portfolio before and after adding the product: a row per class that is in the portfolio
+ * afterwards, largest first with the unclassified last, and a [note] saying under which class the product counts.
+ */
+data class ClassMixUi(val rows: List<ClassMixRowUi>, val note: String)
 
 /**
  * "Encaje con tu cartera". [message] says why there is nothing to compare (null when there is a [verdict]); [similar]
@@ -60,7 +73,7 @@ data class FitSectionUi(
 
 /**
  * The whole preview screen. The sections that come from the price history are empty unless [status] is
- * [PreviewStatus.READY]; [fit] is null until the portfolio has been read. [scopePortfolioId] is the portfolio the
+ * [PreviewStatus.READY]; [chartNote] goes under the chart; [fit] is null until the portfolio has been read. [scopePortfolioId] is the portfolio the
  * product is compared with (null for all of them) and the one the add form starts on. [amountText] is the amount as
  * typed, while the projection follows it a moment later.
  */
@@ -74,6 +87,7 @@ data class InstrumentPreviewUiState(
     val risk: RiskUi? = null,
     val product: ProductDataUi? = null,
     val fit: FitSectionUi? = null,
+    val chartNote: String? = null,
     val scopePortfolioId: String? = null,
     val amountText: String = "",
 )

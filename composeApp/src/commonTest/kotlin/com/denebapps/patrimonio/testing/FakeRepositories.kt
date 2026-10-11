@@ -497,6 +497,9 @@ class FakePortfolioRepository(
 
     val current: List<PortfolioHolding> get() = backing.value
     val refreshCalls = mutableListOf<Boolean>()
+
+    /** The `(holdingId, assetClass)` of every [updateAssetClass] call. */
+    val assetClassCalls = mutableListOf<Pair<String, AssetClass?>>()
     var refreshResult = PriceRefreshResult(refreshed = 0, upToDate = 0, failures = emptyList())
     var refreshFailure: Throwable? = null
 
@@ -532,6 +535,7 @@ class FakePortfolioRepository(
     }
 
     override suspend fun updateAssetClass(id: String, assetClass: AssetClass?) {
+        assetClassCalls += id to assetClass
         replace(find(id).copy(assetClass = assetClass))
     }
 

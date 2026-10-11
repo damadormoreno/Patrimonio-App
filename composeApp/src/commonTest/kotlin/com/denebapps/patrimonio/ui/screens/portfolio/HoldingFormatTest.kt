@@ -32,7 +32,7 @@ class HoldingFormatTest {
     @Test
     fun `prices keep at least the currency decimals and drop trailing zeros beyond them`() {
         assertEquals("245,12 €", formatPrice(Price(245_120_000, Currency.EUR)))
-        assertEquals("12,345678 €", formatPrice(Price(12_345_678, Currency.EUR)))
+        assertEquals("12,3457 €", formatPrice(Price(12_345_678, Currency.EUR)))
         assertEquals("1.234,56 €", formatPrice(Price(1_234_560_000, Currency.EUR)))
         assertEquals("100,00 $", formatPrice(Price(100_000_000, Currency.USD)))
         assertEquals("0,001 £", formatPrice(Price(1_000, Currency.GBP)))

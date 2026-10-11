@@ -59,7 +59,7 @@ internal fun fitSectionUi(
         verdict = verdict,
         similar = if (verdict == null) emptyList() else fit.holdings.take(MAX_SIMILAR).map(::similarUi),
         canProject = valued > 0,
-        projection = fit.projection?.takeIf { valued > 0 }?.let { projectionUi(it, valuedBefore = valued) },
+        projection = fit.projection?.takeIf { valued > 0 }?.let { projectionUi(it, preview, valuedBefore = valued) },
     )
 }
 
@@ -98,7 +98,7 @@ private fun verdictUi(fit: InstrumentFit): FitVerdictUi? {
 }
 
 /** The weight, the average cost and risk before and after ("0,15 % → 0,16 %") and the concentration warning. */
-private fun projectionUi(projection: AddProjection, valuedBefore: Int): ProjectionUi {
+private fun projectionUi(projection: AddProjection, preview: InstrumentPreviewData, valuedBefore: Int): ProjectionUi {
     // The product that would be added counts as one more valued product.
     val valuedAfter = valuedBefore + 1
     val terBefore = projection.costBefore.averageTerPercentScaled
@@ -116,8 +116,34 @@ private fun projectionUi(projection: AddProjection, valuedBefore: Int): Projecti
             "«${shortName(it.name)}» supondría el " +
                 "${formatPercent(it.weight, signed = false, decimals = WARNING_DECIMALS)} de tu cartera."
         },
+        classMix = classMixUi(projection, preview),
     )
 }
+
+/**
+ * The class mix before and after ("Renta variable 100 % → 84,5 %"), and the class the product counts under: the one
+ * its category or type implies, the same the add form starts with.
+ */
+private fun classMixUi(projection: AddProjection, preview: InstrumentPreviewData): ClassMixUi {
+    val before = projection.classAllocationBefore.associate { it.key to it.share }
+    val (unclassified, classified) = projection.classAllocationAfter.partition { it.key == null }
+    val rows = (classified + unclassified).map { entry ->
+        ClassMixRowUi(
+            label = assetClassLabel(entry.key),
+            beforeText = before[entry.key]?.let(::classShareText) ?: NO_FIGURE_TEXT,
+            afterText = classShareText(entry.share),
+        )
+    }
+    val choice = assetClassChoice(null, preview.fundamentals?.category, preview.candidate.type)
+    val note = if (choice.effective != null) {
+        "Se contaría como ${choice.text}."
+    } else {
+        "Se contaría como $UNCLASSIFIED_LABEL: elige su clase al añadirlo."
+    }
+    return ClassMixUi(rows, note)
+}
+
+private fun classShareText(share: Double) = formatPercent(share, signed = false, decimals = WEIGHT_DECIMALS)
 
 /** "0,15 % → 0,16 %"; a missing [before] reads "—". */
 private fun beforeAfter(before: String?, after: String) = "${before ?: NO_FIGURE_TEXT} $ARROW $after"

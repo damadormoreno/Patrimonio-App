@@ -3,6 +3,7 @@ package com.denebapps.patrimonio.ui.screens.portfolio
 import com.denebapps.patrimonio.domain.calc.AllocationEntry
 import com.denebapps.patrimonio.domain.calc.CorrelationCell
 import com.denebapps.patrimonio.domain.calc.HoldingPriceSeries
+import com.denebapps.patrimonio.domain.calc.allocationByAssetClass
 import com.denebapps.patrimonio.domain.calc.allocationByBroker
 import com.denebapps.patrimonio.domain.calc.allocationByCurrency
 import com.denebapps.patrimonio.domain.calc.allocationByType
@@ -59,6 +60,7 @@ internal data class PortfolioAnalysis(
     val yearReturns: List<YearReturnUi>,
     val risk: RiskUi?,
     val correlation: CorrelationSectionUi?,
+    val classAllocation: ClassAllocationUi?,
     val allocations: List<AllocationGroupUi>,
     val costsRisk: CostsRiskUi?,
     val concentration: ConcentrationUi?,
@@ -88,6 +90,7 @@ internal fun analyzePortfolio(inputs: PortfolioInputs, today: LocalDate): Portfo
         yearReturns = if (charted) yearReturnsUi(series, today) else emptyList(),
         risk = if (charted) riskUi(series, today) else null,
         correlation = correlationSection(holdings, eurSeries, today),
+        classAllocation = classAllocation(holdings, inputs.rates),
         allocations = allocations(holdings, inputs.rates),
         costsRisk = costsRisk(holdings, inputs.rates),
         concentration = concentrationUi(holdings, inputs.rates),
@@ -180,6 +183,22 @@ private fun allocations(holdings: List<PortfolioHolding>, rates: FxRates): List<
 }
 
 private const val NO_BROKER_LABEL = "Sin banco"
+
+/** The split by asset class; the unclassified holdings go last whatever they are worth. `null` without value. */
+private fun classAllocation(holdings: List<PortfolioHolding>, rates: FxRates): ClassAllocationUi? {
+    val (unclassified, classified) = allocationByAssetClass(holdings, rates).partition { it.key == null }
+    if (classified.isEmpty() && unclassified.isEmpty()) return null
+    val rows = (classified + unclassified).map { entry ->
+        ClassRowUi(
+            assetClass = entry.key,
+            label = assetClassLabel(entry.key),
+            amountText = formatEur(entry.valueEur),
+            shareText = formatPercent(entry.share, signed = false, decimals = SHARE_DECIMALS),
+            share = entry.share.toFloat(),
+        )
+    }
+    return ClassAllocationUi(rows, UNCLASSIFIED_HINT.takeIf { unclassified.isNotEmpty() })
+}
 
 private fun <K> List<AllocationEntry<K>>.toRows(label: (K) -> String): List<AllocationRowUi> = map {
     AllocationRowUi(

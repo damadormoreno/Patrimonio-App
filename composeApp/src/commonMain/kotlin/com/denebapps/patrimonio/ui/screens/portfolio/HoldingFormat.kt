@@ -2,6 +2,7 @@ package com.denebapps.patrimonio.ui.screens.portfolio
 
 import com.denebapps.patrimonio.domain.calc.formatScaled6
 import com.denebapps.patrimonio.domain.calc.formatUnits
+import com.denebapps.patrimonio.domain.calc.roundHalfEven
 import com.denebapps.patrimonio.domain.calc.toEur
 import com.denebapps.patrimonio.domain.calc.value
 import com.denebapps.patrimonio.domain.model.Currency
@@ -53,7 +54,25 @@ fun formatShortDate(date: LocalDate): String {
  * fund's 12,345678 NAV is not cut.
  */
 fun formatPrice(price: Price): String =
-    "${formatScaled6(price.scaled, price.currency.decimals, grouped = true)} ${currencySymbol(price.currency)}"
+    "${formatScaled6(roundPriceForDisplay(price.scaled), price.currency.decimals, grouped = true)} " +
+        currencySymbol(price.currency)
+
+// Display precision by magnitude, in PRICE_SCALE (1e6) units: two decimals from 1.000 (74.781,76 €), up to four
+// from 1 (12,3457 €) and up to six below 1 (0,123456 €). Fund NAVs (three decimals) read unchanged.
+private const val THOUSAND_SCALED = 1_000_000_000L
+private const val ONE_SCALED = 1_000_000L
+private const val TWO_DECIMALS_STEP = 10_000L
+private const val FOUR_DECIMALS_STEP = 100L
+
+/** A non-negative scaled price rounded half-even to the decimals worth showing for its magnitude. */
+internal fun roundPriceForDisplay(scaled: Long): Long {
+    val step = when {
+        scaled >= THOUSAND_SCALED -> TWO_DECIMALS_STEP
+        scaled >= ONE_SCALED -> FOUR_DECIMALS_STEP
+        else -> return scaled
+    }
+    return roundHalfEven(scaled, step) * step
+}
 
 /** Keeps digits and one decimal comma (a period becomes a comma), with at most six decimals. */
 fun filterUnitsInput(raw: String): String {

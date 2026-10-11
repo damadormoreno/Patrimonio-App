@@ -10,6 +10,7 @@ import com.denebapps.patrimonio.domain.calc.volatility
 import com.denebapps.patrimonio.domain.model.InstrumentFundamentals
 import com.denebapps.patrimonio.domain.model.PRICE_SCALE
 import com.denebapps.patrimonio.domain.model.PricePoint
+import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.ui.components.charts.BarChartBar
 import com.denebapps.patrimonio.ui.components.charts.ChartPoint
 import kotlinx.datetime.LocalDate
@@ -153,4 +154,13 @@ internal fun productDataUi(
         category = known.category,
         manager = known.managementCompany,
     )
+}
+
+/** Said under the chart of a product whose provider cannot give more than a year of history. */
+internal const val COINGECKO_HISTORY_NOTE = "Histórico del último año (límite de CoinGecko)."
+
+/** The note that goes under the price chart of a product quoted by [provider]; `null` when there is none. */
+internal fun historyNote(provider: QuoteProvider): String? = when (provider) {
+    QuoteProvider.COINGECKO -> COINGECKO_HISTORY_NOTE
+    QuoteProvider.MORNINGSTAR, QuoteProvider.YAHOO -> null
 }

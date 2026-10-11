@@ -123,6 +123,7 @@ private fun PreviewBody(
                 annualized = state.annualized,
                 risk = state.risk,
                 onRangeSelect = onRangeSelect,
+                chartNote = state.chartNote,
             )
             state.product?.let {
                 SectionLabel("Datos del producto")

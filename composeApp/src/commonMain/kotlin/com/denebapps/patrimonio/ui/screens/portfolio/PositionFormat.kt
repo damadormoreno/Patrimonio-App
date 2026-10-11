@@ -74,7 +74,7 @@ internal fun formatSignedPrice(scaledDelta: Long, currency: Currency): String {
         scaledDelta < 0 -> MINUS
         else -> ""
     }
-    val number = formatScaled6(abs(scaledDelta), currency.decimals, grouped = true)
+    val number = formatScaled6(roundPriceForDisplay(abs(scaledDelta)), currency.decimals, grouped = true)
     return "$sign$number ${currencySymbol(currency)}"
 }
 

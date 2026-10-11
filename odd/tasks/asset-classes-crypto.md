@@ -45,7 +45,7 @@ CoinGecko API key.
 
 - [x] **T1 — Asset classes: model, inference, Room v12, backup v12, allocation calc** (route: delegated writer).
 - [x] **T2 — CoinGecko adapter + crypto in search/quotes/history** (route: delegated writer).
-- [ ] **T3 — UI: pickers, portfolio detail block, preview projection, crypto results** (route: delegated writer).
+- [x] **T3 — UI: pickers, portfolio detail block, preview projection, crypto results** (route: delegated writer).
 - [ ] **T4 — Docs** (route: inline).
 
 ## Acceptance criteria
@@ -78,7 +78,21 @@ CoinGecko API key.
   UI compile fixes only in `HoldingFormat.kt` (`Cripto`, `CoinGecko`). Live shapes checked (401 + 10012 for
   `days=max`, integer prices, live "now" point). RED: compile errors; GREEN (parent re-run): check.sh
   (1254 tests), iOS compile.
+- **T3** (commit below, `feat(portfolio): show and edit asset classes`): `AssetClassPicker` (first option
+  `Automática (según Morningstar|el tipo)`) in add/manual/edit; explicit class stored only when it differs from
+  the inferred one; edit writes only changes (automatic → `null`); "Reparto por clase de activo" first in the
+  portfolio detail (generic `StackedBar`, theme colors, "Sin clasificar" last + hint); preview projection class
+  mix `X % → Y %` using the inferred class; position detail `… · automática|elegida`; crypto pill/`BTC ·
+  CoinGecko`; 1-year note under the chart. RED: 106 compile errors; GREEN 1295.
+  Parent fix found in the manual test (same commit): prices showed 6 decimals ("74.781,759614 €") →
+  `roundPriceForDisplay` (2 decimals ≥ 1.000, up to 4 ≥ 1, up to 6 below; NAVs unchanged), also for price
+  changes; RED→GREEN `PriceDisplayTest`; `HoldingFormatTest` 12,345678 → 12,3457. GREEN 1300, check.sh, iOS.
+  Emulator, live: Todas → Renta variable 81,6 % + Sin clasificar 18,4 % (Yahoo ETF) + hint; "bitcoin" →
+  `Bitcoin · BTC · CoinGecko · Cripto`; preview "Aporta diversificación" 0,29 · 52 semanas, 1-year note, prices
+  74.795,99 € / Mín 51.473,91 €; add 0,01 BTC (class prefilled "Cripto (según el tipo)"; ≈ 747,18 € from the
+  spot price 74.718, matching the live API) → classes 79,4 / 2,7 / 17,9 %; position detail "Cripto ·
+  automática"; deleted the test holding → its CoinGecko history pruned.
 
 ## Next step
 
-T3 — UI.
+T4 — docs, then push + PR.

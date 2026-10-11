@@ -156,9 +156,19 @@ internal fun PriceHistoryCards(
     annualized: List<FigureUi>,
     risk: RiskUi?,
     onRangeSelect: (HistoryRange) -> Unit,
+    chartNote: String? = null,
 ) {
     chart?.let {
         ChartCard(chart = it, ranges = ranges, onRangeSelect = onRangeSelect, modifier = Modifier.padding(top = 14.dp))
+    }
+    chartNote?.let {
+        Text(
+            text = it,
+            color = LocalAppColors.current.muted2,
+            fontSize = 11.sp,
+            lineHeight = 16.sp,
+            modifier = Modifier.padding(top = 6.dp),
+        )
     }
     if (yearReturns.isNotEmpty()) {
         SectionLabel("Rentabilidad por año")

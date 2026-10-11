@@ -6,6 +6,7 @@ import com.denebapps.patrimonio.domain.calc.parseAmountToMinor
 import com.denebapps.patrimonio.domain.calc.parseUnitsEs
 import com.denebapps.patrimonio.domain.calc.quotedValue
 import com.denebapps.patrimonio.domain.calc.unitsInputText
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.FxRates
@@ -45,7 +46,9 @@ private const val MANUAL_SOURCE = "Valor manual"
  * price (for a manual holding only the day it was valued). [editText] is the units of a quoted holding or the value
  * of a manual one, in [currency] for the latter; [preview] is what the units come to at the last price. [broker] is
  * the stored bank or broker (shown with the identity) and [brokerText] what the field holds. [portfolios] are the
- * portfolios to move it to and [portfolioId] the one chosen (its own until the user picks another).
+ * portfolios to move it to and [portfolioId] the one chosen (its own until the user picks another). [assetClass] is
+ * the state of the "Clase de activo" picker: its [AssetClassChoiceUi.explicit] is the class chosen (the stored one
+ * until the user picks another, `null` for automatic).
  */
 data class HoldingDetailUiState(
     val loaded: Boolean = false,
@@ -65,11 +68,20 @@ data class HoldingDetailUiState(
     val brokerText: String = "",
     val portfolios: List<PortfolioOptionUi> = emptyList(),
     val portfolioId: String = "",
+    val assetClass: AssetClassChoiceUi = AssetClassChoiceUi(),
     val canSave: Boolean = false,
 )
 
+/** A class picked in the form; `null` inside means "automatic", so it needs a wrapper to tell it from untouched. */
+private data class ClassPick(val assetClass: AssetClass?)
+
 /** What the user typed or picked; `null` for a field left untouched, so it follows the stored value. */
-private data class HoldingEdits(val value: String? = null, val broker: String? = null, val portfolioId: String? = null)
+private data class HoldingEdits(
+    val value: String? = null,
+    val broker: String? = null,
+    val portfolioId: String? = null,
+    val assetClass: ClassPick? = null,
+)
 
 /**
  * Detail sheet of the holding [holdingId]: shows it, edits its units (quoted) or its value (manual), its bank or
@@ -119,6 +131,9 @@ class HoldingDetailViewModel(
     /** The field holds at most [MAX_BROKER_LENGTH] characters; trimming happens once, when saving. */
     fun onBrokerChange(text: String) = edits.update { it.copy(broker = text.take(MAX_BROKER_LENGTH)) }
 
+    /** Sets the class when saved; `null` clears the choice, leaving the class to the product's category or type. */
+    fun onAssetClassChange(assetClass: AssetClass?) = edits.update { it.copy(assetClass = ClassPick(assetClass)) }
+
     /** Moves the holding to [portfolioId] when saved; ignored if there is no such portfolio. */
     fun onPortfolioChange(portfolioId: String) {
         if (state.value.portfolios.none { it.id == portfolioId }) return
@@ -136,6 +151,9 @@ class HoldingDetailViewModel(
                 saveValue(stored, form)
                 if (normalizeBroker(form.brokerText) != stored.broker) {
                     portfolioRepository.updateBroker(holdingId, form.brokerText)
+                }
+                if (form.assetClass.explicit != stored.assetClass) {
+                    portfolioRepository.updateAssetClass(holdingId, form.assetClass.explicit)
                 }
                 if (form.portfolioId != stored.portfolioId) portfolios.moveHolding(holdingId, form.portfolioId)
             } catch (e: PortfolioHoldingNotFoundException) {
@@ -189,6 +207,12 @@ class HoldingDetailViewModel(
         val brokerText = typed.broker ?: holding.broker.orEmpty()
         // A portfolio picked and deleted since is no longer a choice: the holding's own stands.
         val portfolioId = typed.portfolioId?.takeIf { id -> options.any { it.id == id } } ?: holding.portfolioId
+        val picked = typed.assetClass
+        val assetClass = assetClassChoice(
+            explicit = if (picked != null) picked.assetClass else holding.assetClass,
+            category = holding.fundamentals?.category,
+            type = holding.type,
+        )
         val base = HoldingDetailUiState(
             loaded = true,
             name = holding.name,
@@ -200,10 +224,13 @@ class HoldingDetailViewModel(
             brokerText = brokerText,
             portfolios = options,
             portfolioId = portfolioId,
+            assetClass = assetClass,
         )
-        // Editing the broker or the portfolio alone may be saved, but never while the units or the value being typed
-        // are invalid.
-        val otherChanged = normalizeBroker(brokerText) != holding.broker || portfolioId != holding.portfolioId
+        // Editing the broker, the portfolio or the class alone may be saved, but never while the units or the value
+        // being typed are invalid.
+        val otherChanged = normalizeBroker(brokerText) != holding.broker ||
+            portfolioId != holding.portfolioId ||
+            assetClass.explicit != holding.assetClass
         return when (val valuation = holding.valuation) {
             is HoldingValuation.Quoted -> {
                 val editText = typed.value ?: unitsInputText(valuation.units)

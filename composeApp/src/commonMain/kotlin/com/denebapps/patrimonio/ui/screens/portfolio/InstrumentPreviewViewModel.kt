@@ -217,6 +217,7 @@ class InstrumentPreviewViewModel(
             yearReturns = yearReturnsUi(history, today),
             annualized = annualizedFigures(history),
             risk = riskUi(history, today),
+            chartNote = historyNote(candidate.ref.provider),
             product = productDataUi(done.preview.fundamentals) { charge -> yearlyCostText(inputs.amount, charge) },
             fit = fitSectionUi(fitTitle(inputs.scope), done.preview, done.scope, fit, today),
         )
