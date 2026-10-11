@@ -12,6 +12,7 @@ import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.AddHoldingViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.CarteraViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.HoldingDetailViewModel
+import com.denebapps.patrimonio.ui.screens.portfolio.InstrumentPreviewViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.PortfolioDetailViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.PositionDetailViewModel
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
@@ -34,7 +35,7 @@ import org.koin.dsl.module
  * three destinations (the Metas de ahorro section, `NewGoal`, `GoalAllocate`): the first two resolve
  * it with empty params, while `GoalAllocateSheet` passes `parametersOf(goalId, withdraw)`. [HoldingDetailViewModel]
  * takes the `HoldingDetail.holdingId` nav arg as `parametersOf(holdingId)`, and so does [PositionDetailViewModel] with
- * `PositionDetail.holdingId`.
+ * `PositionDetail.holdingId`; [InstrumentPreviewViewModel] takes the `InstrumentCandidate` it previews.
  */
 val presentationModule = module {
     viewModel { AppViewModel(get(), get(), get()) }
@@ -118,6 +119,17 @@ val presentationModule = module {
             fxRepository = get(),
             fxHistoryRepository = get(),
             historyRepository = get(),
+            clock = get(),
+            zoneProvider = get<() -> TimeZone>(),
+        )
+    }
+    viewModel { params ->
+        InstrumentPreviewViewModel(
+            candidate = params.get(),
+            previewLoader = get(),
+            seriesLoader = get(),
+            portfolios = get(),
+            preferences = get(),
             clock = get(),
             zoneProvider = get<() -> TimeZone>(),
         )

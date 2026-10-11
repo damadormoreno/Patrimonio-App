@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.ui.screens.portfolio
 
+import com.denebapps.patrimonio.domain.calc.roundHalfEven
 import com.denebapps.patrimonio.domain.model.MAX_RISK_LEVEL
 import kotlin.math.abs
 import kotlin.math.roundToLong
@@ -10,6 +11,9 @@ private const val MINUS = "−"
 private const val HUNDRED = 100L
 private const val TEN = 10L
 private const val CORRELATION_DECIMALS = 2
+
+// Hundredths of a percent in PERCENT_SCALE (1e4) units: averages show two decimals, a fund's own TER up to four.
+private const val AVERAGE_TER_STEP = 100L
 private const val LISTED_NAMES = 3
 
 /** The longest holding name shown whole in a sentence or a list; longer ones are cut with an ellipsis. */
@@ -53,9 +57,16 @@ internal fun shortName(name: String, max: Int = MAX_NAME_LENGTH): String =
     if (name.length <= max) name else name.take(max - 1).trimEnd() + "…"
 
 /** "5,4 de 7": the average SRRI class with one decimal. */
-internal fun averageRiskText(level: Double): String {
+internal fun averageRiskText(level: Double): String = "${averageRiskNumber(level)} de $MAX_RISK_LEVEL"
+
+/** "5,4": the average SRRI class with one decimal, without the scale. */
+/** A weighted average ongoing charge ([scaled] in `PERCENT_SCALE` units) rounded half-even to two decimals: "0,17 %". */
+internal fun formatAverageTer(scaled: Long): String =
+    formatPercentScaled(roundHalfEven(scaled, AVERAGE_TER_STEP) * AVERAGE_TER_STEP)
+
+internal fun averageRiskNumber(level: Double): String {
     val tenths = (level * TEN).roundToLong()
-    return "${tenths / TEN},${tenths % TEN} de $MAX_RISK_LEVEL"
+    return "${tenths / TEN},${tenths % TEN}"
 }
 
 /** "Con datos para 3 de 4 productos" when [covered] is less than [total]; `null` when every product has data. */

@@ -120,6 +120,12 @@ class AddHoldingViewModelTest {
         advanceUntilIdle()
     }
 
+    private fun TestScope.collectPreviewRequests(vm: AddHoldingViewModel): MutableList<InstrumentRef> {
+        val requests = mutableListOf<InstrumentRef>()
+        backgroundScope.launch { vm.openPreview.collect { requests.add(it) } }
+        return requests
+    }
+
     private fun TestScope.collectNavigateBack(vm: AddHoldingViewModel): MutableList<Unit> {
         val events = mutableListOf<Unit>()
         backgroundScope.launch { vm.navigateBack.collect { events += it } }
@@ -263,6 +269,92 @@ class AddHoldingViewModelTest {
         assertEquals(QuoteUi("245,12 €", "10/10/2026", Currency.EUR), state.quote)
         assertEquals(EntryMode.UNITS, state.entryMode)
         assertFalse(state.canSave)
+    }
+
+    @Test
+    fun `tapping a result asks for its preview and leaves the search as it is`() = runTest(dispatcher) {
+        val vm = viewModel()
+        val requests = collectPreviewRequests(vm)
+        search(vm)
+
+        vm.onOpenPreview(fundRef)
+        runCurrent()
+
+        assertEquals(listOf(fundRef), requests)
+        val state = vm.state.value
+        assertEquals(AddHoldingStage.SEARCH, state.stage)
+        assertEquals("global", state.query)
+        assertEquals(SearchStatus.RESULTS, state.searchStatus)
+        assertEquals(2, state.results.size)
+        assertNull(state.picked)
+        assertTrue(source.quoteRequests.isEmpty())
+    }
+
+    @Test
+    fun `a preview is only offered for a result of the search`() = runTest(dispatcher) {
+        val vm = viewModel()
+        val requests = collectPreviewRequests(vm)
+        search(vm)
+
+        vm.onOpenPreview(tickerOnlyRef)
+        runCurrent()
+
+        assertTrue(requests.isEmpty())
+    }
+
+    @Test
+    fun `the candidate of a result is available to the preview until the search changes`() = runTest(dispatcher) {
+        val vm = viewModel()
+        search(vm)
+
+        assertEquals(fund, vm.candidate(fundRef))
+        assertNull(vm.candidate(tickerOnlyRef))
+
+        source.searchResults = listOf(etf)
+        search(vm, "msci")
+        assertNull(vm.candidate(fundRef))
+        assertEquals(etf, vm.candidate(etfRef))
+    }
+
+    @Test
+    fun `adding from the preview opens the entry form on the portfolio the preview compared with`() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+            search(vm)
+
+            vm.onPick(fundRef, portfolioId = "pf-hijos")
+            advanceUntilIdle()
+
+            val state = vm.state.value
+            assertEquals(AddHoldingStage.ENTRY, state.stage)
+            assertEquals("Fondo Global", state.picked?.name)
+            assertEquals("pf-hijos", state.portfolioId)
+            vm.onUnitsChange("1")
+            vm.onSave()
+            advanceUntilIdle()
+            assertEquals("pf-hijos", repository.current.single().portfolioId)
+        }
+
+    @Test
+    fun `adding from a preview of every portfolio keeps the default portfolio`() = runTest(dispatcher) {
+        val vm = viewModel()
+        search(vm)
+
+        vm.onPick(fundRef, portfolioId = null)
+        advanceUntilIdle()
+
+        assertEquals(TEST_PORTFOLIO_ID, vm.state.value.portfolioId)
+    }
+
+    @Test
+    fun `adding from a preview ignores a portfolio that does not exist`() = runTest(dispatcher) {
+        val vm = viewModel()
+        search(vm)
+
+        vm.onPick(fundRef, portfolioId = "pf-gone")
+        advanceUntilIdle()
+
+        assertEquals(TEST_PORTFOLIO_ID, vm.state.value.portfolioId)
     }
 
     @Test

@@ -130,24 +130,14 @@ private fun HistorySections(state: PositionDetailUiState, onRangeSelect: (Histor
         HistoryStatus.UNAVAILABLE -> HistoryUnavailableCard(onRetry, Modifier.padding(top = 16.dp))
         HistoryStatus.AVAILABLE -> {
             if (state.isSyncing) SyncingRow(Modifier.padding(top = 14.dp))
-            state.chart?.let {
-                ChartCard(
-                    chart = it,
-                    ranges = state.ranges,
-                    onRangeSelect = onRangeSelect,
-                    modifier = Modifier.padding(top = 14.dp),
-                )
-            }
-            if (state.yearReturns.isNotEmpty()) {
-                SectionLabel("Rentabilidad por año")
-                YearReturnsCard(state.yearReturns)
-            }
-            SectionLabel("Rentabilidad anualizada")
-            AnnualizedCard(state.annualized)
-            state.risk?.let {
-                SectionLabel("Riesgo")
-                RiskCard(it)
-            }
+            PriceHistoryCards(
+                ranges = state.ranges,
+                chart = state.chart,
+                yearReturns = state.yearReturns,
+                annualized = state.annualized,
+                risk = state.risk,
+                onRangeSelect = onRangeSelect,
+            )
         }
     }
 }

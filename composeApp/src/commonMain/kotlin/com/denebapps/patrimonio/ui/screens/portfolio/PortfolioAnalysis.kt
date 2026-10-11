@@ -36,7 +36,7 @@ internal const val CORRELATION_NEEDS_TWO =
 internal const val PORTFOLIO_NOTE = "Rentabilidades de los productos con tu composición actual, no de tus compras."
 
 private const val SHARE_DECIMALS = 1
-private const val WARNING_DECIMALS = 0
+private const val WARNING_DECIMALS = 1
 
 /** The raw data of the screen. [histories] holds, per quoted holding id, its price history in its own currency. */
 internal data class PortfolioInputs(
@@ -194,7 +194,7 @@ private fun costsRisk(holdings: List<PortfolioHolding>, rates: FxRates): CostsRi
     val valued = holdingWeights(holdings, rates).size
     val cost = costSummary(holdings, rates)
     val risk = riskSummary(holdings, rates)
-    val terText = cost.averageTerPercentScaled?.let(::formatPercentScaled)
+    val terText = cost.averageTerPercentScaled?.let(::formatAverageTer)
     val riskText = risk.averageRiskLevel?.let(::averageRiskText)
     if (terText == null && riskText == null) return null
     return CostsRiskUi(

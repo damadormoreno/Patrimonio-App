@@ -49,7 +49,7 @@ import org.koin.compose.viewmodel.koinViewModel
 /** What the add form can do, so [AddHoldingContent] can be shown without a ViewModel. */
 internal class AddHoldingCallbacks(
     val onQueryChange: (String) -> Unit,
-    val onPick: (InstrumentRef) -> Unit,
+    val onOpenPreview: (InstrumentRef) -> Unit,
     val onEntryModeChange: (EntryMode) -> Unit,
     val onUnitsChange: (String) -> Unit,
     val onAmountChange: (String) -> Unit,
@@ -66,20 +66,22 @@ internal class AddHoldingCallbacks(
 
 /**
  * Full-height destination (`AddHolding`) that adds a product to the portfolio, with the same sheet chrome as the
- * Patrimonio form: search by ISIN, ticker or name, pick a result and enter what is held; or add a product by hand.
- * Pops the back stack once [AddHoldingViewModel.navigateBack] emits.
+ * Patrimonio form: search by ISIN, ticker or name, open a result's preview ([onOpenPreview], a screen pushed over this
+ * one, which keeps the search) and enter what is held; or add a product by hand. Pops the back stack once
+ * [AddHoldingViewModel.navigateBack] emits.
  */
 @Composable
 fun AddHoldingSheet(
     modifier: Modifier = Modifier,
     onNavigateBack: () -> Unit = {},
+    onOpenPreview: (InstrumentRef) -> Unit = {},
     viewModel: AddHoldingViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
     val callbacks = remember(viewModel) {
         AddHoldingCallbacks(
             onQueryChange = viewModel::onQueryChange,
-            onPick = viewModel::onPick,
+            onOpenPreview = viewModel::onOpenPreview,
             onEntryModeChange = viewModel::onEntryModeChange,
             onUnitsChange = viewModel::onUnitsChange,
             onAmountChange = viewModel::onAmountChange,
@@ -97,6 +99,9 @@ fun AddHoldingSheet(
 
     LaunchedEffect(Unit) {
         viewModel.navigateBack.collect { onNavigateBack() }
+    }
+    LaunchedEffect(Unit) {
+        viewModel.openPreview.collect { onOpenPreview(it) }
     }
 
     AddHoldingContent(state = state, callbacks = callbacks, onCancel = onNavigateBack, modifier = modifier)
@@ -161,7 +166,7 @@ private fun SearchStep(state: AddHoldingUiState, callbacks: AddHoldingCallbacks)
                 CandidateRow(
                     candidate = candidate,
                     showDivider = index != state.results.lastIndex,
-                    onClick = { callbacks.onPick(candidate.ref) },
+                    onClick = { callbacks.onOpenPreview(candidate.ref) },
                 )
             }
         }
@@ -359,7 +364,7 @@ private fun CandidateRow(candidate: CandidateUi, showDivider: Boolean, onClick: 
                     Modifier
                 },
             )
-            .clickable(onClickLabel = "Elegir", onClick = onClick)
+            .clickable(onClickLabel = "Ver producto", onClick = onClick)
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),

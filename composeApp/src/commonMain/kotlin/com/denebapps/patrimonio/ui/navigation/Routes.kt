@@ -1,5 +1,7 @@
 package com.denebapps.patrimonio.ui.navigation
 
+import com.denebapps.patrimonio.domain.model.InstrumentRef
+import com.denebapps.patrimonio.domain.model.QuoteProvider
 import kotlinx.serialization.Serializable
 
 /**
@@ -74,6 +76,21 @@ data class GoalAllocate(val goalId: String, val withdraw: Boolean = false)
 /** Form that adds a holding to the portfolio: search a product, pick it and enter what is held, or enter it by hand. */
 @Serializable
 object AddHolding
+
+/**
+ * Preview of a search result before it is added, pushed over [AddHolding] (which keeps its search and its state while
+ * it is open). The result is identified by its [provider] (the name of its `QuoteProvider`) and its [code] there; the
+ * candidate itself lives in the add form, which is where the search happened.
+ */
+@Serializable
+data class InstrumentPreview(val provider: String, val code: String) {
+    /** The instrument this route previews. */
+    val ref: InstrumentRef get() = InstrumentRef(QuoteProvider.valueOf(provider), code)
+
+    companion object {
+        fun of(ref: InstrumentRef) = InstrumentPreview(ref.provider.name, ref.code)
+    }
+}
 
 /** Position detail of one portfolio holding: its price history, returns and product data (a pushed screen). */
 @Serializable
