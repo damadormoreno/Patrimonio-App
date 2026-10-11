@@ -17,6 +17,7 @@ import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.Quote
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.Units
+import com.denebapps.patrimonio.domain.model.UnitsBalance
 import com.denebapps.patrimonio.domain.repository.QuoteUnavailableException
 import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
@@ -612,7 +613,7 @@ class AddHoldingViewModelTest {
         advanceUntilIdle()
 
         val valuation = repository.current.single().valuation as HoldingValuation.Quoted
-        assertEquals(Units(4_000_000), valuation.units)
+        assertEquals(UnitsBalance(4_000_000), valuation.units)
     }
 
     @Test

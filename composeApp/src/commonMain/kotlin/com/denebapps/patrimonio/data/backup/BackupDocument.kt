@@ -16,8 +16,8 @@ import kotlinx.serialization.Serializable
  * version 9 added each holding's optional `broker`, null in older files; version 10 added each holding's optional
  * fundamentals (`ongoingChargePercentScaled`, `riskLevel`, `category`, `managementCompany`), null in older files;
  * version 11 added the [portfolios] and each holding's `portfolioId`, which older files lack (one "Mi cartera" is made
- * for them); version 12 added each holding's optional `assetClass`, null in older files. [BackupCodec] upgrades older
- * files on read.
+ * for them); version 12 added each holding's optional `assetClass`, null in older files; version 13 added the
+ * [movements] of the positions, empty in older files. [BackupCodec] upgrades older files on read.
  *
  * Enum-like fields hold the domain enum `name`s and currencies their ISO code; amounts are minor
  * units, dates epoch days, timestamps epoch milliseconds.
@@ -38,6 +38,7 @@ data class BackupDocument(
     val accountTypes: List<AccountTypeBackup> = emptyList(),
     val portfolios: List<PortfolioBackup> = emptyList(),
     val portfolioHoldings: List<PortfolioHoldingBackup> = emptyList(),
+    val movements: List<MovementBackup> = emptyList(),
 )
 
 /**
@@ -173,4 +174,30 @@ data class PortfolioHoldingBackup(
     val category: String? = null,
     val managementCompany: String? = null,
     val assetClass: String? = null,
+)
+
+/**
+ * A movement of the position [holdingId]: [type] is a `MovementType` name, [epochDay] the day it happened.
+ * [unitsScaled] is units x 1,000,000 (buys, sells, opening balances and transfer legs). [amountMinor] and [currency]
+ * (an ISO code, the holding's) are the amount paid, received or charged, and [amountEurMinor] its EUR equivalent at
+ * that day's FX; all three are missing together for transfer legs and for an opening balance of unknown cost.
+ * [feeMinor] and [feeEurMinor] are the fee of a buy or sell. [transferId] links the two legs of a fund transfer.
+ * [sequence] is the entry order across the whole app. The holdings' `unitsScaled` are derived from the movements of
+ * those that have any, so on import they are recomputed and the file's value is ignored.
+ */
+@Serializable
+data class MovementBackup(
+    val id: String,
+    val holdingId: String,
+    val type: String,
+    val epochDay: Long,
+    val unitsScaled: Long? = null,
+    val amountMinor: Long? = null,
+    val currency: String? = null,
+    val feeMinor: Long = 0,
+    val amountEurMinor: Long? = null,
+    val feeEurMinor: Long = 0,
+    val transferId: String? = null,
+    val note: String? = null,
+    val sequence: Long = 0,
 )

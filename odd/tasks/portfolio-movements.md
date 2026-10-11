@@ -53,7 +53,7 @@ show the user's own results (cost, realized/unrealized gains, XIRR) separately f
 
 - [x] **T1 — Domain + pure calc**: movement model, ordering, FIFO lots with carried cost/dates, transfers, units by
   date, realized/unrealized gains, XIRR, validation (route: delegated writer).
-- [ ] **T2 — Persistence**: `movements` table, Room v13 + migration test, repository (add/edit/delete, transfers
+- [x] **T2 — Persistence**: `movements` table, Room v13 + migration test, repository (add/edit/delete, transfers
   atomic across holdings, materialized units, oversell validation), backup v13, clear-all/cloud (route: delegated
   writer).
 - [ ] **T3 — UI movements**: movements list in the position detail, add/edit/delete sheet, opening-balance flow,
@@ -89,7 +89,18 @@ show the user's own results (cost, realized/unrealized gains, XIRR) separately f
   FIFO → LIFO makes 8 tests fail. GREEN (parent re-run): check.sh (1381 tests), iOS compile.
   Notes for T2: `sequence` global across the app; both transfer legs must go to `computeLedgers` together; fund-only
   eligibility checked in T2/T3; `HoldingValuation.Quoted.units` can't hold 0 → persist closed positions explicitly.
+- **T2** (commit below, `feat(portfolio): persist movements and derive units from them`): `Quoted.units` is now
+  `UnitsBalance` (companion `invoke(Units)` keeps call sites; `isClosed`; `value()` = 0 when closed; closed skipped
+  by `constantCompositionSeries`); `movements` table (FK cascade, global sequence), Room v13 `AutoMigration(12, 13)`
+  (`13.json`); `MovementRepository` (drafts, transfers fund-only, delete leg → both, opening balance, holding with
+  purchase); every write: rebuild set → `computeLedgers` → write → materialize units → refresh snapshot, in one
+  transaction; `updateUnits` blocked (`HoldingHasMovementsException`), holding delete blocked by cross-holding
+  transfers; EUR auto-fill, non-EUR requires `amountEur`; backup v13 (movements validated by replay; holding
+  units recomputed from movements on import); clear-all, `BACKED_UP_TABLES`, cloud `RECORD_KEYS`.
+  RED: 338 compile errors; GREEN (parent re-run): check.sh (1452 tests), iOS compile.
+  Notes for T3: the first movement replaces hand-typed units (offer the opening balance with current units);
+  deleting the last movement leaves 0 units (confirm); no atomic transfer edit yet (T3 adds `updateTransfer`).
 
 ## Next step
 
-T2 — persistence.
+T3 — UI movements.

@@ -9,6 +9,7 @@ import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.SeedingGate
 import com.denebapps.patrimonio.data.db.configureAppDatabase
 import com.denebapps.patrimonio.data.db.createAppDatabaseBuilder
+import com.denebapps.patrimonio.data.db.dao.MovementDao
 import com.denebapps.patrimonio.data.db.dao.PortfolioDao
 import com.denebapps.patrimonio.data.db.dao.PortfolioHoldingDao
 import com.denebapps.patrimonio.data.db.dao.SavingsGoalDao
@@ -22,9 +23,13 @@ import com.denebapps.patrimonio.domain.model.InstrumentCandidate
 import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.MovementType
 import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.QuoteProvider
+import com.denebapps.patrimonio.domain.model.UNITS_SCALE
+import com.denebapps.patrimonio.domain.model.Units
+import com.denebapps.patrimonio.domain.model.UnitsBalance
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.BackupRepository
@@ -37,6 +42,8 @@ import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.InstrumentHistoryRepository
 import com.denebapps.patrimonio.domain.repository.InstrumentPreviewLoader
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
+import com.denebapps.patrimonio.domain.repository.MovementDraft
+import com.denebapps.patrimonio.domain.repository.MovementRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
@@ -68,6 +75,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
+import kotlinx.datetime.LocalDate
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -357,6 +365,40 @@ class KoinModuleTest {
         assertSame(repository, koin.get<PortfolioRepository>())
         assertSame(koin.get<AppDatabase>().portfolioHoldingDao(), koin.get<PortfolioHoldingDao>())
         assertEquals(listOf(manual), repository.observeAll().first())
+    }
+
+    @Test
+    fun `MovementRepository resolves via DI as a singleton and records a purchase through the shared DAOs`() = runTest {
+        val koin = startTestKoin(fxModule, quotesModule)
+        val movements = koin.get<MovementRepository>()
+        val portfolioId = koin.get<PortfolioCollectionRepository>().observePortfolios().first().single().id
+        val fund = PortfolioHolding(
+            id = "fund",
+            portfolioId = portfolioId,
+            name = "Fondo",
+            type = InstrumentType.FUND,
+            isin = null,
+            ticker = null,
+            valuation = HoldingValuation.Quoted(
+                ref = InstrumentRef(QuoteProvider.MORNINGSTAR, "0P00012PP6"),
+                currency = Currency.EUR,
+                units = Units(UNITS_SCALE),
+            ),
+        )
+        val buy = MovementDraft(
+            type = MovementType.BUY,
+            date = LocalDate(2026, 10, 1),
+            units = Units(2 * UNITS_SCALE),
+            amount = CurrencyAmount(Money(20_000), Currency.EUR),
+        )
+
+        movements.addHoldingWithPurchase(fund, buy)
+
+        assertSame(movements, koin.get<MovementRepository>())
+        assertSame(koin.get<AppDatabase>().movementDao(), koin.get<MovementDao>())
+        assertEquals(setOf("fund"), movements.observeHoldingIdsWithMovements().first())
+        val stored = koin.get<PortfolioRepository>().observeAll().first().single()
+        assertEquals(UnitsBalance(2 * UNITS_SCALE), (stored.valuation as HoldingValuation.Quoted).units)
     }
 
     @Test

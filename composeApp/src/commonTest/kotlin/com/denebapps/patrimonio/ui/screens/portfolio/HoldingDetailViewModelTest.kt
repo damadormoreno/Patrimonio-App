@@ -14,6 +14,7 @@ import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.Units
+import com.denebapps.patrimonio.domain.model.UnitsBalance
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
@@ -243,7 +244,7 @@ class HoldingDetailViewModelTest {
         advanceUntilIdle()
 
         val valuation = repository.current.single().valuation as HoldingValuation.Quoted
-        assertEquals(Units(11_250_000), valuation.units)
+        assertEquals(UnitsBalance(11_250_000), valuation.units)
         runCurrent()
         assertEquals(1, closed.size)
         job.cancel()
@@ -427,7 +428,7 @@ class HoldingDetailViewModelTest {
         advanceUntilIdle()
 
         val saved = repository.current.single()
-        assertEquals(Units(11_000_000), (saved.valuation as HoldingValuation.Quoted).units)
+        assertEquals(UnitsBalance(11_000_000), (saved.valuation as HoldingValuation.Quoted).units)
         assertEquals("Openbank", saved.broker)
         job.cancel()
     }
@@ -619,7 +620,7 @@ class HoldingDetailViewModelTest {
         val saved = repository.current.single()
         assertEquals("pf-hijos", saved.portfolioId)
         assertEquals("Openbank", saved.broker)
-        assertEquals(Units(11_250_000), (saved.valuation as HoldingValuation.Quoted).units)
+        assertEquals(UnitsBalance(11_250_000), (saved.valuation as HoldingValuation.Quoted).units)
         assertEquals(1, closed.size)
         job.cancel()
     }

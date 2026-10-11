@@ -231,6 +231,15 @@ class CloudBackupSyncTest {
     }
 
     @Test
+    fun `movements count as records`() {
+        val onlyMovements = Json.parseToJsonElement(
+            "{\"assets\":[],\"movements\":[{\"id\":\"m1\"},{\"id\":\"m2\"},{\"id\":\"m3\"}]}",
+        ).jsonObject
+
+        assertEquals(3, recordCount(onlyMovements))
+    }
+
+    @Test
     fun `the portfolios themselves are not records so a device with only the default one is still empty`() {
         val onlyPortfolios = Json.parseToJsonElement(
             "{\"assets\":[],\"portfolios\":[{\"id\":\"pf-1\",\"name\":\"Mi cartera\",\"sortOrder\":0}]," +

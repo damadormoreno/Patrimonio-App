@@ -1,7 +1,9 @@
 package com.denebapps.patrimonio.data.backup
 
 import com.denebapps.patrimonio.data.db.entity.HoldingKind
+import com.denebapps.patrimonio.data.repository.movementToDomain
 import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalAdd
+import com.denebapps.patrimonio.domain.calc.movementValidationError
 import com.denebapps.patrimonio.domain.model.AccountKind
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.AssetClass
@@ -15,11 +17,13 @@ import com.denebapps.patrimonio.domain.model.MAX_PORTFOLIO_NAME_LENGTH
 import com.denebapps.patrimonio.domain.model.MAX_RISK_LEVEL
 import com.denebapps.patrimonio.domain.model.MIN_RISK_LEVEL
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.MovementType
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
 import com.denebapps.patrimonio.domain.model.TypeColor
 import com.denebapps.patrimonio.domain.repository.InvalidBackupException
+import com.denebapps.patrimonio.domain.repository.MAX_MOVEMENT_NOTE_LENGTH
 import com.denebapps.patrimonio.domain.repository.SavingsGoalArithmeticOverflowException
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.json.Json
@@ -42,7 +46,7 @@ import kotlin.uuid.Uuid
  * hand-edited or corrupted file is rejected with a readable reason instead of failing half-way
  * through an import or crashing a later read.
  *
- * Writes [VERSION] (12). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
+ * Writes [VERSION] (13). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
  * group-link fields, which default to null, v1–v3 files have numeric goal ids, which
  * [upgradeLegacyGoalIds] replaces before decoding, v1–v4 files link a goal to one `linkedAssetId`,
  * which [upgradeSingleLinkedAsset] turns into a list, v1–v5 files have no custom account types nor
@@ -51,11 +55,12 @@ import kotlin.uuid.Uuid
  * default to empty, v1–v8 holdings have no bank or broker, which defaults to null, v1–v9 holdings have no
  * fundamentals (cost, risk, category, manager), which default to null, and v1–v10 files have no portfolios, which
  * [upgradeToSinglePortfolio] answers with one new "Mi cartera" that holds every holding, and v1–v11 holdings have no
- * asset class, which defaults to null (the class is inferred when read).
+ * asset class, which defaults to null (the class is inferred when read), and v1–v12 files have no movements, which
+ * default to empty.
  */
 object BackupCodec {
     const val FORMAT = "patrimonio-backup"
-    const val VERSION = 12
+    const val VERSION = 13
 
     private val json = Json {
         prettyPrint = true
@@ -178,6 +183,7 @@ private val LINK_KINDS = SavingsGoalLinkEventKind.entries.map { it.name }.toSet(
 private val INSTRUMENT_TYPES = InstrumentType.entries.map { it.name }.toSet()
 private val QUOTE_PROVIDERS = QuoteProvider.entries.map { it.name }.toSet()
 private val ASSET_CLASSES = AssetClass.entries.map { it.name }.toSet()
+private val MOVEMENT_TYPES = MovementType.entries.map { it.name }.toSet()
 private val YEAR_MONTH = Regex("""\d{4}-(0[1-9]|1[0-2])""")
 
 private fun BackupDocument.validate() {
@@ -276,6 +282,55 @@ private fun BackupDocument.validate() {
     val portfolioIds = portfolios.map { it.id }.toSet()
     requireUnique("valor de cartera", portfolioHoldings.map { it.id })
     portfolioHoldings.forEach { validateHolding(it, portfolioIds) }
+    validateMovements(movements, portfolioHoldings)
+}
+
+/**
+ * Mirrors `Movement` and the ledger: every movement is rebuilt as the domain object it will be (its per-type
+ * invariants) and the whole history is replayed, so a file that sells more than it holds, or has a half transfer, is
+ * refused here and not half way through an import. Movements belong to quoted holdings, in their currency, and a
+ * transfer is between funds. The units of the holdings are not checked: the import derives them from the movements.
+ */
+private fun validateMovements(movements: List<MovementBackup>, holdings: List<PortfolioHoldingBackup>) {
+    movements.forEach { if (it.id.isBlank()) invalid("Hay un movimiento sin id.") }
+    requireUnique("movimiento", movements.map { it.id })
+    val holdingsById = holdings.associateBy { it.id }
+    val history = movements.map { movement ->
+        val holding = holdingsById[movement.holdingId]
+            ?: invalid("Un movimiento apunta a un valor de cartera que no existe: ${movement.holdingId}.")
+        val label = "El movimiento '${movement.id}' de '${holding.name}'"
+        validateMovementFields(movement, holding, label)
+        try {
+            movementToDomain(movement.toEntity())
+        } catch (_: IllegalArgumentException) {
+            invalid("$label no tiene los datos que exige su tipo (${movement.type}).")
+        }
+    }
+    history.filter { it.transferId != null }.forEach { leg ->
+        if (holdingsById.getValue(leg.holdingId).type != InstrumentType.FUND.name) {
+            invalid("El traspaso '${leg.transferId}' solo puede ser entre fondos de inversión.")
+        }
+    }
+    movementValidationError(history)?.let { invalid(it.message.orEmpty()) }
+}
+
+private fun validateMovementFields(movement: MovementBackup, holding: PortfolioHoldingBackup, label: String) {
+    if (holding.kind != HoldingKind.QUOTED.name) invalid("$label está en un valor de cartera sin precio de mercado.")
+    if (movement.type !in MOVEMENT_TYPES) invalid("$label tiene un tipo desconocido: ${movement.type}.")
+    if (!isCalendarDay(movement.epochDay)) invalid("$label tiene una fecha fuera de rango.")
+    if ((movement.amountMinor == null) != (movement.currency == null)) {
+        invalid("$label tiene un importe sin divisa o una divisa sin importe.")
+    }
+    if (movement.currency != null) {
+        if (movement.currency !in CURRENCIES) invalid("$label tiene una divisa no soportada: ${movement.currency}.")
+        if (movement.currency != holding.currency) invalid("$label tiene una divisa distinta a la de su valor.")
+    }
+    val note = movement.note
+    if (note != null && (note.isBlank() || note != note.trim() || note.length > MAX_MOVEMENT_NOTE_LENGTH)) {
+        invalid(
+            "$label tiene una nota vacía, con espacios sobrantes o de más de $MAX_MOVEMENT_NOTE_LENGTH caracteres.",
+        )
+    }
 }
 
 /**
@@ -365,8 +420,8 @@ private fun validateQuotedHolding(holding: PortfolioHoldingBackup, label: String
         invalid("$label tiene un proveedor de precios desconocido: ${holding.provider}.")
     }
     if (holding.providerCode.isNullOrBlank()) invalid("$label no tiene el código del instrumento.")
-    if (holding.unitsScaled == null || holding.unitsScaled <= 0) {
-        invalid("$label no tiene un número de unidades positivo.")
+    if (holding.unitsScaled == null || holding.unitsScaled < 0) {
+        invalid("$label no tiene un número de unidades válido.")
     }
     val priceFields = listOf(holding.priceScaled, holding.priceDateEpochDay, holding.priceFetchedAtEpochMs)
     if (priceFields.any { it == null } && priceFields.any { it != null }) {

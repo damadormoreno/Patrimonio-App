@@ -18,6 +18,7 @@ import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.PricePoint
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.Units
+import com.denebapps.patrimonio.domain.model.UnitsBalance
 import com.denebapps.patrimonio.domain.repository.FundamentalsSyncFailure
 import com.denebapps.patrimonio.domain.repository.FundamentalsSyncResult
 import com.denebapps.patrimonio.domain.repository.HistorySyncFailure
@@ -872,7 +873,8 @@ class PortfolioDetailViewModelTest {
         val s = setup(holdings = listOf(fund, etf, stock, art))
         val job = open(s)
 
-        val doubled = fund.copy(valuation = (fund.valuation as HoldingValuation.Quoted).copy(units = Units(20_000_000)))
+        val doubled =
+            fund.copy(valuation = (fund.valuation as HoldingValuation.Quoted).copy(units = UnitsBalance(20_000_000)))
         s.portfolio.emit(listOf(doubled, etf, stock, art))
         advanceUntilIdle()
 

@@ -17,6 +17,7 @@ import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.model.normalizeBroker
+import com.denebapps.patrimonio.domain.model.toBalance
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioHoldingNotFoundException
@@ -180,7 +181,7 @@ class HoldingDetailViewModel(
         when (val valuation = stored.valuation) {
             is HoldingValuation.Quoted -> {
                 val units = parseUnitsEs(form.editText) ?: return
-                if (units != valuation.units) portfolioRepository.updateUnits(holdingId, units)
+                if (units.toBalance() != valuation.units) portfolioRepository.updateUnits(holdingId, units)
             }
             is HoldingValuation.Manual -> {
                 val minor = parseAmountToMinor(form.editText, form.currency) ?: return
@@ -245,7 +246,7 @@ class HoldingDetailViewModel(
                     preview = units?.let { entered ->
                         valuation.lastQuote?.let { quotedPreview(entered, it.price) }
                     },
-                    canSave = units != null && (units != valuation.units || otherChanged),
+                    canSave = units != null && (units.toBalance() != valuation.units || otherChanged),
                 )
             }
             is HoldingValuation.Manual -> {

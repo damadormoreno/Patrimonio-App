@@ -649,6 +649,52 @@ class AppDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun `migration 12 to 13 keeps every holding and adds an empty movements table that follows its holding`() {
+        helper.createDatabase(12).use { connection -> connection.seedVersion11Holdings() }
+
+        helper.runMigrationsAndValidate(13, emptyList()).use { connection ->
+            assertEquals(2L, connection.count("portfolio_holdings"))
+            connection.prepare("SELECT unitsScaled, valueMinor FROM portfolio_holdings ORDER BY id").use { rows ->
+                assertTrue(rows.step())
+                assertEquals(8_100_001L, rows.getLong(0))
+                assertTrue(rows.step())
+                assertEquals(250_000L, rows.getLong(1))
+            }
+            assertTrue(connection.tableExists("movements"))
+            assertEquals(0L, connection.count("movements"))
+            assertTrue(connection.indexExists("index_movements_holdingId"))
+            assertTrue(connection.indexExists("index_movements_transferId"))
+
+            connection.execSQL("PRAGMA foreign_keys = ON")
+            val insert = "INSERT INTO movements (id, holdingId, type, epochDay, unitsScaled, amountMinor, currency, " +
+                "feeMinor, amountEurMinor, feeEurMinor, transferId, note, sequence) " +
+                "VALUES ('%s', '%s', 'BUY', 20000, 1000000, 10000, 'EUR', 0, 10000, 0, NULL, NULL, 1)"
+            connection.execSQL(insert.format("m1", "p1"))
+            assertEquals(1L, connection.count("movements"))
+            assertFails { connection.execSQL(insert.format("m2", "ghost")) }
+
+            connection.execSQL("DELETE FROM portfolio_holdings WHERE id = 'p1'")
+            assertEquals(0L, connection.count("movements"), "the movements must go with their holding")
+        }
+    }
+
+    @Test
+    fun `a version 12 database opens through the app with no movements`() = runBlocking {
+        helper.createDatabase(12).use { connection -> connection.seedVersion11Holdings() }
+
+        val db = Room.databaseBuilder<AppDatabase>(context = context, name = databaseFile.absolutePath)
+            .setDriver(AndroidSQLiteDriver())
+            .configureAppDatabase()
+            .build()
+        try {
+            assertEquals(listOf("p1", "p2"), db.portfolioHoldingDao().list().map { it.id }.sorted())
+            assertTrue(db.movementDao().list().isEmpty())
+        } finally {
+            db.close()
+        }
+    }
+
     /** Version 11 data: one portfolio with a quoted holding with broker and fundamentals, and a manual one. */
     private fun SQLiteConnection.seedVersion11Holdings() {
         execSQL("INSERT INTO portfolios (id, name, sortOrder) VALUES ('pf-1', 'Mi cartera', 0)")

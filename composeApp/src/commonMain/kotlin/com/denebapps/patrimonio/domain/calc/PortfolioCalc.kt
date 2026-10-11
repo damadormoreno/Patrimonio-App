@@ -28,10 +28,16 @@ fun quotedValue(units: Units, price: Price): CurrencyAmount {
 
 /**
  * Current value of the holding in its own currency, or `null` while a quoted holding has no price yet. A manual
- * holding is worth the amount the user entered.
+ * holding is worth the amount the user entered, and a closed position (no units left) is worth zero, priced or not.
  */
 fun PortfolioHolding.value(): CurrencyAmount? = when (val valuation = valuation) {
-    is HoldingValuation.Quoted -> valuation.lastQuote?.let { quotedValue(valuation.units, it.price) }
+    is HoldingValuation.Quoted -> valuation.units.toUnits().let { units ->
+        if (units == null) {
+            CurrencyAmount(Money.ZERO, valuation.currency)
+        } else {
+            valuation.lastQuote?.let { quotedValue(units, it.price) }
+        }
+    }
     is HoldingValuation.Manual -> valuation.value
 }
 

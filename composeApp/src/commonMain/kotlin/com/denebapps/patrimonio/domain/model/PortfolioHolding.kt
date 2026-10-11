@@ -62,17 +62,29 @@ sealed interface HoldingValuation {
      * Valued as [units] x the latest price of [ref]. [currency] is the currency the provider quotes it in; it is fixed
      * when the holding is added and a refresh never changes it. [lastQuote] is `null` until the first successful
      * fetch, and keeps the last known price when a later fetch fails.
+     *
+     * [units] may be zero: a position whose movements sold everything it bought stays listed as closed ([isClosed])
+     * and is worth nothing. A position without movements never reaches zero by hand (units are positive when typed).
      */
     data class Quoted(
         val ref: InstrumentRef,
         val currency: Currency,
-        val units: Units,
+        val units: UnitsBalance,
         val lastQuote: LastQuote? = null,
     ) : HoldingValuation {
         init {
             require(lastQuote == null || lastQuote.price.currency == currency) {
                 "last price is in ${lastQuote?.price?.currency}, the holding is in $currency"
             }
+        }
+
+        /** Whether the position holds no units any more. */
+        val isClosed: Boolean get() = units.isZero
+
+        companion object {
+            /** A position that holds [units], which is always positive. */
+            operator fun invoke(ref: InstrumentRef, currency: Currency, units: Units, lastQuote: LastQuote? = null) =
+                Quoted(ref, currency, units.toBalance(), lastQuote)
         }
     }
 
