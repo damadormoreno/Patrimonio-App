@@ -58,7 +58,7 @@ charts, XIRR/TWR, broker imports, crypto.
   "Cartera" composition share.
 - [x] **T5 — Cartera tab UI** (route: delegated writer). List with total and per-holding value/price date,
   add sheet (search → pick → units or total; manual mode), delete, refresh.
-- [ ] **T6 — Docs** (route: inline). README roadmap/backup sections.
+- [x] **T6 — Docs** (route: inline). README roadmap/backup sections.
 
 ## Acceptance criteria
 
@@ -123,7 +123,24 @@ One branch, one PR. The ~400-line heuristic does not apply (user decision, 2026-
   "Añadir manualmente"), `HoldingDetailSheet` (edit units/value, delete with confirmation); "Cartera" card on
   Patrimonio switches tab; `parseUnitsEs`/`formatUnits`. RED: 79 tests, 74 failed against stubs.
   GREEN (parent re-run): ktlint, 663 tests, assemble, iOS compile.
+- **Manual test (Android emulator, Pixel API 35, live network)**:
+  - Built `main` @ `02628bb` (DB v6), created an account and a subscription ("Netflix"), installed this
+    branch over it: DB migrated to v8 on device (`user_version` 8, identity hash = `8.json`), no
+    `subscriptions` table, account and October snapshot intact.
+  - Tabs Patrimonio · Cartera; Settings has no "Avisos".
+  - ISIN `IE00B03HCZ61` → Morningstar fund, live NAV 64,761 € (09/10/2026); 154,321 units → 9.993,98 €.
+    `IWDA` → Yahoo `IWDA.AS`, amount mode 5.000 € → 37,973723 units. Manual "Plan de pensiones" 3.200 €.
+  - "Actualizar" refreshed both quoted prices without errors. Net worth 12.500 + 18.193,98 = 30.693,98 €
+    on screen and in the snapshot; composition "Cartera 59%"; Cartera card opens the tab.
+  - Detail: units 154,321 → 200 (12.952,20 €); delete manual with confirmation; snapshot followed.
+  - Export v8 (holdings, no `subscriptions`) → clear all → import: every table identical.
+  - Defect found: Yahoo float noise (131,669998 €) → fixed in `e0f5646`
+    (`fix(portfolio): drop float noise from Yahoo prices`, RED→GREEN `QuoteMappingTest`, 664 tests),
+    verified on device (131,67 €).
+  - Not tested: iOS (no macOS; the CI iOS job is the real check).
+- **T6** (commit below, `docs: document the Cartera tab`): README intro/stack/structure, new *Cartera*
+  section (sources, unofficial endpoints, refresh, limits), backup v8, roadmap.
 
 ## Next step
 
-Manual emulator test (v6 → v8 on device, live quotes), then T6 docs.
+Done. Push and PR are the user's decision.
