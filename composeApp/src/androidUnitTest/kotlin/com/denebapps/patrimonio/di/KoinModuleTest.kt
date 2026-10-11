@@ -18,10 +18,13 @@ import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.HoldingValuation
+import com.denebapps.patrimonio.domain.model.InstrumentCandidate
+import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
+import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.BackupRepository
@@ -32,10 +35,12 @@ import com.denebapps.patrimonio.domain.repository.FundamentalsSource
 import com.denebapps.patrimonio.domain.repository.FxHistoryRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.InstrumentHistoryRepository
+import com.denebapps.patrimonio.domain.repository.InstrumentPreviewLoader
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioSeriesLoader
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.PriceHistorySource
 import com.denebapps.patrimonio.domain.repository.QuoteSource
@@ -50,6 +55,7 @@ import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.AddHoldingViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.CarteraViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.HoldingDetailViewModel
+import com.denebapps.patrimonio.ui.screens.portfolio.InstrumentPreviewViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.PortfolioDetailViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.PositionDetailViewModel
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
@@ -322,6 +328,16 @@ class KoinModuleTest {
     }
 
     @Test
+    fun `the preview loaders resolve via DI as singletons`() {
+        val koin = startTestKoin(fxModule, quotesModule)
+
+        assertNotNull(koin.get<InstrumentPreviewLoader>())
+        assertSame(koin.get<InstrumentPreviewLoader>(), koin.get<InstrumentPreviewLoader>())
+        assertNotNull(koin.get<PortfolioSeriesLoader>())
+        assertSame(koin.get<PortfolioSeriesLoader>(), koin.get<PortfolioSeriesLoader>())
+    }
+
+    @Test
     fun `PortfolioRepository resolves via DI as a singleton and persists through the shared DAO`() = runTest {
         val koin = startTestKoin(fxModule, quotesModule)
         val repository = koin.get<PortfolioRepository>()
@@ -368,6 +384,15 @@ class KoinModuleTest {
 
     @Test
     fun `every presentation ViewModel resolves with all dependencies satisfied`() {
+        val previewCandidate = InstrumentCandidate(
+            ref = InstrumentRef(QuoteProvider.MORNINGSTAR, "0P0000FUND"),
+            name = "Fondo Global",
+            isin = "IE00B4L5Y983",
+            ticker = null,
+            type = InstrumentType.FUND,
+            currency = Currency.EUR,
+            exchange = null,
+        )
         val koin = startTestKoin(fxModule, quotesModule, authModule, presentationModule)
 
         assertNotNull(koin.get<AppViewModel>())
@@ -381,6 +406,7 @@ class KoinModuleTest {
         assertNotNull(koin.get<AddHoldingViewModel>())
         assertNotNull(koin.get<HoldingDetailViewModel> { parametersOf("holding-1") })
         assertNotNull(koin.get<PositionDetailViewModel> { parametersOf("holding-1") })
+        assertNotNull(koin.get<InstrumentPreviewViewModel> { parametersOf(previewCandidate) })
         assertNotNull(koin.get<PortfolioDetailViewModel>())
         assertNotNull(koin.get<SavingsGoalsViewModel>())
         assertNotNull(koin.get<ProfileViewModel>())

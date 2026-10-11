@@ -3,9 +3,9 @@ package com.denebapps.patrimonio.ui.screens.portfolio
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.denebapps.patrimonio.domain.calc.HistoryRange
+import com.denebapps.patrimonio.domain.calc.quotedRefs
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.HoldingValuation
-import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.PricePoint
 import com.denebapps.patrimonio.domain.repository.FxHistoryRepository
@@ -229,10 +229,6 @@ class PortfolioDetailViewModel(
         )
     }
 }
-
-/** The instrument of every quoted holding, by holding id. */
-private fun List<PortfolioHolding>.quotedRefs(): Map<String, InstrumentRef> =
-    mapNotNull { holding -> (holding.valuation as? HoldingValuation.Quoted)?.let { holding.id to it.ref } }.toMap()
 
 /** Runs [download] and tells whether it failed: it answered `true`, or it threw (but never when cancelled). */
 private suspend fun attempt(download: suspend () -> Boolean): Boolean = try {

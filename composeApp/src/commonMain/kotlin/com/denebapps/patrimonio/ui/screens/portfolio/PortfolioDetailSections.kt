@@ -319,7 +319,7 @@ internal fun ConcentrationSection(concentration: ConcentrationUi) {
 
 /** A message in the alert colors of the theme, for a risk the user should look at. */
 @Composable
-private fun WarningBanner(text: String, modifier: Modifier = Modifier) {
+internal fun WarningBanner(text: String, modifier: Modifier = Modifier) {
     val colors = LocalAppColors.current
     Text(
         text = text,

@@ -125,6 +125,11 @@ class AddHoldingViewModel(
     /** One-shot signal to close the form, emitted after a successful [onSave]. */
     val navigateBack: Flow<Unit> = navigateBackChannel.receiveAsFlow()
 
+    private val openPreviewChannel = Channel<InstrumentRef>(Channel.BUFFERED)
+
+    /** One-shot request to show the preview of a search result, emitted by [onOpenPreview]. */
+    val openPreview: Flow<InstrumentRef> = openPreviewChannel.receiveAsFlow()
+
     private var candidates: List<InstrumentCandidate> = emptyList()
     private var pickedCandidate: InstrumentCandidate? = null
     private var pickedQuote: Quote? = null
@@ -167,10 +172,25 @@ class AddHoldingViewModel(
         }
     }
 
-    /** Picks a search result and fetches its latest price. */
-    fun onPick(ref: InstrumentRef) {
+    /** The search result with [ref] of the current search, or null once the search has changed. */
+    fun candidate(ref: InstrumentRef): InstrumentCandidate? = candidates.firstOrNull { it.ref == ref }
+
+    /**
+     * Tapping a search result: asks for its preview ([openPreview]). The form stays as it is, so coming back from the
+     * preview finds the same query and results.
+     */
+    fun onOpenPreview(ref: InstrumentRef) {
+        if (mutableState.value.stage != AddHoldingStage.SEARCH || candidate(ref) == null) return
+        openPreviewChannel.trySend(ref)
+    }
+
+    /**
+     * Picks a search result to add and fetches its latest price. [portfolioId] is the portfolio the preview compared the
+     * product with: the form starts on it (when it exists); `null` keeps the default.
+     */
+    fun onPick(ref: InstrumentRef, portfolioId: String? = null) {
         if (mutableState.value.stage != AddHoldingStage.SEARCH) return
-        val candidate = candidates.firstOrNull { it.ref == ref } ?: return
+        val candidate = candidate(ref) ?: return
         quoteJob?.cancel()
         pickedCandidate = candidate
         pickedQuote = null
@@ -182,6 +202,7 @@ class AddHoldingViewModel(
                 entryMode = EntryMode.UNITS,
                 unitsText = "",
                 amountText = "",
+                portfolioId = it.portfolios.firstOrNull { option -> option.id == portfolioId }?.id ?: it.portfolioId,
             )
         }
         quoteJob = viewModelScope.launch {
@@ -395,7 +416,7 @@ class AddHoldingViewModel(
 }
 
 /** A provider can send a nameless result; the ISIN, ticker or code then stands in for the name. */
-private fun InstrumentCandidate.holdingName(): String = name.trim().ifBlank { isin ?: ticker ?: ref.code }
+internal fun InstrumentCandidate.holdingName(): String = name.trim().ifBlank { isin ?: ticker ?: ref.code }
 
 private fun InstrumentCandidate.toUi() = CandidateUi(
     ref = ref,

@@ -89,9 +89,9 @@ internal fun DetailCard(
     )
 }
 
-/** "Actualizando histórico…" with a small spinner, shown while the history is being downloaded. */
+/** "Actualizando histórico…" (or [text]) with a small spinner, shown while the history is being downloaded. */
 @Composable
-internal fun SyncingRow(modifier: Modifier = Modifier) {
+internal fun SyncingRow(modifier: Modifier = Modifier, text: String = SYNCING_TEXT) {
     val colors = LocalAppColors.current
     Row(
         modifier = modifier,
@@ -99,17 +99,21 @@ internal fun SyncingRow(modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = colors.ink2)
-        Text(text = SYNCING_TEXT, color = colors.muted, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        Text(text = text, color = colors.muted, fontSize = 12.sp, fontWeight = FontWeight.Medium)
     }
 }
 
-/** What the chart area says when the history is not there: nothing yet, and a way to try again. */
+/** What the chart area says when the history is not there ([message]): nothing yet, and a way to try again. */
 @Composable
-internal fun HistoryUnavailableCard(onRetry: () -> Unit, modifier: Modifier = Modifier) {
+internal fun HistoryUnavailableCard(
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+    message: String = UNAVAILABLE_TEXT,
+) {
     val colors = LocalAppColors.current
     DetailCard(modifier = modifier, horizontalPadding = 20) {
         Text(
-            text = UNAVAILABLE_TEXT,
+            text = message,
             color = colors.muted,
             fontSize = 13.sp,
             lineHeight = 19.sp,
@@ -122,9 +126,49 @@ internal fun HistoryUnavailableCard(onRetry: () -> Unit, modifier: Modifier = Mo
 
 /** The loading state of the first download: nothing cached to show yet. */
 @Composable
-internal fun HistoryLoadingCard(modifier: Modifier = Modifier) {
+internal fun HistoryLoadingCard(modifier: Modifier = Modifier, text: String = SYNCING_TEXT) {
     DetailCard(modifier = modifier, horizontalPadding = 20) {
-        SyncingRow(modifier = Modifier.padding(vertical = 28.dp))
+        SyncingRow(modifier = Modifier.padding(vertical = 28.dp), text = text)
+    }
+}
+
+/** A note in a card where there is nothing to retry: the [message] centered and muted. */
+@Composable
+internal fun HistoryNoteCard(message: String, modifier: Modifier = Modifier) {
+    DetailCard(modifier = modifier, horizontalPadding = 20) {
+        Text(
+            text = message,
+            color = LocalAppColors.current.muted,
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
+        )
+    }
+}
+
+/** The cards that come from a price history: the chart, the return per year, annualized returns and the risk. */
+@Composable
+internal fun PriceHistoryCards(
+    ranges: List<RangeChipUi>,
+    chart: ChartUi?,
+    yearReturns: List<YearReturnUi>,
+    annualized: List<FigureUi>,
+    risk: RiskUi?,
+    onRangeSelect: (HistoryRange) -> Unit,
+) {
+    chart?.let {
+        ChartCard(chart = it, ranges = ranges, onRangeSelect = onRangeSelect, modifier = Modifier.padding(top = 14.dp))
+    }
+    if (yearReturns.isNotEmpty()) {
+        SectionLabel("Rentabilidad por año")
+        YearReturnsCard(yearReturns)
+    }
+    SectionLabel("Rentabilidad anualizada")
+    AnnualizedCard(annualized)
+    risk?.let {
+        SectionLabel("Riesgo")
+        RiskCard(it)
     }
 }
 

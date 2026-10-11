@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,11 +19,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.ui.components.Fab
 import com.denebapps.patrimonio.ui.components.TabBar
 import com.denebapps.patrimonio.ui.components.TabItem
@@ -38,8 +41,10 @@ import com.denebapps.patrimonio.ui.screens.perfil.PerfilScreen
 import com.denebapps.patrimonio.ui.screens.perfil.ProfileAvatar
 import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.AddHoldingSheet
+import com.denebapps.patrimonio.ui.screens.portfolio.AddHoldingViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.CarteraScreen
 import com.denebapps.patrimonio.ui.screens.portfolio.HoldingDetailSheet
+import com.denebapps.patrimonio.ui.screens.portfolio.InstrumentPreviewScreen
 import com.denebapps.patrimonio.ui.screens.portfolio.PortfolioDetailScreen
 import com.denebapps.patrimonio.ui.screens.portfolio.PositionDetailScreen
 import com.denebapps.patrimonio.ui.screens.savings.GoalAllocateSheet
@@ -169,7 +174,20 @@ fun MainScaffold() {
                     onNavigateBack = { mainNavController.popBackStack() },
                 )
             }
-            composable<AddHolding> { AddHoldingSheet(onNavigateBack = { mainNavController.popBackStack() }) }
+            composable<AddHolding> {
+                AddHoldingSheet(
+                    onNavigateBack = { mainNavController.popBackStack() },
+                    onOpenPreview = { ref -> mainNavController.navigate(InstrumentPreview.of(ref)) },
+                )
+            }
+            composable<InstrumentPreview> { backStackEntry ->
+                InstrumentPreviewDestination(
+                    ref = backStackEntry.toRoute<InstrumentPreview>().ref,
+                    // The add form below this screen keeps the search; the candidate is read from there.
+                    addHoldingEntry = remember(backStackEntry) { mainNavController.getBackStackEntry<AddHolding>() },
+                    onBack = { mainNavController.popBackStack() },
+                )
+            }
             composable<PositionDetail> { backStackEntry ->
                 val holdingId = backStackEntry.toRoute<PositionDetail>().holdingId
                 PositionDetailScreen(
@@ -222,6 +240,29 @@ fun MainScaffold() {
             }
         }
     }
+}
+
+/**
+ * The preview of the search result [ref]: its candidate is looked up in the add form ([addHoldingEntry], whose
+ * ViewModel holds the search) and `Añadir a la cartera` hands it back to that form picked, then closes the preview.
+ * A search that is gone (the form was recreated) leaves nothing to preview, so it closes.
+ */
+@Composable
+private fun InstrumentPreviewDestination(ref: InstrumentRef, addHoldingEntry: NavBackStackEntry, onBack: () -> Unit) {
+    val addHolding: AddHoldingViewModel = koinViewModel(viewModelStoreOwner = addHoldingEntry)
+    val candidate = remember(ref) { addHolding.candidate(ref) }
+    if (candidate == null) {
+        LaunchedEffect(Unit) { onBack() }
+        return
+    }
+    InstrumentPreviewScreen(
+        candidate = candidate,
+        onBack = onBack,
+        onAdd = { portfolioId ->
+            addHolding.onPick(ref, portfolioId)
+            onBack()
+        },
+    )
 }
 
 /**

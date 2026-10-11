@@ -743,7 +743,7 @@ class PortfolioDetailViewModelTest {
         val job = open(s)
 
         val costs = assertNotNull(s.vm.state.value.costsRisk)
-        assertEquals("0,3172 %", costs.terText)
+        assertEquals("0,32 %", costs.terText)
         assertEquals("≈ 13,61 €/año", costs.yearlyCostText)
         assertEquals("Con datos para 2 de 4 productos", costs.terCoverage)
         assertEquals("5,4 de 7", costs.riskText)
@@ -806,7 +806,7 @@ class PortfolioDetailViewModelTest {
 
         val concentration = assertNotNull(s.vm.state.value.concentration)
         assertEquals("79,1 %", concentration.weightText)
-        assertEquals("«Cuadro» supone el 79 % de tu cartera.", concentration.warning)
+        assertEquals("«Cuadro» supone el 79,1 % de tu cartera.", concentration.warning)
         job.cancel()
     }
 
@@ -817,7 +817,7 @@ class PortfolioDetailViewModelTest {
         val job = open(s)
 
         assertEquals(
-            "«Colección de arte contempor…» supone el 89 % de tu cartera.",
+            "«Colección de arte contempor…» supone el 89,1 % de tu cartera.",
             s.vm.state.value.concentration?.warning,
         )
         job.cancel()

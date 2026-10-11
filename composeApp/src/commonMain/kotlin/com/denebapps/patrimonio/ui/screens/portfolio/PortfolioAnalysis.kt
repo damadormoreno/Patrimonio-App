@@ -10,10 +10,10 @@ import com.denebapps.patrimonio.domain.calc.concentration
 import com.denebapps.patrimonio.domain.calc.constantCompositionSeries
 import com.denebapps.patrimonio.domain.calc.correlationMatrix
 import com.denebapps.patrimonio.domain.calc.costSummary
+import com.denebapps.patrimonio.domain.calc.eurSeriesById
 import com.denebapps.patrimonio.domain.calc.holdingWeights
 import com.denebapps.patrimonio.domain.calc.portfolioTotalEur
 import com.denebapps.patrimonio.domain.calc.riskSummary
-import com.denebapps.patrimonio.domain.calc.toEurSeries
 import com.denebapps.patrimonio.domain.calc.toPricePoints
 import com.denebapps.patrimonio.domain.model.FxHistory
 import com.denebapps.patrimonio.domain.model.FxRates
@@ -36,7 +36,7 @@ internal const val CORRELATION_NEEDS_TWO =
 internal const val PORTFOLIO_NOTE = "Rentabilidades de los productos con tu composición actual, no de tus compras."
 
 private const val SHARE_DECIMALS = 1
-private const val WARNING_DECIMALS = 0
+private const val WARNING_DECIMALS = 1
 
 /** The raw data of the screen. [histories] holds, per quoted holding id, its price history in its own currency. */
 internal data class PortfolioInputs(
@@ -66,7 +66,7 @@ internal data class PortfolioAnalysis(
 
 internal fun analyzePortfolio(inputs: PortfolioInputs, today: LocalDate): PortfolioAnalysis {
     val holdings = inputs.holdings
-    val eurSeries = inputs.histories.mapValues { (_, points) -> toEurSeries(points, inputs.fxHistory) }
+    val eurSeries = eurSeriesById(inputs.histories, inputs.fxHistory)
     val composition = try {
         constantCompositionSeries(holdings, eurSeries)
     } catch (overflow: ArithmeticException) {
@@ -194,7 +194,7 @@ private fun costsRisk(holdings: List<PortfolioHolding>, rates: FxRates): CostsRi
     val valued = holdingWeights(holdings, rates).size
     val cost = costSummary(holdings, rates)
     val risk = riskSummary(holdings, rates)
-    val terText = cost.averageTerPercentScaled?.let(::formatPercentScaled)
+    val terText = cost.averageTerPercentScaled?.let(::formatAverageTer)
     val riskText = risk.averageRiskLevel?.let(::averageRiskText)
     if (terText == null && riskText == null) return null
     return CostsRiskUi(

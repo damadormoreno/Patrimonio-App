@@ -3,7 +3,6 @@ package com.denebapps.patrimonio.ui.screens.portfolio
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.denebapps.patrimonio.domain.calc.HistoryRange
-import com.denebapps.patrimonio.domain.calc.annualizedReturn
 import com.denebapps.patrimonio.domain.calc.holdingWeights
 import com.denebapps.patrimonio.domain.calc.mulDivHalfEven
 import com.denebapps.patrimonio.domain.calc.toEur
@@ -49,9 +48,7 @@ import kotlinx.datetime.todayIn
 private const val POSITION_DETAIL_STOP_TIMEOUT_MS = 5_000L
 
 /** `100 * PERCENT_SCALE`: a percent-scaled rate divided by this is the fraction to multiply an amount by. */
-private const val PERCENT_TO_FRACTION = 100L * PERCENT_SCALE
-
-private val CAGR_YEARS = listOf(1, 3, 5)
+internal const val PERCENT_TO_FRACTION = 100L * PERCENT_SCALE
 
 private const val QUOTED_NOTE = "Rentabilidades del producto, no de tus compras."
 private const val MANUAL_NOTE = "Sin histórico: es un valor manual."
@@ -315,7 +312,7 @@ class PositionDetailViewModel(
             ranges = ranges,
             chart = chart,
             yearReturns = yearReturnsUi(points, today),
-            annualized = annualizedReturns(points),
+            annualized = annualizedFigures(points),
             risk = riskUi(points, today),
             syncError = syncState.failed,
         )
@@ -357,26 +354,8 @@ class PositionDetailViewModel(
 
     private fun percentText(weight: Double) = formatPercent(weight, signed = false, decimals = WEIGHT_DECIMALS)
 
-    private fun annualizedReturns(points: List<PricePoint>): List<FigureUi> = CAGR_YEARS.map { years ->
-        val annualized = annualizedReturn(points, years)
-        FigureUi(
-            label = annualizedLabel(years),
-            valueText = annualized?.let { formatPercent(it) } ?: NO_FIGURE_TEXT,
-            tone = annualized?.let { toneOf(it) } ?: PerformanceTone.NEUTRAL,
-        )
-    }
-
-    private fun productData(holding: PortfolioHolding, rates: FxRates): ProductDataUi? {
-        val fundamentals = holding.fundamentals?.takeUnless { it.isEmpty } ?: return null
-        val charge = fundamentals.ongoingChargePercentScaled
-        return ProductDataUi(
-            terText = charge?.let(::formatPercentScaled),
-            yearlyCostText = charge?.let { yearlyCostText(holding, it, rates) },
-            riskLevel = fundamentals.riskLevel,
-            category = fundamentals.category,
-            manager = fundamentals.managementCompany,
-        )
-    }
+    private fun productData(holding: PortfolioHolding, rates: FxRates): ProductDataUi? =
+        productDataUi(holding.fundamentals) { charge -> yearlyCostText(holding, charge, rates) }
 
     /** "≈ 4,41 €/año con tu posición": the current value times the ongoing charge, in euros; null without a value. */
     private fun yearlyCostText(holding: PortfolioHolding, chargePercentScaled: Long, rates: FxRates): String? {
