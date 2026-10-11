@@ -9,6 +9,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.File
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 @RunWith(RobolectricTestRunner::class)
 class PreferencesRepositoryImplTest {
@@ -66,5 +67,46 @@ class PreferencesRepositoryImplTest {
 
         assertEquals("Gil", lastNames.receive())
         assertEquals("Ana", repo.observeFirstName().first())
+    }
+
+    @Test
+    fun `no portfolio is selected until one is chosen`() = runTest {
+        val repo = PreferencesRepositoryImpl(tempFilePath())
+
+        assertNull(repo.observeSelectedPortfolioId().first())
+    }
+
+    @Test
+    fun `the selected portfolio is written and emitted reactively`() = runTest {
+        val repo = PreferencesRepositoryImpl(tempFilePath())
+        val selections = repo.observeSelectedPortfolioId().produceIn(backgroundScope)
+        assertNull(selections.receive())
+
+        repo.setSelectedPortfolioId("pf-hijos")
+
+        assertEquals("pf-hijos", selections.receive())
+        assertEquals("pf-hijos", repo.observeSelectedPortfolioId().first())
+    }
+
+    @Test
+    fun `selecting all portfolios clears the selection`() = runTest {
+        val repo = PreferencesRepositoryImpl(tempFilePath())
+        repo.setSelectedPortfolioId("pf-hijos")
+
+        repo.setSelectedPortfolioId(null)
+
+        assertNull(repo.observeSelectedPortfolioId().first())
+    }
+
+    @Test
+    fun `the selected portfolio does not disturb the other preferences`() = runTest {
+        val repo = PreferencesRepositoryImpl(tempFilePath())
+        repo.setFirstName("Ana")
+        repo.setThemeMode(ThemeMode.DARK)
+
+        repo.setSelectedPortfolioId("pf-hijos")
+
+        assertEquals("Ana", repo.observeFirstName().first())
+        assertEquals(ThemeMode.DARK, repo.observeThemeMode().first())
     }
 }

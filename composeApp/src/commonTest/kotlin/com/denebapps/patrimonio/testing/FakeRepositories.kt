@@ -72,10 +72,12 @@ class FakePreferencesRepository(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     firstName: String = "",
     lastName: String = "",
+    selectedPortfolioId: String? = null,
 ) : PreferencesRepository {
     private val themeModeBacking = MutableStateFlow(themeMode)
     private val firstNameBacking = MutableStateFlow(firstName)
     private val lastNameBacking = MutableStateFlow(lastName)
+    private val selectedPortfolioBacking = MutableStateFlow(selectedPortfolioId)
 
     override fun observeThemeMode(): StateFlow<ThemeMode> = themeModeBacking
 
@@ -93,6 +95,12 @@ class FakePreferencesRepository(
 
     override suspend fun setLastName(value: String) {
         lastNameBacking.value = value
+    }
+
+    override fun observeSelectedPortfolioId(): StateFlow<String?> = selectedPortfolioBacking
+
+    override suspend fun setSelectedPortfolioId(id: String?) {
+        selectedPortfolioBacking.value = id
     }
 }
 

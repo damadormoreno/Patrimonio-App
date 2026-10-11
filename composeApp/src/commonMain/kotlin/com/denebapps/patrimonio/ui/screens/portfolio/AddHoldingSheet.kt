@@ -60,6 +60,7 @@ internal class AddHoldingCallbacks(
     val onTypeChange: (InstrumentType) -> Unit,
     val onCurrencyChange: (Currency) -> Unit,
     val onBrokerChange: (String) -> Unit,
+    val onPortfolioChange: (String) -> Unit,
     val onSave: () -> Unit,
 )
 
@@ -89,6 +90,7 @@ fun AddHoldingSheet(
             onTypeChange = viewModel::onTypeChange,
             onCurrencyChange = viewModel::onCurrencyChange,
             onBrokerChange = viewModel::onBrokerChange,
+            onPortfolioChange = viewModel::onPortfolioChange,
             onSave = viewModel::onSave,
         )
     }
@@ -224,6 +226,7 @@ private fun EntryStep(state: AddHoldingUiState, callbacks: AddHoldingCallbacks) 
     Spacer(Modifier.height(20.dp))
     BrokerField(text = state.broker, onTextChange = callbacks.onBrokerChange)
     Spacer(Modifier.height(20.dp))
+    AddToPortfolio(state, callbacks)
     BackToSearchLink(callbacks, text = "Elegir otro producto")
 }
 
@@ -257,7 +260,16 @@ private fun ManualStep(state: AddHoldingUiState, callbacks: AddHoldingCallbacks)
     Spacer(Modifier.height(20.dp))
     BrokerField(text = state.broker, onTextChange = callbacks.onBrokerChange)
     Spacer(Modifier.height(20.dp))
+    AddToPortfolio(state, callbacks)
     BackToSearchLink(callbacks)
+}
+
+/** The "Cartera" picker, with the space after it; nothing at all while there is a single portfolio. */
+@Composable
+private fun AddToPortfolio(state: AddHoldingUiState, callbacks: AddHoldingCallbacks) {
+    if (!state.canPickPortfolio) return
+    PortfolioPicker(options = state.portfolios, selectedId = state.portfolioId, onSelect = callbacks.onPortfolioChange)
+    Spacer(Modifier.height(20.dp))
 }
 
 @Composable

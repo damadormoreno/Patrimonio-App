@@ -63,6 +63,7 @@ fun HoldingDetailSheet(
         state = state,
         onEditChange = viewModel::onEditChange,
         onBrokerChange = viewModel::onBrokerChange,
+        onPortfolioChange = viewModel::onPortfolioChange,
         onSave = viewModel::onSave,
         onDelete = viewModel::onDelete,
         onCancel = onNavigateBack,
@@ -75,6 +76,7 @@ internal fun HoldingDetailContent(
     state: HoldingDetailUiState,
     onEditChange: (String) -> Unit,
     onBrokerChange: (String) -> Unit,
+    onPortfolioChange: (String) -> Unit,
     onSave: () -> Unit,
     onDelete: () -> Unit,
     onCancel: () -> Unit,
@@ -100,7 +102,13 @@ internal fun HoldingDetailContent(
             ) {
                 Identity(state)
                 ValueCard(state, modifier = Modifier.padding(top = 18.dp))
-                EditSection(state, onEditChange, onBrokerChange, modifier = Modifier.padding(top = 22.dp))
+                EditSection(
+                    state = state,
+                    onEditChange = onEditChange,
+                    onBrokerChange = onBrokerChange,
+                    onPortfolioChange = onPortfolioChange,
+                    modifier = Modifier.padding(top = 22.dp),
+                )
                 Text(
                     text = "Eliminar",
                     color = colors.expense,
@@ -203,6 +211,7 @@ private fun EditSection(
     state: HoldingDetailUiState,
     onEditChange: (String) -> Unit,
     onBrokerChange: (String) -> Unit,
+    onPortfolioChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier) {
@@ -215,5 +224,11 @@ private fun EditSection(
         }
         PreviewLine(state.preview)
         BrokerField(text = state.brokerText, onTextChange = onBrokerChange, modifier = Modifier.padding(top = 20.dp))
+        PortfolioPicker(
+            options = state.portfolios,
+            selectedId = state.portfolioId,
+            onSelect = onPortfolioChange,
+            modifier = Modifier.padding(top = 20.dp),
+        )
     }
 }

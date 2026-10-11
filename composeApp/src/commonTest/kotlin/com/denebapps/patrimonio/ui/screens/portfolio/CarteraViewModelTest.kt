@@ -15,7 +15,9 @@ import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.repository.PriceRefreshFailure
 import com.denebapps.patrimonio.domain.repository.PriceRefreshResult
 import com.denebapps.patrimonio.testing.FakeFxRepository
+import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
+import com.denebapps.patrimonio.testing.FakePreferencesRepository
 import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -93,6 +95,8 @@ class CarteraViewModelTest {
 
     private fun viewModel(repository: FakePortfolioRepository) = CarteraViewModel(
         portfolioRepository = repository,
+        portfolios = FakePortfolioCollectionRepository(holdings = repository),
+        preferences = FakePreferencesRepository(),
         fxRepository = FakeFxRepository(rates),
         zoneProvider = { TimeZone.UTC },
     )

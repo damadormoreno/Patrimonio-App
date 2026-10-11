@@ -38,7 +38,7 @@ Out of scope: reordering portfolios by drag, per-portfolio colors/icons, portfol
 
 - [x] **T1 — Data: portfolios table, Room v11 migration, repository, backup v11, seeding/clear-all**
   (route: delegated writer).
-- [ ] **T2 — UI: selector, management, add/move, filtered list/total/details** (route: delegated writer).
+- [x] **T2 — UI: selector, management, add/move, filtered list/total/details** (route: delegated writer).
 - [ ] **T3 — Docs** (route: inline): README *Cartera* and backup sections.
 
 ## Acceptance criteria
@@ -65,7 +65,17 @@ Out of scope: reordering portfolios by drag, per-portfolio colors/icons, portfol
   `BACKED_UP_TABLES`. Writer deviation accepted: NOT in cloud `RECORD_KEYS` (an always-present default row
   would defeat the "local data emptied" guard). RED: 525 compile errors; GREEN (parent re-run): check.sh
   "All checks passed." (1055 tests), iOS compile.
+- **T2** (commit below, `feat(portfolio): manage several portfolios in the Cartera tab`): selection persisted in
+  preferences (`selected_portfolio_id`, null = Todas, falls back when gone); chip row `Todas · … · + Nueva` with
+  `Gestionar ▾` (single portfolio: `Nueva cartera` link, delete disabled); flat Todas list with a muted portfolio
+  line; create/rename/delete dialogs with inline Spanish errors and move target; `Cartera` pickers in add
+  (quoted + manual) and edit; `PortfolioDetail(portfolioId?)`; position weight `en «X» · y % del total`.
+  RED: 213 compile errors; GREEN 1114 tests. Parent: check.sh green; emulator over the real v10 DB → v11
+  ("Mi cartera" with the 3 holdings, broker kept); duplicate and blank name errors; created "Jubilacion",
+  moved Vanguard there (weight 100 % · 47,6 % del total; Mi cartera 14.255,32 € = 27.207,52 − 12.952,20);
+  Todas lists portfolio names; deleted "Jubilacion" moving its holding back → nothing lost, snapshot
+  39.707,52 € unchanged.
 
 ## Next step
 
-T2 — UI.
+T3 — docs, then push + PR.

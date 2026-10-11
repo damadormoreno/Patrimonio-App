@@ -16,12 +16,14 @@ import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.LastQuote
 import com.denebapps.patrimonio.domain.model.MAX_BROKER_LENGTH
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Quote
 import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.model.normalizeBroker
 import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
+import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.QuoteSource
 import com.denebapps.patrimonio.ui.components.formatMoney
 import kotlinx.coroutines.CancellationException
@@ -71,7 +73,8 @@ data class QuoteUi(val priceText: String, val dateText: String, val currency: Cu
  * Everything the add form shows. Only the fields of the current [stage] matter: the search ones in `SEARCH`, the
  * entry ones in `ENTRY`, the manual ones (name, type, currency and [amountText] as the value) in `MANUAL`. [preview]
  * is the live "≈ ..." line of the entry form and [canSave] says whether Save is enabled. [broker] is the optional bank
- * or broker field, as typed, shared by the entry and the manual forms.
+ * or broker field, as typed, shared by the entry and the manual forms. [portfolios] are the portfolios to choose from
+ * and [portfolioId] the one the holding is added to; the picker is only shown ([canPickPortfolio]) with several.
  */
 data class AddHoldingUiState(
     val stage: AddHoldingStage = AddHoldingStage.SEARCH,
@@ -88,8 +91,12 @@ data class AddHoldingUiState(
     val type: InstrumentType = InstrumentType.OTHER,
     val currency: Currency = Currency.EUR,
     val broker: String = "",
+    val portfolios: List<PortfolioOptionUi> = emptyList(),
+    val portfolioId: String? = null,
     val canSave: Boolean = false,
-)
+) {
+    val canPickPortfolio: Boolean get() = portfolios.size >= MIN_PORTFOLIOS_TO_CHOOSE
+}
 
 /** What the entry form resolves to: the units that will be stored and the preview line that says so. */
 private class EntryResult(val units: Units, val preview: String)
@@ -99,12 +106,14 @@ private class EntryResult(val units: Units, val preview: String)
  * and its latest price is fetched; then they enter either the units held or what the position is worth now (the units
  * are derived from the price). A product that cannot be found, or whose price cannot be fetched, is added by hand
  * with a value of the user's own. Save stores the holding, with the fundamentals (cost, risk, category, manager) the
- * search already knew about the picked product, and emits one [navigateBack].
+ * search already knew about the picked product, and emits one [navigateBack]. The holding goes to the portfolio chosen
+ * with [onPortfolioChange], which starts as the one selected in Cartera (the first one when all are shown).
  */
 class AddHoldingViewModel(
     private val quoteSource: QuoteSource,
     private val portfolioRepository: PortfolioRepository,
     private val portfolios: PortfolioCollectionRepository,
+    private val preferences: PreferencesRepository,
     private val clock: Clock,
     private val idProvider: () -> String = ::newHoldingId,
 ) : ViewModel() {
@@ -122,6 +131,13 @@ class AddHoldingViewModel(
     private var searchJob: Job? = null
     private var quoteJob: Job? = null
     private var saving = false
+
+    init {
+        viewModelScope.launch {
+            val remembered = preferences.observeSelectedPortfolioId().first()
+            portfolios.observePortfolios().collect { all -> showPortfolios(all, remembered) }
+        }
+    }
 
     fun onQueryChange(text: String) {
         searchJob?.cancel()
@@ -236,6 +252,12 @@ class AddHoldingViewModel(
     /** The field holds at most [MAX_BROKER_LENGTH] characters; trimming happens once, when saving. */
     fun onBrokerChange(text: String) = update { it.copy(broker = text.take(MAX_BROKER_LENGTH)) }
 
+    /** Adds the holding to [portfolioId]; ignored if there is no such portfolio. */
+    fun onPortfolioChange(portfolioId: String) {
+        if (mutableState.value.portfolios.none { it.id == portfolioId }) return
+        update { it.copy(portfolioId = portfolioId) }
+    }
+
     fun onSave() {
         val form = mutableState.value
         if (saving || !form.canSave) return
@@ -246,9 +268,7 @@ class AddHoldingViewModel(
         } ?: return
         saving = true
         viewModelScope.launch {
-            // The form has no portfolio picker yet: a new holding goes to the first portfolio, which always exists.
-            val portfolioId = portfolios.observePortfolios().first().first().id
-            portfolioRepository.add(holdingIn(portfolioId))
+            portfolioRepository.add(holdingIn(mutableState.value.portfolioId ?: defaultPortfolio()))
             navigateBackChannel.send(Unit)
         }
     }
@@ -302,6 +322,21 @@ class AddHoldingViewModel(
                 valuation = valuation,
                 broker = broker,
                 fundamentals = candidate?.fundamentals,
+            )
+        }
+    }
+
+    /** The portfolio to use when the form has not loaded them yet; the app always has at least one. */
+    private suspend fun defaultPortfolio(): String = checkNotNull(
+        defaultPortfolioId(portfolios.observePortfolios().first(), preferences.observeSelectedPortfolioId().first()),
+    ) { "there is always at least one portfolio" }
+
+    /** Offers [all]; the choice stays while that portfolio exists, otherwise it is the [remembered] one or the first. */
+    private fun showPortfolios(all: List<Portfolio>, remembered: String?) {
+        update { form ->
+            form.copy(
+                portfolios = all.toOptions(),
+                portfolioId = all.firstOrNull { it.id == form.portfolioId }?.id ?: defaultPortfolioId(all, remembered),
             )
         }
     }

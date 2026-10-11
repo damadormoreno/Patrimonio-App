@@ -11,6 +11,7 @@ import com.denebapps.patrimonio.domain.model.PricePoint
 import com.denebapps.patrimonio.domain.repository.FxHistoryRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.InstrumentHistoryRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -43,8 +44,9 @@ private const val PORTFOLIO_DETAIL_STOP_TIMEOUT_MS = 5_000L
 private data class PortfolioSyncState(val running: Boolean, val failed: Boolean = false)
 
 /**
- * Portfolio detail: the total, the value of today's holdings at past prices over a selectable range with its returns
- * and risk, the correlation between the quoted products, how the portfolio splits (by type, bank or broker and
+ * Detail of one portfolio, or of all of them when [portfolioId] is `null`; everything is computed from the holdings of
+ * that scope only. It shows the total, the value of today's holdings at past prices over a selectable range with its
+ * returns and risk, the correlation between the quoted products, how the portfolio splits (by type, bank or broker and
  * currency), its average cost and risk, and its largest holding. The figures of the products are those of their price
  * history with TODAY's composition, not the user's gains. The histories, the fundamentals and the exchange rates they
  * need are brought up to date when the screen opens; [onRefresh] forces them. Cached data is always shown, even when
@@ -52,6 +54,8 @@ private data class PortfolioSyncState(val running: Boolean, val failed: Boolean 
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class PortfolioDetailViewModel(
+    private val portfolioId: String?,
+    portfolios: PortfolioCollectionRepository,
     private val portfolioRepository: PortfolioRepository,
     fxRepository: FxRepository,
     private val fxHistoryRepository: FxHistoryRepository,
@@ -66,8 +70,17 @@ class PortfolioDetailViewModel(
     private val sync = MutableStateFlow(PortfolioSyncState(running = true))
     private var syncJob: Job? = null
 
+    /** The holdings of the scope: those of [portfolioId], or all of them. */
+    private val scopedHoldings: Flow<List<PortfolioHolding>> =
+        portfolioRepository.observeAll().map { it.inPortfolio(portfolioId) }
+
+    /** The title of the screen: the name of the portfolio, "Tu cartera" for all of them. */
+    private val title: Flow<String> = portfolios.observePortfolios()
+        .map { all -> all.firstOrNull { it.id == portfolioId }?.name ?: ALL_PORTFOLIOS_TITLE }
+        .distinctUntilChanged()
+
     /** The stored history of every quoted holding, by holding id; follows holdings being added or removed. */
-    private val histories: Flow<Map<String, List<PricePoint>>> = portfolioRepository.observeAll()
+    private val histories: Flow<Map<String, List<PricePoint>>> = scopedHoldings
         .map { holdings -> holdings.quotedRefs() }
         .distinctUntilChanged()
         .flatMapLatest { refs ->
@@ -79,7 +92,7 @@ class PortfolioDetailViewModel(
         }
 
     private val analysis: Flow<PortfolioAnalysis> = combine(
-        portfolioRepository.observeAll(),
+        scopedHoldings,
         histories,
         fxHistoryRepository.observe(),
         fxRepository.observeRates(),
@@ -88,8 +101,13 @@ class PortfolioDetailViewModel(
         .map { analyzePortfolio(it, today()) }
         .flowOn(computationDispatcher)
 
-    val state: StateFlow<PortfolioDetailUiState> = combine(analysis, selectedRange, sync) { data, range, syncState ->
-        buildState(data, range, syncState)
+    val state: StateFlow<PortfolioDetailUiState> = combine(
+        analysis,
+        selectedRange,
+        sync,
+        title,
+    ) { data, range, syncState, screenTitle ->
+        buildState(data.copy(header = data.header.copy(title = screenTitle)), range, syncState)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(PORTFOLIO_DETAIL_STOP_TIMEOUT_MS),
@@ -135,7 +153,7 @@ class PortfolioDetailViewModel(
 
     /** Returns `true` when a history or the exchange rates could not be downloaded. Manual holdings need nothing. */
     private suspend fun runSync(force: Boolean): Boolean {
-        val quoted = portfolioRepository.observeAll().first().mapNotNull { it.valuation as? HoldingValuation.Quoted }
+        val quoted = scopedHoldings.first().mapNotNull { it.valuation as? HoldingValuation.Quoted }
         if (quoted.isEmpty()) return false
         val refs = quoted.map { it.ref }.toSet()
         return coroutineScope {

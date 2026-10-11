@@ -5,16 +5,24 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -23,6 +31,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.denebapps.patrimonio.domain.model.Currency
@@ -30,6 +39,7 @@ import com.denebapps.patrimonio.ui.components.FormSectionLabel
 import com.denebapps.patrimonio.ui.components.FormTextField
 import com.denebapps.patrimonio.ui.components.currencySymbol
 import com.denebapps.patrimonio.ui.components.filterAmountInput
+import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 
 /** Two-or-more-way toggle in the style of the Activo/Pasivo switch of the Patrimonio form. */
@@ -163,4 +173,70 @@ private fun Modifier.fieldBox(): Modifier {
     return background(color = colors.surface2, shape = RoundedCornerShape(14.dp))
         .border(width = 1.dp, color = colors.line, shape = RoundedCornerShape(14.dp))
         .padding(horizontal = 16.dp, vertical = 14.dp)
+}
+
+/**
+ * The "Cartera" picker of the add and detail forms: a field showing the chosen portfolio that opens a menu of all of
+ * them. Shown only when there is a choice ([MIN_PORTFOLIOS_TO_CHOOSE] portfolios at least), so it takes up no room
+ * when the user has a single portfolio.
+ */
+@Composable
+internal fun PortfolioPicker(
+    options: List<PortfolioOptionUi>,
+    selectedId: String?,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (options.size < MIN_PORTFOLIOS_TO_CHOOSE) return
+    val colors = LocalAppColors.current
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(modifier) {
+        FormSectionLabel("Cartera")
+        Box {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClickLabel = "Elegir cartera",
+                        onClick = { expanded = true },
+                    )
+                    .fieldBox(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = options.firstOrNull { it.id == selectedId }?.name.orEmpty(),
+                    color = colors.ink,
+                    fontSize = 15.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(AppIcons.chevronD, contentDescription = null, tint = colors.ink2, modifier = Modifier.size(14.dp))
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option.name) },
+                        onClick = {
+                            expanded = false
+                            onSelect(option.id)
+                        },
+                        trailingIcon = {
+                            if (option.id == selectedId) {
+                                Icon(
+                                    AppIcons.check,
+                                    contentDescription = null,
+                                    tint = colors.brand,
+                                )
+                            }
+                        },
+                    )
+                }
+            }
+        }
+    }
 }

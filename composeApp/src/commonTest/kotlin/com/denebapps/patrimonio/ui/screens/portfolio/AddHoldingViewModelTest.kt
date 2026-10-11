@@ -20,6 +20,7 @@ import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.repository.QuoteUnavailableException
 import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
+import com.denebapps.patrimonio.testing.FakePreferencesRepository
 import com.denebapps.patrimonio.testing.FakeQuoteSource
 import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.Dispatchers
@@ -90,6 +91,8 @@ class AddHoldingViewModelTest {
         listOf(Portfolio(TEST_PORTFOLIO_ID, "Mi cartera", 0), Portfolio("pf-hijos", "Hijos", 1)),
     )
 
+    private val preferences = FakePreferencesRepository()
+
     @BeforeTest
     fun setUp() = Dispatchers.setMain(dispatcher)
 
@@ -100,6 +103,7 @@ class AddHoldingViewModelTest {
         quoteSource = source,
         portfolioRepository = repository,
         portfolios = portfolios,
+        preferences = preferences,
         clock = clock,
         idProvider = { "new-id" },
     )
@@ -370,8 +374,10 @@ class AddHoldingViewModelTest {
         assertEquals(1, closed.size)
     }
 
+    // ---- portfolio -----------------------------------------------------------------------------------------------
+
     @Test
-    fun `a new holding goes to the first portfolio until the form lets the user choose`() = runTest(dispatcher) {
+    fun `a new holding goes to the first portfolio when all of them are shown`() = runTest(dispatcher) {
         val firstByOrder = FakePortfolioCollectionRepository(
             listOf(Portfolio("pf-late", "Zeta", 5), Portfolio("pf-first", "Jubilación", 1)),
         )
@@ -379,16 +385,127 @@ class AddHoldingViewModelTest {
             quoteSource = source,
             portfolioRepository = repository,
             portfolios = firstByOrder,
+            preferences = preferences,
+            clock = clock,
+            idProvider = { "new-id" },
+        )
+        pickFund(vm)
+        vm.onUnitsChange("1")
+        assertEquals("pf-first", vm.state.value.portfolioId)
+
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertEquals("pf-first", repository.current.single().portfolioId)
+    }
+
+    @Test
+    fun `the portfolio selected in Cartera is the default`() = runTest(dispatcher) {
+        preferences.setSelectedPortfolioId("pf-hijos")
+        val vm = viewModel()
+        pickFund(vm)
+        vm.onUnitsChange("1")
+
+        assertEquals("pf-hijos", vm.state.value.portfolioId)
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertEquals("pf-hijos", repository.current.single().portfolioId)
+    }
+
+    @Test
+    fun `a remembered portfolio that no longer exists falls back to the first one`() = runTest(dispatcher) {
+        preferences.setSelectedPortfolioId("pf-deleted")
+        val vm = viewModel()
+        pickFund(vm)
+
+        assertEquals(TEST_PORTFOLIO_ID, vm.state.value.portfolioId)
+    }
+
+    @Test
+    fun `the portfolio picked in the quoted form is the one that is saved`() = runTest(dispatcher) {
+        val vm = viewModel()
+        pickFund(vm)
+        vm.onUnitsChange("1")
+
+        assertTrue(vm.state.value.canPickPortfolio)
+        assertEquals(listOf("Mi cartera", "Hijos"), vm.state.value.portfolios.map { it.name })
+        vm.onPortfolioChange("pf-hijos")
+        assertEquals("pf-hijos", vm.state.value.portfolioId)
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertEquals("pf-hijos", repository.current.single().portfolioId)
+    }
+
+    @Test
+    fun `the portfolio picked in the manual form is the one that is saved`() = runTest(dispatcher) {
+        val vm = viewModel()
+        vm.onStartManual()
+        vm.onNameChange("Cuadro")
+        vm.onAmountChange("2500")
+        advanceUntilIdle()
+
+        vm.onPortfolioChange("pf-hijos")
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertEquals("pf-hijos", repository.current.single().portfolioId)
+    }
+
+    @Test
+    fun `the chosen portfolio survives going back to the search`() = runTest(dispatcher) {
+        val vm = viewModel()
+        pickFund(vm)
+        vm.onPortfolioChange("pf-hijos")
+
+        vm.onBackToSearch()
+
+        assertEquals("pf-hijos", vm.state.value.portfolioId)
+    }
+
+    @Test
+    fun `a portfolio that does not exist cannot be chosen`() = runTest(dispatcher) {
+        val vm = viewModel()
+        pickFund(vm)
+
+        vm.onPortfolioChange("pf-deleted")
+
+        assertEquals(TEST_PORTFOLIO_ID, vm.state.value.portfolioId)
+    }
+
+    @Test
+    fun `a chosen portfolio that is deleted meanwhile is replaced by the default`() = runTest(dispatcher) {
+        val vm = viewModel()
+        pickFund(vm)
+        vm.onPortfolioChange("pf-hijos")
+
+        portfolios.deletePortfolio("pf-hijos", null)
+        advanceUntilIdle()
+
+        assertEquals(TEST_PORTFOLIO_ID, vm.state.value.portfolioId)
+        assertFalse(vm.state.value.canPickPortfolio)
+    }
+
+    @Test
+    fun `with a single portfolio there is nothing to pick and the holding goes there`() = runTest(dispatcher) {
+        val single = FakePortfolioCollectionRepository()
+        val vm = AddHoldingViewModel(
+            quoteSource = source,
+            portfolioRepository = repository,
+            portfolios = single,
+            preferences = preferences,
             clock = clock,
             idProvider = { "new-id" },
         )
         pickFund(vm)
         vm.onUnitsChange("1")
 
+        assertFalse(vm.state.value.canPickPortfolio)
         vm.onSave()
         advanceUntilIdle()
 
-        assertEquals("pf-first", repository.current.single().portfolioId)
+        assertEquals(TEST_PORTFOLIO_ID, repository.current.single().portfolioId)
     }
 
     @Test

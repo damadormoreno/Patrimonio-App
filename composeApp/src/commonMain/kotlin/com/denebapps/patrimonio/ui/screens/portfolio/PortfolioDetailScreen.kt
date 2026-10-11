@@ -27,17 +27,19 @@ import com.denebapps.patrimonio.ui.components.HeaderIconBtn
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 import org.koin.compose.viewmodel.koinViewModel
+import org.koin.core.parameter.parametersOf
 
 /**
- * Pushed screen (`PortfolioDetail`) for the whole portfolio: its total, the value of today's holdings over time, the
- * correlation between the products, how the portfolio splits, its average cost and risk, and its largest holding.
- * [onBack] returns to Cartera.
+ * Pushed screen (`PortfolioDetail`) for one portfolio ([portfolioId]) or for all of them (`null`): its total, the value
+ * of today's holdings over time, the correlation between the products, how the portfolio splits, its average cost and
+ * risk, and its largest holding. [onBack] returns to Cartera.
  */
 @Composable
 fun PortfolioDetailScreen(
+    portfolioId: String?,
     modifier: Modifier = Modifier,
     onBack: () -> Unit = {},
-    viewModel: PortfolioDetailViewModel = koinViewModel(),
+    viewModel: PortfolioDetailViewModel = koinViewModel(parameters = { parametersOf(portfolioId) }),
 ) {
     val state by viewModel.state.collectAsState()
 

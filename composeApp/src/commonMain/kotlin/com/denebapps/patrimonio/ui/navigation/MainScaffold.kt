@@ -148,7 +148,7 @@ fun MainScaffold() {
                 CarteraScreen(
                     onAddHolding = { mainNavController.navigate(AddHolding) },
                     onOpenHolding = { holdingId -> mainNavController.navigate(PositionDetail(holdingId)) },
-                    onOpenPortfolio = { mainNavController.navigate(PortfolioDetail) },
+                    onOpenPortfolio = { portfolioId -> mainNavController.navigate(PortfolioDetail(portfolioId)) },
                 )
             }
             composable<Settings> {
@@ -178,7 +178,12 @@ fun MainScaffold() {
                     onEdit = { mainNavController.navigate(HoldingDetail(holdingId)) },
                 )
             }
-            composable<PortfolioDetail> { PortfolioDetailScreen(onBack = { mainNavController.popBackStack() }) }
+            composable<PortfolioDetail> { backStackEntry ->
+                PortfolioDetailScreen(
+                    portfolioId = backStackEntry.toRoute<PortfolioDetail>().portfolioId,
+                    onBack = { mainNavController.popBackStack() },
+                )
+            }
             composable<HoldingDetail> { backStackEntry ->
                 HoldingDetailSheet(
                     holdingId = backStackEntry.toRoute<HoldingDetail>().holdingId,

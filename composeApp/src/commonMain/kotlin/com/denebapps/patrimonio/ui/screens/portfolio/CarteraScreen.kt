@@ -54,9 +54,10 @@ import com.denebapps.patrimonio.ui.theme.instrumentSerifItalicFontFamily
 import org.koin.compose.viewmodel.koinViewModel
 
 /**
- * Cartera tab: the portfolio total, the holdings valued at their latest price, and a price refresh (header button or
- * pull down). [onAddHolding] opens the add form (the FAB does too, see `MainScaffold`); [onOpenHolding] opens one
- * holding's detail and [onOpenPortfolio] (the portfolio total) the detail of the whole portfolio.
+ * Cartera tab: the total of the selected portfolio (or of all), its holdings valued at their latest price, and a price
+ * refresh (header button or pull down). Under the header, a selector switches between the portfolios and manages them.
+ * [onAddHolding] opens the add form (the FAB does too, see `MainScaffold`); [onOpenHolding] opens one holding's detail
+ * and [onOpenPortfolio] (the total) the detail of the selected portfolio, `null` for all of them.
  */
 @Composable
 fun CarteraScreen(
@@ -64,11 +65,29 @@ fun CarteraScreen(
     viewModel: CarteraViewModel = koinViewModel(),
     onAddHolding: () -> Unit = {},
     onOpenHolding: (String) -> Unit = {},
-    onOpenPortfolio: () -> Unit = {},
+    onOpenPortfolio: (String?) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
+    val scopeActions = remember(viewModel) {
+        PortfolioScopeActions(
+            onSelect = viewModel::onSelectPortfolio,
+            onNew = viewModel::onNewPortfolio,
+            onRename = viewModel::onRenamePortfolio,
+            onDelete = viewModel::onDeletePortfolio,
+        )
+    }
+    val dialogActions = remember(viewModel) {
+        PortfolioDialogActions(
+            onNameChange = viewModel::onDialogNameChange,
+            onTargetChange = viewModel::onDeleteTargetChange,
+            onConfirm = viewModel::onDialogConfirm,
+            onDismiss = viewModel::onDialogDismiss,
+        )
+    }
     CarteraContent(
         state = state,
+        scopeActions = scopeActions,
+        dialogActions = dialogActions,
         onRefresh = viewModel::onRefresh,
         onDismissMessage = viewModel::onMessageDismiss,
         onAddHolding = onAddHolding,
@@ -82,11 +101,13 @@ fun CarteraScreen(
 @Composable
 internal fun CarteraContent(
     state: CarteraUiState,
+    scopeActions: PortfolioScopeActions,
+    dialogActions: PortfolioDialogActions,
     onRefresh: () -> Unit,
     onDismissMessage: () -> Unit,
     onAddHolding: () -> Unit,
     onOpenHolding: (String) -> Unit,
-    onOpenPortfolio: () -> Unit,
+    onOpenPortfolio: (String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAppColors.current
@@ -94,9 +115,10 @@ internal fun CarteraContent(
     Column(modifier.fillMaxSize().background(colors.bg)) {
         ScreenHeader(
             title = "Cartera",
-            eyebrow = state.countLabel,
+            eyebrow = state.scopeLabel?.let { "$it · ${state.countLabel}" } ?: state.countLabel,
             right = { RefreshButton(refreshing = state.isRefreshing, onClick = onRefresh) },
         )
+        PortfolioScopeBar(state = state, actions = scopeActions)
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = onRefresh,
@@ -105,7 +127,10 @@ internal fun CarteraContent(
             Column(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
             ) {
-                TotalCard(total = state.total, onClick = onOpenPortfolio.takeUnless { state.isEmpty })
+                TotalCard(
+                    total = state.total,
+                    onClick = { onOpenPortfolio(state.selectedPortfolioId) }.takeUnless { state.isEmpty },
+                )
                 state.refreshMessage?.let { message ->
                     RefreshNotice(
                         message = message,
@@ -114,10 +139,15 @@ internal fun CarteraContent(
                     )
                 }
                 if (state.isEmpty) {
+                    val inPortfolio = state.selectedPortfolioId != null
                     EmptyState(
                         icon = AppIcons.trend,
-                        title = "Aún no tienes productos",
-                        message = "Añade tu primer fondo, ETF o acción para ver cuánto vale tu cartera.",
+                        title = if (inPortfolio) "Esta cartera está vacía" else "Aún no tienes productos",
+                        message = if (inPortfolio) {
+                            "Añade un producto o muévelo aquí desde su ficha."
+                        } else {
+                            "Añade tu primer fondo, ETF o acción para ver cuánto vale tu cartera."
+                        },
                         modifier = Modifier.padding(top = 14.dp),
                     )
                     PrimaryButton(text = "Añadir producto", onClick = onAddHolding, icon = AppIcons.plus)
@@ -132,6 +162,7 @@ internal fun CarteraContent(
             }
         }
     }
+    state.dialog?.let { PortfolioDialog(dialog = it, actions = dialogActions) }
 }
 
 /** Text button in the header: "Actualizar", or a spinner while the prices are being fetched. */
@@ -326,6 +357,17 @@ private fun HoldingRow(row: HoldingRowUi, showDivider: Boolean, onClick: () -> U
                     modifier = Modifier.weight(1f, fill = false),
                 )
                 Pill(text = row.typeLabel)
+            }
+            row.portfolioName?.let {
+                Text(
+                    text = it,
+                    color = colors.muted,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
             }
             // Own line, ellipsized, so a long name never pushes the units and price of the detail line out.
             row.broker?.let {
