@@ -466,6 +466,153 @@ class AppDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun `migration 10 to 11 puts every holding in a new Mi cartera and keeps all their data`() {
+        helper.createDatabase(10).use { connection -> connection.seedVersion10Holdings() }
+
+        helper.runMigrationsAndValidate(11, listOf(MIGRATION_10_11)).use { connection ->
+            val portfolio = connection.prepare("SELECT id, name, sortOrder FROM portfolios").use { rows ->
+                assertTrue(rows.step())
+                Triple(rows.getText(0), rows.getText(1), rows.getLong(2)).also { assertFalse(rows.step()) }
+            }
+            assertEquals("Mi cartera", portfolio.second)
+            assertEquals(0L, portfolio.third)
+            assertTrue(UUID_V4.matches(portfolio.first), "not a lowercase canonical UUID: ${portfolio.first}")
+
+            assertEquals(2L, connection.count("portfolio_holdings"))
+            connection.prepare(
+                "SELECT id, portfolioId, name, type, isin, ticker, kind, provider, providerCode, currency, " +
+                    "unitsScaled, priceScaled, priceDateEpochDay, priceFetchedAtEpochMs, valueMinor, " +
+                    "valuedAtEpochMs, broker, ongoingChargePercentScaled, riskLevel, category, managementCompany, " +
+                    "fundamentalsFetchedAtEpochMs FROM portfolio_holdings ORDER BY id",
+            ).use { rows ->
+                assertTrue(rows.step())
+                assertEquals("p1", rows.getText(0))
+                assertEquals(portfolio.first, rows.getText(1))
+                assertEquals("Vanguard Global", rows.getText(2))
+                assertEquals("FUND", rows.getText(3))
+                assertEquals("IE00B03HCZ61", rows.getText(4))
+                assertTrue(rows.isNull(5))
+                assertEquals("QUOTED", rows.getText(6))
+                assertEquals("MORNINGSTAR", rows.getText(7))
+                assertEquals("0P00012PP6", rows.getText(8))
+                assertEquals("EUR", rows.getText(9))
+                assertEquals(8_100_001L, rows.getLong(10))
+                assertEquals(12_345_678L, rows.getLong(11))
+                assertEquals(20_000L, rows.getLong(12))
+                assertEquals(1_000L, rows.getLong(13))
+                assertTrue(rows.isNull(14))
+                assertTrue(rows.isNull(15))
+                assertEquals("Openbank", rows.getText(16))
+                assertEquals(1_800L, rows.getLong(17))
+                assertEquals(6L, rows.getLong(18))
+                assertEquals("RV Global", rows.getText(19))
+                assertEquals("Vanguard", rows.getText(20))
+                assertEquals(5_000L, rows.getLong(21))
+
+                assertTrue(rows.step())
+                assertEquals("p2", rows.getText(0))
+                assertEquals(portfolio.first, rows.getText(1))
+                assertEquals("Cuadro", rows.getText(2))
+                assertEquals("MANUAL", rows.getText(6))
+                assertTrue(rows.isNull(7))
+                assertTrue(rows.isNull(10))
+                assertEquals(250_000L, rows.getLong(14))
+                assertEquals(2_000L, rows.getLong(15))
+                assertTrue(rows.isNull(16))
+                (17..21).forEach { assertTrue(rows.isNull(it), "column $it of p2 must stay null") }
+                assertFalse(rows.step())
+            }
+        }
+    }
+
+    @Test
+    fun `migration 10 to 11 on a database without holdings still creates exactly one Mi cartera`() {
+        helper.createDatabase(10).use { connection ->
+            connection.execSQL(
+                "INSERT INTO assets (id, `group`, name, subtitle, amountMinor, currency, emoji) " +
+                    "VALUES ('a1', 'BANK', 'Cuenta', NULL, 150000, 'EUR', NULL)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(11, listOf(MIGRATION_10_11)).use { connection ->
+            assertEquals(1L, connection.count("portfolios"))
+            assertEquals(0L, connection.count("portfolio_holdings"))
+            assertEquals(1L, connection.count("assets"))
+            connection.prepare("SELECT name, sortOrder FROM portfolios").use { row ->
+                assertTrue(row.step())
+                assertEquals("Mi cartera", row.getText(0))
+                assertEquals(0L, row.getLong(1))
+            }
+        }
+    }
+
+    @Test
+    fun `after migration 10 to 11 the portfolio foreign key is live and never deletes holdings`() {
+        helper.createDatabase(10).use { connection -> connection.seedVersion10Holdings() }
+
+        helper.runMigrationsAndValidate(11, listOf(MIGRATION_10_11)).use { connection ->
+            val portfolioId = connection.prepare("SELECT id FROM portfolios").use { row ->
+                row.step()
+                row.getText(0)
+            }
+            assertTrue(connection.indexExists("index_portfolio_holdings_portfolioId"))
+
+            connection.execSQL("PRAGMA foreign_keys = ON")
+            // A holding cannot point at a portfolio that does not exist...
+            assertFails {
+                connection.execSQL(
+                    "INSERT INTO portfolio_holdings (id, portfolioId, name, type, kind, currency) " +
+                        "VALUES ('p3', 'missing', 'X', 'OTHER', 'MANUAL', 'EUR')",
+                )
+            }
+            // ...and deleting a portfolio that still has holdings is refused instead of cascading.
+            assertFails { connection.execSQL("DELETE FROM portfolios WHERE id = '$portfolioId'") }
+            assertEquals(1L, connection.count("portfolios"))
+            assertEquals(2L, connection.count("portfolio_holdings"))
+
+            // Once the holdings are moved to another portfolio the first one can go.
+            connection.execSQL("INSERT INTO portfolios (id, name, sortOrder) VALUES ('other', 'Hijos', 1)")
+            connection.execSQL("UPDATE portfolio_holdings SET portfolioId = 'other'")
+            connection.execSQL("DELETE FROM portfolios WHERE id = '$portfolioId'")
+            assertEquals(2L, connection.count("portfolio_holdings"))
+        }
+    }
+
+    @Test
+    fun `a version 10 database opens through the app with its holdings in Mi cartera`() = runBlocking {
+        helper.createDatabase(10).use { connection -> connection.seedVersion10Holdings() }
+
+        val db = Room.databaseBuilder<AppDatabase>(context = context, name = databaseFile.absolutePath)
+            .setDriver(AndroidSQLiteDriver())
+            .configureAppDatabase()
+            .build()
+        try {
+            val portfolio = db.portfolioDao().list().single()
+            assertEquals("Mi cartera", portfolio.name)
+            assertEquals(listOf("p1", "p2"), db.portfolioHoldingDao().list().map { it.id }.sorted())
+            assertEquals(2, db.portfolioHoldingDao().countInPortfolio(portfolio.id))
+        } finally {
+            db.close()
+        }
+    }
+
+    /** Version 10 data: a quoted holding with broker and fundamentals, and a manual one with neither. */
+    private fun SQLiteConnection.seedVersion10Holdings() {
+        val columns = "id, name, type, isin, ticker, kind, provider, providerCode, currency, unitsScaled, " +
+            "priceScaled, priceDateEpochDay, priceFetchedAtEpochMs, valueMinor, valuedAtEpochMs, broker, " +
+            "ongoingChargePercentScaled, riskLevel, category, managementCompany, fundamentalsFetchedAtEpochMs"
+        execSQL(
+            "INSERT INTO portfolio_holdings ($columns) VALUES ('p1', 'Vanguard Global', 'FUND', 'IE00B03HCZ61', " +
+                "NULL, 'QUOTED', 'MORNINGSTAR', '0P00012PP6', 'EUR', 8100001, 12345678, 20000, 1000, NULL, NULL, " +
+                "'Openbank', 1800, 6, 'RV Global', 'Vanguard', 5000)",
+        )
+        execSQL(
+            "INSERT INTO portfolio_holdings ($columns) VALUES ('p2', 'Cuadro', 'OTHER', NULL, NULL, 'MANUAL', " +
+                "NULL, NULL, 'EUR', NULL, NULL, NULL, NULL, 250000, 2000, NULL, NULL, NULL, NULL, NULL, NULL)",
+        )
+    }
+
     /** Version 1 data: an asset, two groups (one with a member), two goals (one linked to the asset),
      *  allocation events and one link event. */
     private fun SQLiteConnection.seedVersion1() {
@@ -493,6 +640,12 @@ class AppDatabaseMigrationTest {
 
     private fun SQLiteConnection.tableExists(name: String): Boolean =
         prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").use { statement ->
+            statement.bindText(1, name)
+            statement.step()
+        }
+
+    private fun SQLiteConnection.indexExists(name: String): Boolean =
+        prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?").use { statement ->
             statement.bindText(1, name)
             statement.step()
         }

@@ -66,6 +66,17 @@ interface PortfolioHoldingDao {
     )
     suspend fun updatePrice(id: String, priceScaled: Long, priceDateEpochDay: Long, fetchedAtEpochMs: Long): Int
 
+    @Query("SELECT COUNT(*) FROM portfolio_holdings WHERE portfolioId = :portfolioId")
+    suspend fun countInPortfolio(portfolioId: String): Int
+
+    /** Targeted so moving a holding never touches its value or price. @return rows touched (0 or 1). */
+    @Query("UPDATE portfolio_holdings SET portfolioId = :portfolioId WHERE id = :id")
+    suspend fun updatePortfolio(id: String, portfolioId: String): Int
+
+    /** Puts every holding of [from] in [to]. @return how many holdings moved. */
+    @Query("UPDATE portfolio_holdings SET portfolioId = :to WHERE portfolioId = :from")
+    suspend fun moveAll(from: String, to: String): Int
+
     @Query("DELETE FROM portfolio_holdings WHERE id = :id")
     suspend fun delete(id: String): Int
 

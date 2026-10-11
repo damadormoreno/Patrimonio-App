@@ -5,6 +5,7 @@ import com.denebapps.patrimonio.data.db.buildInMemoryTestDatabase
 import com.denebapps.patrimonio.data.db.entity.InstrumentPriceEntity
 import com.denebapps.patrimonio.data.db.entity.InstrumentPriceSyncEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
+import com.denebapps.patrimonio.data.db.insertTestPortfolio
 import com.denebapps.patrimonio.data.db.testSeedingGate
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
@@ -22,10 +23,12 @@ import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.repository.FundamentalsSource
 import com.denebapps.patrimonio.domain.repository.PortfolioHoldingNotFoundException
+import com.denebapps.patrimonio.domain.repository.PortfolioNotFoundException
 import com.denebapps.patrimonio.domain.repository.PriceRefreshFailure
 import com.denebapps.patrimonio.domain.repository.QuoteSource
 import com.denebapps.patrimonio.domain.repository.QuoteUnavailableException
 import com.denebapps.patrimonio.testing.FakeFundamentalsSource
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -96,8 +99,10 @@ class PortfolioRepositoryTest {
         units: Long = 2_500_000,
         lastQuote: LastQuote? = null,
         broker: String? = null,
+        portfolioId: String = TEST_PORTFOLIO_ID,
     ) = PortfolioHolding(
         id = id,
+        portfolioId = portfolioId,
         name = name,
         type = InstrumentType.FUND,
         isin = "IE00B03HCZ61",
@@ -106,8 +111,14 @@ class PortfolioRepositoryTest {
         broker = broker,
     )
 
-    private fun manual(id: String, name: String = id, broker: String? = null) = PortfolioHolding(
+    private fun manual(
+        id: String,
+        name: String = id,
+        broker: String? = null,
+        portfolioId: String = TEST_PORTFOLIO_ID,
+    ) = PortfolioHolding(
         id = id,
+        portfolioId = portfolioId,
         name = name,
         type = InstrumentType.OTHER,
         isin = null,
@@ -173,6 +184,36 @@ class PortfolioRepositoryTest {
         assertTrue(runCatching { repository.add(quoted("p1", name = "Duplicate")) }.isFailure)
 
         assertEquals(listOf("Original"), repository.observeAll().first().map { it.name })
+        db.close()
+    }
+
+    @Test
+    fun `a holding keeps the portfolio it was added to`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repository = repositoryFor(db)
+        repository.observeAll().first() // waits for the seeding, which creates the default portfolio
+        db.insertTestPortfolio(id = "hijos", name = "Hijos", sortOrder = 1)
+
+        repository.add(quoted("p1", portfolioId = "hijos"))
+        repository.add(manual("m1"))
+
+        assertEquals(
+            mapOf("p1" to "hijos", "m1" to TEST_PORTFOLIO_ID),
+            repository.observeAll().first().associate { it.id to it.portfolioId },
+        )
+        db.close()
+    }
+
+    @Test
+    fun `adding a holding to a portfolio that does not exist fails and stores nothing`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repository = repositoryFor(db)
+
+        assertFailsWith<PortfolioNotFoundException> { repository.add(quoted("p1", portfolioId = "ghost")) }
+        assertFailsWith<PortfolioNotFoundException> { repository.add(manual("m1", portfolioId = "ghost")) }
+
+        assertEquals(emptyList(), repository.observeAll().first())
+        assertNull(db.snapshotAssets())
         db.close()
     }
 

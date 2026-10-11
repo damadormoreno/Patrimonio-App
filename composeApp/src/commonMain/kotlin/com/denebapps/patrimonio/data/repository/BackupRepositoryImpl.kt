@@ -7,7 +7,8 @@ import com.denebapps.patrimonio.data.backup.toEntity
 import com.denebapps.patrimonio.data.backup.toLinkedAssetEntities
 import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.SeedingGate
-import com.denebapps.patrimonio.data.db.clearFinancialTables
+import com.denebapps.patrimonio.data.db.deleteFinancialRows
+import com.denebapps.patrimonio.data.db.ensureDefaultPortfolio
 import com.denebapps.patrimonio.data.db.writeTransaction
 import com.denebapps.patrimonio.domain.repository.BackupRepository
 import kotlinx.datetime.Clock
@@ -17,7 +18,8 @@ import kotlinx.datetime.Clock
  * transaction rather than a reader one: the data set is tiny and it reuses the proven
  * [writeTransaction] path). Import decodes and validates the whole file first, then clears and
  * re-inserts parents before children in a single transaction, preserving ids (savings-goal ids
- * included, so ledgers and links keep pointing at the right goal). The current month's net-worth
+ * included, so ledgers and links keep pointing at the right goal; portfolios before the holdings in them). Whatever the
+ * file holds, the database ends with at least one portfolio. The current month's net-worth
  * snapshot is recomputed from the imported assets, like after any other asset write.
  */
 class BackupRepositoryImpl(
@@ -42,6 +44,7 @@ class BackupRepositoryImpl(
                 savingsGoalAllocationEvents = goals.listAllAllocationEvents().map { it.toBackup() },
                 savingsGoalLinkEvents = goals.listAllLinkEvents().map { it.toBackup() },
                 accountTypes = appDatabase.accountTypeDao().list().map { it.toBackup() },
+                portfolios = appDatabase.portfolioDao().list().map { it.toBackup() },
                 portfolioHoldings = appDatabase.portfolioHoldingDao().list().map { it.toBackup() },
             )
         }
@@ -52,7 +55,7 @@ class BackupRepositoryImpl(
         val document = BackupCodec.decode(json)
         seedingGate.await()
         appDatabase.writeTransaction {
-            appDatabase.clearFinancialTables()
+            appDatabase.deleteFinancialRows()
             document.accountTypes.forEach { appDatabase.accountTypeDao().insert(it.toEntity()) }
             document.assets.forEach { appDatabase.assetDao().insert(it.toEntity()) }
             document.liabilities.forEach { appDatabase.liabilityDao().insert(it.toEntity()) }
@@ -66,7 +69,10 @@ class BackupRepositoryImpl(
             }
             document.savingsGoalAllocationEvents.forEach { goals.insertAllocationEvent(it.toEntity()) }
             document.savingsGoalLinkEvents.forEach { goals.insertLinkEvent(it.toEntity()) }
+            document.portfolios.forEach { appDatabase.portfolioDao().insert(it.toEntity()) }
             document.portfolioHoldings.forEach { appDatabase.portfolioHoldingDao().insert(it.toEntity()) }
+            // A file without portfolios (and so without holdings) still leaves the database with its "Mi cartera".
+            appDatabase.ensureDefaultPortfolio()
             snapshotUpserter.refreshCurrentMonth()
         }
     }

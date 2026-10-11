@@ -15,6 +15,7 @@ import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -54,6 +55,7 @@ class HoldingDetailViewModelTest {
 
     private val fund = PortfolioHolding(
         id = "fund",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Fondo Global",
         type = InstrumentType.FUND,
         isin = "IE00B4L5Y983",
@@ -67,6 +69,7 @@ class HoldingDetailViewModelTest {
     )
     private val usdStock = PortfolioHolding(
         id = "stock",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Acme Corp",
         type = InstrumentType.STOCK,
         isin = null,
@@ -80,6 +83,7 @@ class HoldingDetailViewModelTest {
     )
     private val unpriced = PortfolioHolding(
         id = "new",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Fondo Nuevo",
         type = InstrumentType.FUND,
         isin = "ES0000000001",
@@ -92,6 +96,7 @@ class HoldingDetailViewModelTest {
     )
     private val manual = PortfolioHolding(
         id = "art",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Cuadro",
         type = InstrumentType.OTHER,
         isin = null,

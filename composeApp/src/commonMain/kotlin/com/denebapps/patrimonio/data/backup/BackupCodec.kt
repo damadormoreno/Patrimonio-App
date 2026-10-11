@@ -5,10 +5,12 @@ import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalAdd
 import com.denebapps.patrimonio.domain.model.AccountKind
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.Currency
+import com.denebapps.patrimonio.domain.model.DEFAULT_PORTFOLIO_NAME
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.MAX_BROKER_LENGTH
 import com.denebapps.patrimonio.domain.model.MAX_FUNDAMENTALS_TEXT_LENGTH
+import com.denebapps.patrimonio.domain.model.MAX_PORTFOLIO_NAME_LENGTH
 import com.denebapps.patrimonio.domain.model.MAX_RISK_LEVEL
 import com.denebapps.patrimonio.domain.model.MIN_RISK_LEVEL
 import com.denebapps.patrimonio.domain.model.Money
@@ -39,18 +41,19 @@ import kotlin.uuid.Uuid
  * hand-edited or corrupted file is rejected with a readable reason instead of failing half-way
  * through an import or crashing a later read.
  *
- * Writes [VERSION] (10). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
+ * Writes [VERSION] (11). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
  * group-link fields, which default to null, v1–v3 files have numeric goal ids, which
  * [upgradeLegacyGoalIds] replaces before decoding, v1–v4 files link a goal to one `linkedAssetId`,
  * which [upgradeSingleLinkedAsset] turns into a list, v1–v5 files have no custom account types nor
  * emojis, which default to empty, v3–v6 files may carry a `subscriptions` section from the removed
  * subscriptions feature, which is ignored like any unknown key, v1–v7 files have no portfolio holdings, which
- * default to empty, v1–v8 holdings have no bank or broker, which defaults to null, and v1–v9 holdings have no
- * fundamentals (cost, risk, category, manager), which default to null.
+ * default to empty, v1–v8 holdings have no bank or broker, which defaults to null, v1–v9 holdings have no
+ * fundamentals (cost, risk, category, manager), which default to null, and v1–v10 files have no portfolios, which
+ * [upgradeToSinglePortfolio] answers with one new "Mi cartera" that holds every holding.
  */
 object BackupCodec {
     const val FORMAT = "patrimonio-backup"
-    const val VERSION = 10
+    const val VERSION = 11
 
     private val json = Json {
         prettyPrint = true
@@ -69,7 +72,8 @@ object BackupCodec {
         }
         val version = checkEnvelope(root)
         val withGoalIds = if (version < 4) upgradeLegacyGoalIds(root) else root
-        val upgraded = if (version < 5) upgradeSingleLinkedAsset(withGoalIds) else withGoalIds
+        val withLinkedAssets = if (version < 5) upgradeSingleLinkedAsset(withGoalIds) else withGoalIds
+        val upgraded = if (version < 11) upgradeToSinglePortfolio(withLinkedAssets) else withLinkedAssets
         val document = try {
             json.decodeFromJsonElement(BackupDocument.serializer(), upgraded)
         } catch (error: IllegalArgumentException) {
@@ -105,7 +109,7 @@ private fun upgradeLegacyGoalIds(root: JsonObject): JsonObject {
         val goal = element as? JsonObject ?: return@map element
         val oldId = goal["id"] as? JsonPrimitive
         val createdAt = oldId?.longOrNull ?: return@map goal
-        val newId = randomGoalId().also { newIds[oldId.content] = it }
+        val newId = randomUuid().also { newIds[oldId.content] = it }
         JsonObject(goal + mapOf("id" to JsonPrimitive(newId), "createdAtEpochMs" to JsonPrimitive(createdAt)))
     }
     fun JsonElement.withNewGoalId(): JsonElement {
@@ -135,10 +139,32 @@ private fun upgradeSingleLinkedAsset(root: JsonObject): JsonObject {
     return JsonObject(root + ("savingsGoals" to JsonArray(goals)))
 }
 
+/**
+ * Up to version 10 there were no portfolios. Like the 10 -> 11 database migration, the file gets one "Mi cartera" with
+ * a fresh UUID, even without holdings, and every holding is put in it.
+ */
+private fun upgradeToSinglePortfolio(root: JsonObject): JsonObject {
+    val portfolioId = JsonPrimitive(randomUuid())
+    val portfolio = JsonObject(
+        mapOf(
+            "id" to portfolioId,
+            "name" to JsonPrimitive(DEFAULT_PORTFOLIO_NAME),
+            "sortOrder" to JsonPrimitive(0),
+        ),
+    )
+    val holdings = root.arrayOrEmpty("portfolioHoldings").map { element ->
+        val holding = element as? JsonObject ?: return@map element
+        JsonObject(holding + ("portfolioId" to portfolioId))
+    }
+    return JsonObject(
+        root + mapOf("portfolios" to JsonArray(listOf(portfolio)), "portfolioHoldings" to JsonArray(holdings)),
+    )
+}
+
 private fun JsonObject.arrayOrEmpty(key: String): List<JsonElement> = (this[key] as? JsonArray).orEmpty()
 
 @OptIn(ExperimentalUuidApi::class)
-private fun randomGoalId(): String = Uuid.random().toString()
+private fun randomUuid(): String = Uuid.random().toString()
 
 private fun invalid(reason: String): Nothing = throw InvalidBackupException(reason)
 
@@ -243,15 +269,45 @@ private fun BackupDocument.validate() {
         if (event.kind !in LINK_KINDS) invalid("Tipo de cambio de vínculo desconocido: ${event.kind}.")
     }
 
+    validatePortfolios(portfolios)
+    val portfolioIds = portfolios.map { it.id }.toSet()
     requireUnique("valor de cartera", portfolioHoldings.map { it.id })
-    portfolioHoldings.forEach(::validateHolding)
+    portfolioHoldings.forEach { validateHolding(it, portfolioIds) }
+}
+
+/**
+ * Mirrors `Portfolio` and the repository: unique ids and trimmed, non-blank names of at most 40 characters that are
+ * unique ignoring case, or reading them would crash or break the rule.
+ */
+private fun validatePortfolios(portfolios: List<PortfolioBackup>) {
+    portfolios.forEach { portfolio ->
+        if (portfolio.id.isBlank()) invalid("Hay una cartera sin id.")
+    }
+    portfolios.groupingBy { it.id }.eachCount().entries.firstOrNull { it.value > 1 }?.let { duplicate ->
+        invalid("Hay una cartera con el id duplicado: ${duplicate.key}.")
+    }
+    portfolios.forEach { portfolio ->
+        val name = portfolio.name
+        if (name.isBlank() || name != name.trim() || name.length > MAX_PORTFOLIO_NAME_LENGTH) {
+            invalid(
+                "Hay una cartera con un nombre vacío, con espacios sobrantes o de más de " +
+                    "$MAX_PORTFOLIO_NAME_LENGTH caracteres.",
+            )
+        }
+    }
+    portfolios.groupBy { it.name.lowercase() }.values.firstOrNull { it.size > 1 }?.let { sameName ->
+        invalid("Hay dos carteras con el mismo nombre: '${sameName.first().name}'.")
+    }
 }
 
 /** A holding is either quoted (provider, units and maybe a price) or manual (a typed-in value), never a mix. */
-private fun validateHolding(holding: PortfolioHoldingBackup) {
+private fun validateHolding(holding: PortfolioHoldingBackup, portfolioIds: Set<String>) {
     if (holding.id.isBlank()) invalid("Hay un valor de cartera sin id.")
     if (holding.name.isBlank()) invalid("Hay un valor de cartera sin nombre.")
     val label = "El valor de cartera '${holding.name}'"
+    if (holding.portfolioId !in portfolioIds) {
+        invalid("$label está en una cartera que no existe: ${holding.portfolioId}.")
+    }
     if (holding.type !in INSTRUMENT_TYPES) invalid("$label tiene un tipo desconocido: ${holding.type}.")
     if (holding.currency !in CURRENCIES) invalid("$label tiene una divisa no soportada: ${holding.currency}.")
     if (holding.broker != null) validateBroker(holding.broker, label)

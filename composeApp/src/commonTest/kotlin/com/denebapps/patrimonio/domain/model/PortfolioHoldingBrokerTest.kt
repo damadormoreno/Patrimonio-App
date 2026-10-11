@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.domain.model
 
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -8,6 +9,7 @@ import kotlin.test.assertNull
 class PortfolioHoldingBrokerTest {
     private fun holding(broker: String?) = PortfolioHolding(
         id = "p1",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Vanguard Global",
         type = InstrumentType.FUND,
         isin = null,

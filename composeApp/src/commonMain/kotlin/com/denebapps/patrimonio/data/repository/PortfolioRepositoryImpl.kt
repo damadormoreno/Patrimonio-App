@@ -25,6 +25,7 @@ import com.denebapps.patrimonio.domain.repository.FundamentalsSource
 import com.denebapps.patrimonio.domain.repository.FundamentalsSyncFailure
 import com.denebapps.patrimonio.domain.repository.FundamentalsSyncResult
 import com.denebapps.patrimonio.domain.repository.PortfolioHoldingNotFoundException
+import com.denebapps.patrimonio.domain.repository.PortfolioNotFoundException
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.PriceRefreshFailure
 import com.denebapps.patrimonio.domain.repository.PriceRefreshResult
@@ -52,9 +53,10 @@ private const val FUNDAMENTALS_WINDOW_MS = 24L * 60 * 60 * 1000
 private const val MAX_CONCURRENT_QUOTES = 4
 
 /**
- * [PortfolioRepository] over Room and the [QuoteSource] and [FundamentalsSource] ports. A price refresh writes only the
- * price columns of its own row, and a fundamentals sync only the fundamentals columns of its own, so units edited while
- * the requests are in flight are never overwritten.
+ * [PortfolioRepository] over Room and the [QuoteSource] and [FundamentalsSource] ports. Adding a holding checks that
+ * its portfolio exists (the foreign key would refuse it anyway, with an opaque error). A price refresh writes only the
+ * price columns of its own row, and a fundamentals sync only the fundamentals columns of its own, so units edited
+ * while the requests are in flight are never overwritten.
  */
 class PortfolioRepositoryImpl(
     private val appDatabase: AppDatabase,
@@ -73,6 +75,9 @@ class PortfolioRepositoryImpl(
     override suspend fun add(holding: PortfolioHolding) {
         seedingGate.await()
         appDatabase.writeTransaction {
+            if (appDatabase.portfolioDao().find(holding.portfolioId) == null) {
+                throw PortfolioNotFoundException(holding.portfolioId)
+            }
             dao.insert(toEntity(holding, clock.now().toEpochMilliseconds()))
             snapshotUpserter.refreshCurrentMonth()
         }
@@ -239,6 +244,7 @@ private fun toEntity(holding: PortfolioHolding, nowMs: Long): PortfolioHoldingEn
 ) {
     is HoldingValuation.Quoted -> PortfolioHoldingEntity(
         id = holding.id,
+        portfolioId = holding.portfolioId,
         name = holding.name,
         type = holding.type.name,
         isin = holding.isin,
@@ -262,6 +268,7 @@ private fun toEntity(holding: PortfolioHolding, nowMs: Long): PortfolioHoldingEn
     )
     is HoldingValuation.Manual -> PortfolioHoldingEntity(
         id = holding.id,
+        portfolioId = holding.portfolioId,
         name = holding.name,
         type = holding.type.name,
         isin = holding.isin,
@@ -310,6 +317,7 @@ internal fun portfolioHoldingToDomain(row: PortfolioHoldingEntity): PortfolioHol
     }
     return PortfolioHolding(
         id = row.id,
+        portfolioId = row.portfolioId,
         name = row.name,
         type = InstrumentType.valueOf(row.type),
         isin = row.isin,

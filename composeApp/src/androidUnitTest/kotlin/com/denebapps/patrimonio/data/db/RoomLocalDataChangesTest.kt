@@ -4,7 +4,9 @@ import com.denebapps.patrimonio.data.db.entity.FxHistoryEntity
 import com.denebapps.patrimonio.data.db.entity.FxHistorySyncEntity
 import com.denebapps.patrimonio.data.db.entity.InstrumentPriceEntity
 import com.denebapps.patrimonio.data.db.entity.InstrumentPriceSyncEntity
+import com.denebapps.patrimonio.data.db.entity.PortfolioEntity
 import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -25,6 +27,7 @@ class RoomLocalDataChangesTest {
     @Test
     fun `the re-downloadable caches never signal a backup change but a holding does`() = runBlocking {
         val db = buildInMemoryTestDatabase()
+        db.insertTestPortfolio()
         val signals = AtomicInteger()
         val collector =
             launch(Dispatchers.Default) { RoomLocalDataChanges(db).observe().collect { signals.incrementAndGet() } }
@@ -39,11 +42,30 @@ class RoomLocalDataChangesTest {
 
         db.portfolioHoldingDao().insert(
             PortfolioHoldingEntity(
-                "h", "Cuadro", "OTHER", null, null, "MANUAL", null, null, "EUR",
+                "h", TEST_PORTFOLIO_ID, "Cuadro", "OTHER", null, null, "MANUAL", null, null, "EUR",
                 null, null, null, null, 250_000, 1L,
             ),
         )
         signals.awaitAtLeast(2)
+
+        collector.cancel()
+        db.close()
+    }
+
+    @Test
+    fun `a portfolio being created renamed or deleted signals a backup change`() = runBlocking {
+        val db = buildInMemoryTestDatabase()
+        val signals = AtomicInteger()
+        val collector =
+            launch(Dispatchers.Default) { RoomLocalDataChanges(db).observe().collect { signals.incrementAndGet() } }
+        signals.awaitAtLeast(1)
+
+        db.portfolioDao().insert(PortfolioEntity("pf", "Hijos", 0))
+        signals.awaitAtLeast(2)
+        db.portfolioDao().updateName("pf", "Jubilación")
+        signals.awaitAtLeast(3)
+        db.portfolioDao().delete("pf")
+        signals.awaitAtLeast(4)
 
         collector.cancel()
         db.close()

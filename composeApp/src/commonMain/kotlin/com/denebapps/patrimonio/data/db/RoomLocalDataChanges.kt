@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 /**
- * Room's invalidation tracker over the tables a backup holds ([clearFinancialTables]'s list). The re-downloadable
+ * Room's invalidation tracker over the tables a backup holds ([deleteFinancialRows]'s list). The re-downloadable
  * caches (`instrument_prices`, `instrument_price_sync`, `fx_history`, `fx_history_sync`, `fx_rates`) are deliberately
  * not here: syncing them is not a change of the user's data and must not upload a cloud backup.
  */
@@ -24,6 +24,7 @@ class RoomLocalDataChanges(private val database: AppDatabase) : LocalDataChanges
             "savings_goal_allocation_events",
             "savings_goal_link_events",
             "account_types",
+            "portfolios",
             "portfolio_holdings",
         )
     }

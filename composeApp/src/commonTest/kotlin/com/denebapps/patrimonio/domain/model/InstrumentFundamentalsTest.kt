@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.domain.model
 
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -64,6 +65,7 @@ class InstrumentFundamentalsTest {
         val fundamentals = InstrumentFundamentals(riskLevel = 5)
         val holding = PortfolioHolding(
             id = "h",
+            portfolioId = TEST_PORTFOLIO_ID,
             name = "Fondo",
             type = InstrumentType.FUND,
             isin = null,

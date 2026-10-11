@@ -8,6 +8,7 @@ import com.denebapps.patrimonio.domain.calc.savingsGoalCancellationDelta
 import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
+import com.denebapps.patrimonio.domain.model.DEFAULT_PORTFOLIO_NAME
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.HoldingValuation
 import com.denebapps.patrimonio.domain.model.InstrumentCandidate
@@ -15,6 +16,7 @@ import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.NetWorthSnapshot
+import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Quote
 import com.denebapps.patrimonio.domain.model.SavingsGoal
@@ -25,21 +27,27 @@ import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
 import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.model.YearMonth
 import com.denebapps.patrimonio.domain.model.normalizeBroker
+import com.denebapps.patrimonio.domain.model.normalizePortfolioName
 import com.denebapps.patrimonio.domain.repository.AccountGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.BackupRepository
 import com.denebapps.patrimonio.domain.repository.CreateSavingsGoal
 import com.denebapps.patrimonio.domain.repository.DataMaintenanceRepository
+import com.denebapps.patrimonio.domain.repository.DuplicatePortfolioNameException
 import com.denebapps.patrimonio.domain.repository.FundamentalsSyncResult
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalDeltaException
 import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalNameException
 import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalTargetException
+import com.denebapps.patrimonio.domain.repository.LastPortfolioException
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NegativeSavingsGoalProgressException
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioHoldingNotFoundException
+import com.denebapps.patrimonio.domain.repository.PortfolioNotEmptyException
+import com.denebapps.patrimonio.domain.repository.PortfolioNotFoundException
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.PriceRefreshResult
@@ -535,11 +543,91 @@ class FakePortfolioRepository(
         backing.value = holdings
     }
 
+    /** How many holdings are in [portfolioId]; used by [FakePortfolioCollectionRepository]. */
+    internal fun countIn(portfolioId: String): Int = backing.value.count { it.portfolioId == portfolioId }
+
+    /** Puts holding [id] in [portfolioId]; used by [FakePortfolioCollectionRepository]. */
+    internal fun moveTo(id: String, portfolioId: String) {
+        replace(find(id).copy(portfolioId = portfolioId))
+    }
+
+    /** Puts every holding of [from] in [to]; used by [FakePortfolioCollectionRepository]. */
+    internal fun moveAll(from: String, to: String) {
+        backing.value = backing.value.map { if (it.portfolioId == from) it.copy(portfolioId = to) else it }
+    }
+
     private fun find(id: String): PortfolioHolding =
         backing.value.firstOrNull { it.id == id } ?: throw PortfolioHoldingNotFoundException(id)
 
     private fun replace(holding: PortfolioHolding) {
         backing.value = backing.value.map { if (it.id == holding.id) holding else it }
+    }
+}
+
+/**
+ * `MutableStateFlow`-backed [PortfolioCollectionRepository] with the rules of the real one (names, uniqueness, the last
+ * portfolio, moving holdings on delete). It starts with the single portfolio [TEST_PORTFOLIO_ID] unless [initial] says
+ * otherwise. Holdings live in [holdings], so moving and deleting reach the same state the screens observe; without it
+ * every portfolio counts as empty.
+ */
+class FakePortfolioCollectionRepository(
+    initial: List<Portfolio> = listOf(Portfolio(TEST_PORTFOLIO_ID, DEFAULT_PORTFOLIO_NAME, 0)),
+    private val holdings: FakePortfolioRepository? = null,
+) : PortfolioCollectionRepository {
+    private val backing = MutableStateFlow(initial)
+    private var generated = 0
+
+    val current: List<Portfolio> get() = ordered(backing.value)
+
+    override fun observePortfolios(): Flow<List<Portfolio>> = backing.map(::ordered)
+
+    override suspend fun createPortfolio(name: String): Portfolio {
+        val normalized = checkedName(name, ignoring = null)
+        val portfolio = Portfolio(
+            id = "portfolio-new-${++generated}",
+            name = normalized,
+            sortOrder = (backing.value.maxOfOrNull { it.sortOrder } ?: -1) + 1,
+        )
+        backing.value = backing.value + portfolio
+        return portfolio
+    }
+
+    override suspend fun renamePortfolio(id: String, name: String) {
+        val portfolio = find(id)
+        val normalized = checkedName(name, ignoring = id)
+        backing.value = backing.value.map { if (it.id == portfolio.id) it.copy(name = normalized) else it }
+    }
+
+    override suspend fun deletePortfolio(id: String, moveHoldingsTo: String?) {
+        find(id)
+        if (backing.value.size == 1) throw LastPortfolioException()
+        val holdingCount = holdings?.countIn(id) ?: 0
+        if (holdingCount > 0) {
+            val target = moveHoldingsTo ?: throw PortfolioNotEmptyException(id, holdingCount)
+            require(target != id) { "Holdings cannot be moved to the portfolio being deleted" }
+            find(target)
+            holdings?.moveAll(id, target)
+        }
+        backing.value = backing.value.filterNot { it.id == id }
+    }
+
+    override suspend fun moveHolding(holdingId: String, portfolioId: String) {
+        find(portfolioId)
+        (holdings ?: throw PortfolioHoldingNotFoundException(holdingId)).moveTo(holdingId, portfolioId)
+    }
+
+    private fun ordered(portfolios: List<Portfolio>) =
+        portfolios.sortedWith(compareBy<Portfolio> { it.sortOrder }.thenBy { it.name.lowercase() }.thenBy { it.id })
+
+    private fun find(id: String): Portfolio =
+        backing.value.firstOrNull { it.id == id } ?: throw PortfolioNotFoundException(id)
+
+    private fun checkedName(raw: String, ignoring: String?): String {
+        val name = normalizePortfolioName(raw)
+        if (backing.value.any { it.id != ignoring && it.name.lowercase() == name.lowercase() }) {
+            throw DuplicatePortfolioNameException(name)
+        }
+        return name
     }
 }
 

@@ -108,7 +108,7 @@ val presentationModule = module {
         )
     }
     viewModel { CarteraViewModel(get(), get(), get<() -> TimeZone>()) }
-    viewModel { AddHoldingViewModel(get(), get(), get()) }
+    viewModel { AddHoldingViewModel(get(), get(), get(), get()) }
     viewModel { params -> HoldingDetailViewModel(params.get(), get(), get(), get<() -> TimeZone>()) }
     viewModel {
         PortfolioDetailViewModel(

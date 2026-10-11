@@ -11,14 +11,17 @@ import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.LastQuote
 import com.denebapps.patrimonio.domain.model.MAX_BROKER_LENGTH
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.Quote
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.repository.QuoteUnavailableException
+import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
 import com.denebapps.patrimonio.testing.FakeQuoteSource
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -83,6 +86,9 @@ class AddHoldingViewModelTest {
         quotes[fundRef] = fundQuote
     }
     private val repository = FakePortfolioRepository()
+    private val portfolios = FakePortfolioCollectionRepository(
+        listOf(Portfolio(TEST_PORTFOLIO_ID, "Mi cartera", 0), Portfolio("pf-hijos", "Hijos", 1)),
+    )
 
     @BeforeTest
     fun setUp() = Dispatchers.setMain(dispatcher)
@@ -93,6 +99,7 @@ class AddHoldingViewModelTest {
     private fun viewModel() = AddHoldingViewModel(
         quoteSource = source,
         portfolioRepository = repository,
+        portfolios = portfolios,
         clock = clock,
         idProvider = { "new-id" },
     )
@@ -344,6 +351,7 @@ class AddHoldingViewModelTest {
             listOf(
                 PortfolioHolding(
                     id = "new-id",
+                    portfolioId = TEST_PORTFOLIO_ID,
                     name = "Fondo Global",
                     type = InstrumentType.FUND,
                     isin = "IE00B4L5Y983",
@@ -360,6 +368,27 @@ class AddHoldingViewModelTest {
         )
         runCurrent()
         assertEquals(1, closed.size)
+    }
+
+    @Test
+    fun `a new holding goes to the first portfolio until the form lets the user choose`() = runTest(dispatcher) {
+        val firstByOrder = FakePortfolioCollectionRepository(
+            listOf(Portfolio("pf-late", "Zeta", 5), Portfolio("pf-first", "Jubilación", 1)),
+        )
+        val vm = AddHoldingViewModel(
+            quoteSource = source,
+            portfolioRepository = repository,
+            portfolios = firstByOrder,
+            clock = clock,
+            idProvider = { "new-id" },
+        )
+        pickFund(vm)
+        vm.onUnitsChange("1")
+
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertEquals("pf-first", repository.current.single().portfolioId)
     }
 
     @Test
@@ -464,6 +493,7 @@ class AddHoldingViewModelTest {
             listOf(
                 PortfolioHolding(
                     id = "new-id",
+                    portfolioId = TEST_PORTFOLIO_ID,
                     name = "iShares MSCI World",
                     type = InstrumentType.ETF,
                     isin = "IE00B4L5Y983",
@@ -559,6 +589,7 @@ class AddHoldingViewModelTest {
             listOf(
                 PortfolioHolding(
                     id = "new-id",
+                    portfolioId = TEST_PORTFOLIO_ID,
                     name = "Plan de pensiones",
                     type = InstrumentType.FUND,
                     isin = null,

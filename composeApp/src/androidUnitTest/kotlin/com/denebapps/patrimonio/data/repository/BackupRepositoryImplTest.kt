@@ -8,6 +8,7 @@ import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.LiabilityEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
+import com.denebapps.patrimonio.data.db.entity.PortfolioEntity
 import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
@@ -15,6 +16,7 @@ import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 import com.denebapps.patrimonio.data.db.testSeedingGate
 import com.denebapps.patrimonio.domain.repository.InvalidBackupException
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.Clock
@@ -49,6 +51,7 @@ private data class TablesState(
     val links: List<SavingsGoalLinkEventEntity>,
     val goalAssets: List<SavingsGoalAssetEntity>,
     val holdings: List<PortfolioHoldingEntity>,
+    val portfolios: List<PortfolioEntity>,
 )
 
 @RunWith(RobolectricTestRunner::class)
@@ -78,6 +81,7 @@ class BackupRepositoryImplTest {
         links = savingsGoalDao().listAllLinkEvents(),
         goalAssets = savingsGoalDao().listAllLinkedAssets(),
         holdings = portfolioHoldingDao().list(),
+        portfolios = portfolioDao().list(),
     )
 
     /** Rows in every table, with non-trivial goal/event ids, and a current-month snapshot that
@@ -108,7 +112,8 @@ class BackupRepositoryImplTest {
         )
         db.portfolioHoldingDao().insert(
             PortfolioHoldingEntity(
-                "p1", "Vanguard Global", "FUND", "IE00B03HCZ61", null, "QUOTED", "MORNINGSTAR", "0P00012PP6", "EUR",
+                "p1", TEST_PORTFOLIO_ID, "Vanguard Global", "FUND", "IE00B03HCZ61", null, "QUOTED", "MORNINGSTAR",
+                "0P00012PP6", "EUR",
                 8_100_001, 12_345_678, 20_000, 1_000, null, null,
                 ongoingChargePercentScaled = 1_800,
                 riskLevel = 6,
@@ -118,13 +123,15 @@ class BackupRepositoryImplTest {
         )
         db.portfolioHoldingDao().insert(
             PortfolioHoldingEntity(
-                "p2", "iShares MSCI World", "ETF", null, "IWDA.AS", "QUOTED", "YAHOO", "IWDA.AS", "EUR",
+                "p2", TEST_PORTFOLIO_ID, "iShares MSCI World", "ETF", null, "IWDA.AS", "QUOTED", "YAHOO", "IWDA.AS",
+                "EUR",
                 2_500_000, null, null, null, null, null,
             ),
         )
+        db.portfolioDao().insert(PortfolioEntity("pf-hijos", "Hijos", 1))
         db.portfolioHoldingDao().insert(
             PortfolioHoldingEntity(
-                "p3", "Cuadro", "OTHER", null, null, "MANUAL", null, null, "USD",
+                "p3", "pf-hijos", "Cuadro", "OTHER", null, null, "MANUAL", null, null, "USD",
                 null, null, null, null, 250_000, 7,
             ),
         )
@@ -160,6 +167,11 @@ class BackupRepositoryImplTest {
         assertEquals(2, document.assets.size)
         assertEquals(listOf(VIAJE, COCHE, COLCHON), document.savingsGoals.map { it.id })
         assertEquals(listOf("p3", "p2", "p1"), document.portfolioHoldings.map { it.id })
+        assertEquals(listOf("Mi cartera" to 0, "Hijos" to 1), document.portfolios.map { it.name to it.sortOrder })
+        assertEquals(
+            mapOf("p1" to TEST_PORTFOLIO_ID, "p2" to TEST_PORTFOLIO_ID, "p3" to "pf-hijos"),
+            document.portfolioHoldings.associate { it.id to it.portfolioId },
+        )
         assertEquals("g1", document.savingsGoals.last().linkedGroupId)
         assertEquals(listOf("a1", "a2"), document.savingsGoals.first().linkedAssetIds)
         db.close()
@@ -178,6 +190,7 @@ class BackupRepositoryImplTest {
         val state = db.tables()
         assertTrue(state.assets.isEmpty() && state.goals.isEmpty() && state.allocations.isEmpty())
         assertTrue(state.holdings.isEmpty())
+        assertEquals(listOf("Mi cartera"), state.portfolios.map { it.name })
         // The current month is recomputed from the (now empty) assets.
         assertEquals(listOf(NetWorthSnapshotEntity("2026-10", 0, 0)), state.snapshots)
         db.close()
@@ -243,6 +256,107 @@ class BackupRepositoryImplTest {
         assertEquals(goal.id, link.goalId)
         assertNull(link.fromGroupId)
         assertNull(link.toGroupId)
+        db.close()
+    }
+
+    @Test
+    fun `a version 10 backup imports its holdings into a single new Mi cartera`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        testSeedingGate(db).await()
+        populate(db)
+        val v10 = """
+            {
+              "format": "patrimonio-backup",
+              "version": 10,
+              "exportedAt": "2026-01-01T00:00:00Z",
+              "portfolioHoldings": [
+                {"id": "h1", "name": "Cuadro", "type": "OTHER", "kind": "MANUAL", "currency": "EUR",
+                 "valueMinor": 250000, "valuedAtEpochMs": 7, "broker": "Openbank", "riskLevel": 4},
+                {"id": "h2", "name": "Fondo", "type": "FUND", "kind": "QUOTED", "currency": "EUR",
+                 "provider": "MORNINGSTAR", "providerCode": "0P00012PP6", "unitsScaled": 8100001}
+              ]
+            }
+        """.trimIndent()
+
+        repositoryFor(db).importJson(v10)
+
+        val portfolio = db.portfolioDao().list().single()
+        assertEquals("Mi cartera", portfolio.name)
+        assertEquals(0, portfolio.sortOrder)
+        assertTrue(portfolio.id != TEST_PORTFOLIO_ID && portfolio.id.length == 36, portfolio.id)
+        val holdings = db.portfolioHoldingDao().list()
+        assertEquals(listOf("h1", "h2"), holdings.map { it.id }.sorted())
+        assertTrue(holdings.all { it.portfolioId == portfolio.id })
+        assertEquals("Openbank", holdings.first { it.id == "h1" }.broker)
+        assertEquals(4, holdings.first { it.id == "h1" }.riskLevel)
+        db.close()
+    }
+
+    @Test
+    fun `a version 1 backup without holdings still leaves exactly one Mi cartera`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        testSeedingGate(db).await()
+        db.portfolioDao().insert(PortfolioEntity("extra", "Hijos", 1))
+
+        repositoryFor(db).importJson("""{"format":"patrimonio-backup","version":1,"exportedAt":"x"}""")
+
+        assertEquals(listOf("Mi cartera"), db.portfolioDao().list().map { it.name })
+        db.close()
+    }
+
+    @Test
+    fun `a version 11 backup without portfolios or holdings leaves one Mi cartera`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        testSeedingGate(db).await()
+        populate(db)
+
+        repositoryFor(db).importJson("""{"format":"patrimonio-backup","version":11,"exportedAt":"x"}""")
+
+        val state = db.tables()
+        assertEquals(listOf("Mi cartera"), state.portfolios.map { it.name })
+        assertTrue(state.holdings.isEmpty())
+        db.close()
+    }
+
+    @Test
+    fun `a version 11 backup replaces the portfolios of the device and keeps its own ids and order`() = runTest {
+        val source = buildInMemoryTestDatabase()
+        testSeedingGate(source).await()
+        populate(source)
+        source.portfolioDao().insert(PortfolioEntity("pf-vacia", "Vacía", 2))
+        val json = repositoryFor(source).exportJson()
+        source.close()
+        val target = buildInMemoryTestDatabase()
+        testSeedingGate(target).await()
+        target.portfolioDao().insert(PortfolioEntity("pf-local", "Local", 1))
+
+        repositoryFor(target).importJson(json)
+
+        assertEquals(
+            listOf(
+                PortfolioEntity(TEST_PORTFOLIO_ID, "Mi cartera", 0),
+                PortfolioEntity("pf-hijos", "Hijos", 1),
+                PortfolioEntity("pf-vacia", "Vacía", 2),
+            ),
+            target.portfolioDao().list(),
+        )
+        assertEquals("pf-hijos", target.portfolioHoldingDao().find("p3")?.portfolioId)
+        target.close()
+    }
+
+    @Test
+    fun `a backup whose holding points at a missing portfolio is refused and changes nothing`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        testSeedingGate(db).await()
+        populate(db)
+        val before = db.tables()
+        val repository = repositoryFor(db)
+        val dangling = repository.exportJson().replace("\"portfolioId\": \"pf-hijos\"", "\"portfolioId\": \"nope\"")
+        assertTrue("\"nope\"" in dangling)
+
+        assertFailsWith<InvalidBackupException> { repository.importJson(dangling) }
+
+        assertEquals(before, db.tables())
         db.close()
     }
 

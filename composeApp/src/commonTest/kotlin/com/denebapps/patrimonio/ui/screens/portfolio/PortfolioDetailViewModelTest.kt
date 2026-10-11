@@ -27,6 +27,7 @@ import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeInstrumentHistoryRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
 import com.denebapps.patrimonio.testing.FxSyncCall
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -85,6 +86,7 @@ class PortfolioDetailViewModelTest {
         fundamentals: InstrumentFundamentals? = null,
     ) = PortfolioHolding(
         id = id,
+        portfolioId = TEST_PORTFOLIO_ID,
         name = name,
         type = type,
         isin = null,
@@ -139,6 +141,7 @@ class PortfolioDetailViewModelTest {
 
     private fun manual(euros: Long) = PortfolioHolding(
         id = "art",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Cuadro",
         type = InstrumentType.OTHER,
         isin = null,

@@ -2,6 +2,8 @@ package com.denebapps.patrimonio.data.db.dao
 
 import com.denebapps.patrimonio.data.db.buildInMemoryTestDatabase
 import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
+import com.denebapps.patrimonio.data.db.insertTestPortfolio
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -15,6 +17,7 @@ import kotlin.test.assertTrue
 class PortfolioHoldingDaoTest {
     private fun quoted(id: String, name: String = id) = PortfolioHoldingEntity(
         id = id,
+        portfolioId = TEST_PORTFOLIO_ID,
         name = name,
         type = "FUND",
         isin = "IE00B03HCZ61",
@@ -33,6 +36,7 @@ class PortfolioHoldingDaoTest {
 
     private fun manual(id: String) = PortfolioHoldingEntity(
         id = id,
+        portfolioId = TEST_PORTFOLIO_ID,
         name = id,
         type = "OTHER",
         isin = null,
@@ -52,6 +56,7 @@ class PortfolioHoldingDaoTest {
     @Test
     fun `rows round trip and list in case insensitive name order`() = runTest {
         val db = buildInMemoryTestDatabase()
+        db.insertTestPortfolio()
         val dao = db.portfolioHoldingDao()
         dao.insert(quoted("a", name = "vanguard"))
         dao.insert(manual("b"))
@@ -67,6 +72,7 @@ class PortfolioHoldingDaoTest {
     @Test
     fun `inserting an existing id fails`() = runTest {
         val db = buildInMemoryTestDatabase()
+        db.insertTestPortfolio()
         val dao = db.portfolioHoldingDao()
         dao.insert(quoted("a"))
 
@@ -78,6 +84,7 @@ class PortfolioHoldingDaoTest {
     @Test
     fun `update replaces the whole row and reports whether it matched`() = runTest {
         val db = buildInMemoryTestDatabase()
+        db.insertTestPortfolio()
         val dao = db.portfolioHoldingDao()
         dao.insert(quoted("a"))
 
@@ -90,6 +97,7 @@ class PortfolioHoldingDaoTest {
     @Test
     fun `targeted updates only touch rows of the matching kind`() = runTest {
         val db = buildInMemoryTestDatabase()
+        db.insertTestPortfolio()
         val dao = db.portfolioHoldingDao()
         dao.insert(quoted("q"))
         dao.insert(manual("m"))
@@ -117,6 +125,7 @@ class PortfolioHoldingDaoTest {
     @Test
     fun `delete removes one row and deleteAll empties the table`() = runTest {
         val db = buildInMemoryTestDatabase()
+        db.insertTestPortfolio()
         val dao = db.portfolioHoldingDao()
         dao.insert(quoted("a"))
         dao.insert(manual("b"))
@@ -127,6 +136,49 @@ class PortfolioHoldingDaoTest {
         dao.deleteAll()
 
         assertEquals(emptyList(), dao.list())
+        db.close()
+    }
+
+    @Test
+    fun `a holding must belong to a portfolio that exists`() = runTest {
+        val db = buildInMemoryTestDatabase()
+
+        assertTrue(runCatching { db.portfolioHoldingDao().insert(quoted("a")) }.isFailure)
+
+        assertEquals(emptyList(), db.portfolioHoldingDao().list())
+        db.close()
+    }
+
+    @Test
+    fun `a portfolio with holdings cannot be deleted so holdings are never cascaded away`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        db.insertTestPortfolio()
+        db.portfolioHoldingDao().insert(quoted("a"))
+
+        assertTrue(runCatching { db.portfolioDao().delete(TEST_PORTFOLIO_ID) }.isFailure)
+
+        assertEquals(listOf("a"), db.portfolioHoldingDao().list().map { it.id })
+        assertEquals(1, db.portfolioDao().count())
+        db.close()
+    }
+
+    @Test
+    fun `holdings are counted and moved by portfolio`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        db.insertTestPortfolio()
+        db.insertTestPortfolio(id = "other", name = "Hijos", sortOrder = 1)
+        val dao = db.portfolioHoldingDao()
+        dao.insert(quoted("a"))
+        dao.insert(manual("b"))
+
+        assertEquals(2, dao.countInPortfolio(TEST_PORTFOLIO_ID))
+        assertEquals(0, dao.countInPortfolio("other"))
+        assertEquals(1, dao.updatePortfolio("a", "other"))
+        assertEquals(0, dao.updatePortfolio("missing", "other"))
+        assertEquals(1, dao.moveAll(TEST_PORTFOLIO_ID, "other"))
+
+        assertEquals(0, dao.countInPortfolio(TEST_PORTFOLIO_ID))
+        assertEquals(2, dao.countInPortfolio("other"))
         db.close()
     }
 }

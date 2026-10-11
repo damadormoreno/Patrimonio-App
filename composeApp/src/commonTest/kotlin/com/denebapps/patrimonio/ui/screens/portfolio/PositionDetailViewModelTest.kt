@@ -23,6 +23,7 @@ import com.denebapps.patrimonio.domain.repository.HistoryUnavailableException
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeInstrumentHistoryRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -71,6 +72,7 @@ class PositionDetailViewModelTest {
     // 10 units at 245,12 € = 2.451,20 €; ongoing charge 0,18 %.
     private val fund = PortfolioHolding(
         id = "fund",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Fondo Global",
         type = InstrumentType.FUND,
         isin = "IE00B4L5Y983",
@@ -93,6 +95,7 @@ class PositionDetailViewModelTest {
     // 10 shares at 200,00 $ = 2.000,00 $ = 1.840,00 €; ongoing charge 0,5 %.
     private val stock = PortfolioHolding(
         id = "stock",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Acme Corp",
         type = InstrumentType.STOCK,
         isin = null,
@@ -107,6 +110,7 @@ class PositionDetailViewModelTest {
     )
     private val manual = PortfolioHolding(
         id = "art",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Cuadro",
         type = InstrumentType.OTHER,
         isin = null,

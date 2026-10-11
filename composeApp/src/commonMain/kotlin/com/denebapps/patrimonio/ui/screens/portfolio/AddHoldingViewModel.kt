@@ -20,6 +20,7 @@ import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Quote
 import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.model.normalizeBroker
+import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.QuoteSource
 import com.denebapps.patrimonio.ui.components.formatMoney
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -102,6 +104,7 @@ private class EntryResult(val units: Units, val preview: String)
 class AddHoldingViewModel(
     private val quoteSource: QuoteSource,
     private val portfolioRepository: PortfolioRepository,
+    private val portfolios: PortfolioCollectionRepository,
     private val clock: Clock,
     private val idProvider: () -> String = ::newHoldingId,
 ) : ViewModel() {
@@ -236,54 +239,71 @@ class AddHoldingViewModel(
     fun onSave() {
         val form = mutableState.value
         if (saving || !form.canSave) return
-        val holding = when (form.stage) {
+        val holdingIn = when (form.stage) {
             AddHoldingStage.ENTRY -> quotedHolding(form)
             AddHoldingStage.MANUAL -> manualHolding(form)
             else -> null
         } ?: return
         saving = true
         viewModelScope.launch {
-            portfolioRepository.add(holding)
+            // The form has no portfolio picker yet: a new holding goes to the first portfolio, which always exists.
+            val portfolioId = portfolios.observePortfolios().first().first().id
+            portfolioRepository.add(holdingIn(portfolioId))
             navigateBackChannel.send(Unit)
         }
     }
 
-    private fun quotedHolding(form: AddHoldingUiState): PortfolioHolding? {
+    /** The holding the form describes, as a function of the portfolio it is added to; `null` when it is incomplete. */
+    private fun quotedHolding(form: AddHoldingUiState): ((String) -> PortfolioHolding)? {
         val candidate = pickedCandidate ?: return null
         val quote = pickedQuote ?: return null
         val units = entryResult(form)?.units ?: return null
-        return PortfolioHolding(
-            id = idProvider(),
-            name = candidate.holdingName(),
-            type = candidate.type,
-            isin = candidate.isin,
-            ticker = candidate.ticker,
-            valuation = HoldingValuation.Quoted(
-                ref = candidate.ref,
-                currency = quote.price.currency,
-                units = units,
-                lastQuote = LastQuote(quote.price, quote.date, clock.now().toEpochMilliseconds()),
-            ),
-            broker = normalizeBroker(form.broker),
-            fundamentals = candidate.fundamentals,
+        val id = idProvider()
+        val valuation = HoldingValuation.Quoted(
+            ref = candidate.ref,
+            currency = quote.price.currency,
+            units = units,
+            lastQuote = LastQuote(quote.price, quote.date, clock.now().toEpochMilliseconds()),
         )
+        val broker = normalizeBroker(form.broker)
+        return { portfolioId ->
+            PortfolioHolding(
+                id = id,
+                portfolioId = portfolioId,
+                name = candidate.holdingName(),
+                type = candidate.type,
+                isin = candidate.isin,
+                ticker = candidate.ticker,
+                valuation = valuation,
+                broker = broker,
+                fundamentals = candidate.fundamentals,
+            )
+        }
     }
 
-    private fun manualHolding(form: AddHoldingUiState): PortfolioHolding? {
+    private fun manualHolding(form: AddHoldingUiState): ((String) -> PortfolioHolding)? {
         val minor = parseAmountToMinor(form.amountText, form.currency) ?: return null
-        return PortfolioHolding(
-            id = idProvider(),
-            name = form.name.trim().ifBlank { return null },
-            type = form.type,
-            isin = pickedCandidate?.isin,
-            ticker = pickedCandidate?.ticker,
-            valuation = HoldingValuation.Manual(
-                value = CurrencyAmount(Money(minor), form.currency),
-                valuedAtEpochMs = clock.now().toEpochMilliseconds(),
-            ),
-            broker = normalizeBroker(form.broker),
-            fundamentals = pickedCandidate?.fundamentals,
+        val name = form.name.trim().ifBlank { return null }
+        val id = idProvider()
+        val valuation = HoldingValuation.Manual(
+            value = CurrencyAmount(Money(minor), form.currency),
+            valuedAtEpochMs = clock.now().toEpochMilliseconds(),
         )
+        val broker = normalizeBroker(form.broker)
+        val candidate = pickedCandidate
+        return { portfolioId ->
+            PortfolioHolding(
+                id = id,
+                portfolioId = portfolioId,
+                name = name,
+                type = form.type,
+                isin = candidate?.isin,
+                ticker = candidate?.ticker,
+                valuation = valuation,
+                broker = broker,
+                fundamentals = candidate?.fundamentals,
+            )
+        }
     }
 
     private fun clearPicked() {
