@@ -7,6 +7,7 @@ import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalSubtract
 import com.denebapps.patrimonio.domain.calc.savingsGoalCancellationDelta
 import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.Asset
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.DEFAULT_PORTFOLIO_NAME
 import com.denebapps.patrimonio.domain.model.FxRates
@@ -528,6 +529,10 @@ class FakePortfolioRepository(
 
     override suspend fun updateBroker(id: String, broker: String?) {
         replace(find(id).copy(broker = normalizeBroker(broker)))
+    }
+
+    override suspend fun updateAssetClass(id: String, assetClass: AssetClass?) {
+        replace(find(id).copy(assetClass = assetClass))
     }
 
     override suspend fun delete(id: String) {

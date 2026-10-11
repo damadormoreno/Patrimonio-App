@@ -7,6 +7,7 @@ import com.denebapps.patrimonio.data.db.entity.InstrumentPriceSyncEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
 import com.denebapps.patrimonio.data.db.insertTestPortfolio
 import com.denebapps.patrimonio.data.db.testSeedingGate
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.HoldingValuation
@@ -100,6 +101,7 @@ class PortfolioRepositoryTest {
         lastQuote: LastQuote? = null,
         broker: String? = null,
         portfolioId: String = TEST_PORTFOLIO_ID,
+        assetClass: AssetClass? = null,
     ) = PortfolioHolding(
         id = id,
         portfolioId = portfolioId,
@@ -109,6 +111,7 @@ class PortfolioRepositoryTest {
         ticker = null,
         valuation = HoldingValuation.Quoted(ref(code), currency, Units(units), lastQuote),
         broker = broker,
+        assetClass = assetClass,
     )
 
     private fun manual(
@@ -116,6 +119,7 @@ class PortfolioRepositoryTest {
         name: String = id,
         broker: String? = null,
         portfolioId: String = TEST_PORTFOLIO_ID,
+        assetClass: AssetClass? = null,
     ) = PortfolioHolding(
         id = id,
         portfolioId = portfolioId,
@@ -125,6 +129,7 @@ class PortfolioRepositoryTest {
         ticker = null,
         valuation = HoldingValuation.Manual(CurrencyAmount(Money(250_000), Currency.EUR), valuedAtEpochMs = 7L),
         broker = broker,
+        assetClass = assetClass,
     )
 
     private fun lastQuote(scaled: Long, fetchedAgoMs: Long, currency: Currency = Currency.EUR) =
@@ -536,6 +541,98 @@ class PortfolioRepositoryTest {
         assertEquals(Units(4_000_000), byId.getValue("p1").quotedValuation().units)
         assertEquals(10_000_000L, byId.getValue("p1").quotedValuation().lastQuote?.price?.scaled)
         assertEquals("MyInvestor", byId.getValue("m1").broker)
+        db.close()
+    }
+
+    @Test
+    fun `a holding is stored with its asset class and without one`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repository = repositoryFor(db)
+        val bond = quoted("p1", name = "Bonos", assetClass = AssetClass.FIXED_INCOME)
+        val coin = manual("m1", name = "Moneda", assetClass = AssetClass.CRYPTO)
+        val bare = manual("m2", name = "Zeta")
+
+        repository.add(bond)
+        repository.add(coin)
+        repository.add(bare)
+
+        assertEquals(listOf(bond, coin, bare), repository.observeAll().first())
+        assertEquals(
+            listOf(AssetClass.FIXED_INCOME, AssetClass.CRYPTO, null),
+            repository.observeAll().first().map { it.assetClass },
+        )
+        db.close()
+    }
+
+    @Test
+    fun `updating the asset class changes only the class and null clears it back to inferred`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repository = repositoryFor(db)
+        val original = quoted("p1", lastQuote = lastQuote(12_345_678, HOUR_MS), broker = "Openbank")
+        repository.add(original)
+        repository.add(manual("m1"))
+
+        repository.updateAssetClass("p1", AssetClass.MIXED)
+        repository.updateAssetClass("m1", AssetClass.REAL_ESTATE)
+
+        val byId = repository.observeAll().first().associateBy { it.id }
+        assertEquals(original.copy(assetClass = AssetClass.MIXED), byId.getValue("p1"))
+        assertEquals(manual("m1", assetClass = AssetClass.REAL_ESTATE), byId.getValue("m1"))
+
+        repository.updateAssetClass("p1", AssetClass.OTHER)
+        assertEquals(AssetClass.OTHER, repository.observeAll().first().first { it.id == "p1" }.assetClass)
+
+        repository.updateAssetClass("p1", null)
+
+        assertEquals(original, repository.observeAll().first().first { it.id == "p1" })
+        db.close()
+    }
+
+    @Test
+    fun `updating the asset class of an unknown holding is reported`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repository = repositoryFor(db)
+
+        assertFailsWith<PortfolioHoldingNotFoundException> { repository.updateAssetClass("nope", AssetClass.EQUITY) }
+        db.close()
+    }
+
+    @Test
+    fun `an asset class survives a units edit a manual value edit a price refresh and a fundamentals sync`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val source = FakeQuoteSource()
+        source.answer(ref("p1")) { quote("p1", 10_000_000) }
+        val fundamentalsSource = FakeFundamentalsSource().apply { answers["IE00B03HCZ61"] = fundamentals }
+        val repository = repositoryFor(db, source, fundamentals = fundamentalsSource)
+        repository.add(quoted("p1", assetClass = AssetClass.COMMODITIES))
+        repository.add(manual("m1", assetClass = AssetClass.CRYPTO))
+
+        repository.updateUnits("p1", Units(4_000_000))
+        repository.updateManualValue("m1", CurrencyAmount(Money(100_000), Currency.EUR))
+        repository.refreshPrices(force = true)
+        repository.syncFundamentals(null, force = true)
+
+        val byId = repository.observeAll().first().associateBy { it.id }
+        assertEquals(AssetClass.COMMODITIES, byId.getValue("p1").assetClass)
+        assertEquals(fundamentals, byId.getValue("p1").fundamentals)
+        assertEquals(AssetClass.CRYPTO, byId.getValue("m1").assetClass)
+        db.close()
+    }
+
+    @Test
+    fun `without a stored class a synced category gives the holding its inferred class when read`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val bondFundamentals = InstrumentFundamentals(category = "RF Deuda Pública EUR")
+        val fundamentalsSource = FakeFundamentalsSource().apply { answers["IE00B03HCZ61"] = bondFundamentals }
+        val repository = repositoryFor(db, fundamentals = fundamentalsSource)
+        repository.add(quoted("p1"))
+        assertNull(repository.observeAll().first().single().effectiveAssetClass())
+
+        repository.syncFundamentals(null, force = true)
+
+        val synced = repository.observeAll().first().single()
+        assertNull(synced.assetClass)
+        assertEquals(AssetClass.FIXED_INCOME, synced.effectiveAssetClass())
         db.close()
     }
 

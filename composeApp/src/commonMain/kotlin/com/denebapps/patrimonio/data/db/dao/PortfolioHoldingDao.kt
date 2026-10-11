@@ -41,6 +41,10 @@ interface PortfolioHoldingDao {
     @Query("UPDATE portfolio_holdings SET broker = :broker WHERE id = :id")
     suspend fun updateBroker(id: String, broker: String?): Int
 
+    /** Targeted so editing the class never touches the value or the price. @return rows touched (0 or 1). */
+    @Query("UPDATE portfolio_holdings SET assetClass = :assetClass WHERE id = :id")
+    suspend fun updateAssetClass(id: String, assetClass: String?): Int
+
     /** Targeted so a fundamentals sync never touches the value or the price. @return rows touched (0 or 1). */
     @Query(
         "UPDATE portfolio_holdings SET ongoingChargePercentScaled = :ongoingChargePercentScaled, " +

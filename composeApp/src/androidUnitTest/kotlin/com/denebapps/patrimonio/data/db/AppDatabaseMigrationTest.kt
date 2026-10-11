@@ -597,6 +597,77 @@ class AppDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun `migration 11 to 12 keeps every holding and gives it no asset class`() {
+        helper.createDatabase(11).use { connection -> connection.seedVersion11Holdings() }
+
+        helper.runMigrationsAndValidate(12, emptyList()).use { connection ->
+            assertEquals(1L, connection.count("portfolios"))
+            assertEquals(2L, connection.count("portfolio_holdings"))
+            connection.prepare(
+                "SELECT id, portfolioId, name, unitsScaled, valueMinor, broker, category, assetClass " +
+                    "FROM portfolio_holdings ORDER BY id",
+            ).use { rows ->
+                assertTrue(rows.step())
+                assertEquals("p1", rows.getText(0))
+                assertEquals("pf-1", rows.getText(1))
+                assertEquals("Vanguard Global", rows.getText(2))
+                assertEquals(8_100_001L, rows.getLong(3))
+                assertTrue(rows.isNull(4))
+                assertEquals("Openbank", rows.getText(5))
+                assertEquals("RV Global", rows.getText(6))
+                assertTrue(rows.isNull(7), "assetClass must start null: it is inferred when read")
+                assertTrue(rows.step())
+                assertEquals("p2", rows.getText(0))
+                assertEquals(250_000L, rows.getLong(4))
+                assertTrue(rows.isNull(7))
+                assertFalse(rows.step())
+            }
+
+            connection.execSQL("UPDATE portfolio_holdings SET assetClass = 'CRYPTO' WHERE id = 'p2'")
+            connection.prepare("SELECT assetClass FROM portfolio_holdings WHERE id = 'p2'").use { row ->
+                assertTrue(row.step())
+                assertEquals("CRYPTO", row.getText(0))
+            }
+        }
+    }
+
+    @Test
+    fun `a version 11 database opens through the app with its holdings unclassified`() = runBlocking {
+        helper.createDatabase(11).use { connection -> connection.seedVersion11Holdings() }
+
+        val db = Room.databaseBuilder<AppDatabase>(context = context, name = databaseFile.absolutePath)
+            .setDriver(AndroidSQLiteDriver())
+            .configureAppDatabase()
+            .build()
+        try {
+            val holdings = db.portfolioHoldingDao().list()
+            assertEquals(listOf("p1", "p2"), holdings.map { it.id }.sorted())
+            assertTrue(holdings.all { it.assetClass == null })
+        } finally {
+            db.close()
+        }
+    }
+
+    /** Version 11 data: one portfolio with a quoted holding with broker and fundamentals, and a manual one. */
+    private fun SQLiteConnection.seedVersion11Holdings() {
+        execSQL("INSERT INTO portfolios (id, name, sortOrder) VALUES ('pf-1', 'Mi cartera', 0)")
+        val columns = "id, portfolioId, name, type, isin, ticker, kind, provider, providerCode, currency, " +
+            "unitsScaled, priceScaled, priceDateEpochDay, priceFetchedAtEpochMs, valueMinor, valuedAtEpochMs, " +
+            "broker, ongoingChargePercentScaled, riskLevel, category, managementCompany, " +
+            "fundamentalsFetchedAtEpochMs"
+        execSQL(
+            "INSERT INTO portfolio_holdings ($columns) VALUES ('p1', 'pf-1', 'Vanguard Global', 'FUND', " +
+                "'IE00B03HCZ61', NULL, 'QUOTED', 'MORNINGSTAR', '0P00012PP6', 'EUR', 8100001, 12345678, 20000, " +
+                "1000, NULL, NULL, 'Openbank', 1800, 6, 'RV Global', 'Vanguard', 5000)",
+        )
+        execSQL(
+            "INSERT INTO portfolio_holdings ($columns) VALUES ('p2', 'pf-1', 'Cuadro', 'OTHER', NULL, NULL, " +
+                "'MANUAL', NULL, NULL, 'EUR', NULL, NULL, NULL, NULL, 250000, 2000, NULL, NULL, NULL, NULL, NULL, " +
+                "NULL)",
+        )
+    }
+
     /** Version 10 data: a quoted holding with broker and fundamentals, and a manual one with neither. */
     private fun SQLiteConnection.seedVersion10Holdings() {
         val columns = "id, name, type, isin, ticker, kind, provider, providerCode, currency, unitsScaled, " +

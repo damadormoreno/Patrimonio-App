@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.domain.calc
 
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.FxRates
@@ -61,6 +62,7 @@ class InstrumentFitTest {
         wholeUnits: Long = 10,
         price: Price? = eur(100),
         fundamentals: InstrumentFundamentals? = null,
+        assetClass: AssetClass? = null,
     ) = PortfolioHolding(
         id = id,
         portfolioId = TEST_PORTFOLIO_ID,
@@ -75,6 +77,7 @@ class InstrumentFitTest {
             lastQuote = price?.let { LastQuote(it, LocalDate(2026, 10, 9), 1L) },
         ),
         fundamentals = fundamentals,
+        assetClass = assetClass,
     )
 
     private fun manual(id: String, wholeEur: Long, fundamentals: InstrumentFundamentals? = null) = PortfolioHolding(
@@ -116,7 +119,8 @@ class InstrumentFitTest {
         holdings: List<PortfolioHolding>,
         series: Map<String, List<PricePoint>>,
         amount: Money? = null,
-    ) = instrumentFit(candidate, holdings, series, rates, today, amount)
+        assetClass: AssetClass? = null,
+    ) = instrumentFit(candidate, holdings, series, rates, today, amount, assetClass)
 
     private fun assertClose(expected: Double, actual: Double?, tolerance: Double = 1e-6) {
         assertNotNull(actual)
@@ -342,6 +346,74 @@ class InstrumentFitTest {
         assertEquals(Money.ZERO, projection.portfolioTotal)
         assertClose(1.0, projection.newWeight)
         assertNull(projection.concentrationWarning)
+    }
+
+    private fun assertShares(expected: List<Pair<AssetClass?, Double>>, actual: List<AllocationEntry<AssetClass?>>) {
+        assertEquals(expected.map { it.first }, actual.map { it.key })
+        expected.zip(actual).forEach { (pair, entry) -> assertClose(pair.second, entry.share) }
+    }
+
+    /** `h1` is equity (1,000 EUR) through its category; `cash` has no class (1,000 EUR). */
+    private val classifiedHoldings = listOf(
+        quoted("h1", fundamentals = InstrumentFundamentals(category = "RV Global")),
+        manual("cash", 1_000),
+    )
+
+    @Test
+    fun `the projection shows the class mix before and after with the class the user picked`() {
+        val projection = assertNotNull(
+            fit(
+                preview(longSeries, InstrumentFundamentals(category = "RV Global")),
+                classifiedHoldings,
+                twoSeries,
+                Money(100_000),
+                assetClass = AssetClass.CRYPTO,
+            ).projection,
+        )
+
+        assertShares(listOf(AssetClass.EQUITY to 0.5, null to 0.5), projection.classAllocationBefore)
+        // The explicit class wins over the equity class its category would give.
+        assertShares(
+            listOf(AssetClass.EQUITY to 1.0 / 3.0, null to 1.0 / 3.0, AssetClass.CRYPTO to 1.0 / 3.0),
+            projection.classAllocationAfter,
+        )
+        assertEquals(Money(100_000), projection.classAllocationAfter.last().valueEur)
+    }
+
+    @Test
+    fun `without a picked class the projection infers the class of the candidate from its category`() {
+        val projection = assertNotNull(
+            fit(
+                preview(longSeries, InstrumentFundamentals(category = "Mercado Monetario EUR")),
+                classifiedHoldings,
+                twoSeries,
+                Money(300_000),
+            ).projection,
+        )
+
+        assertShares(
+            listOf(AssetClass.MONEY_MARKET to 0.6, AssetClass.EQUITY to 0.2, null to 0.2),
+            projection.classAllocationAfter,
+        )
+    }
+
+    @Test
+    fun `a candidate of unknown class grows the unclassified bucket`() {
+        val result = fit(preview(longSeries), classifiedHoldings, twoSeries, Money(100_000))
+        val projection = assertNotNull(result.projection)
+
+        assertShares(listOf(null to 2.0 / 3.0, AssetClass.EQUITY to 1.0 / 3.0), projection.classAllocationAfter)
+    }
+
+    @Test
+    fun `the class mix of the first product of an empty portfolio is all of it`() {
+        val projection = assertNotNull(
+            fit(preview(longSeries), emptyList(), emptyMap(), Money(50_000), assetClass = AssetClass.COMMODITIES)
+                .projection,
+        )
+
+        assertEquals(emptyList(), projection.classAllocationBefore)
+        assertShares(listOf(AssetClass.COMMODITIES to 1.0), projection.classAllocationAfter)
     }
 
     @Test

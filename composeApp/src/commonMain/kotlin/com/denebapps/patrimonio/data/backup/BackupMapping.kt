@@ -103,6 +103,7 @@ internal fun PortfolioHoldingEntity.toBackup() = PortfolioHoldingBackup(
     riskLevel,
     category,
     managementCompany,
+    assetClass = assetClass,
 )
 
 internal fun PortfolioHoldingBackup.toEntity() = PortfolioHoldingEntity(
@@ -127,4 +128,5 @@ internal fun PortfolioHoldingBackup.toEntity() = PortfolioHoldingEntity(
     riskLevel,
     category,
     managementCompany,
+    assetClass = assetClass,
 )

@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.domain.repository
 
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Units
@@ -44,6 +45,14 @@ interface PortfolioRepository {
      * @throws IllegalArgumentException when the trimmed text is longer than `MAX_BROKER_LENGTH`.
      */
     suspend fun updateBroker(id: String, broker: String?)
+
+    /**
+     * Sets the asset class the user chose for a holding, quoted or manual; `null` clears the choice, leaving the class
+     * to be inferred from the product's category. Price and fundamentals refreshes never change it.
+     *
+     * @throws PortfolioHoldingNotFoundException when there is no such holding.
+     */
+    suspend fun updateAssetClass(id: String, assetClass: AssetClass?)
 
     /** Deletes a holding.
      *
