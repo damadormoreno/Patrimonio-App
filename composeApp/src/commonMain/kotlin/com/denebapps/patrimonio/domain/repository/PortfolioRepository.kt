@@ -29,6 +29,15 @@ interface PortfolioRepository {
      */
     suspend fun updateManualValue(id: String, value: CurrencyAmount)
 
+    /**
+     * Sets the bank or broker of a holding, quoted or manual; `null` or blank clears it. The text is trimmed and
+     * stored as typed otherwise.
+     *
+     * @throws PortfolioHoldingNotFoundException when there is no such holding.
+     * @throws IllegalArgumentException when the trimmed text is longer than `MAX_BROKER_LENGTH`.
+     */
+    suspend fun updateBroker(id: String, broker: String?)
+
     /** Deletes a holding.
      *
      * @throws PortfolioHoldingNotFoundException when there is no such holding.

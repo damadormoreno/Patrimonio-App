@@ -7,6 +7,7 @@ import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.Liability
+import com.denebapps.patrimonio.domain.model.MAX_BROKER_LENGTH
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
@@ -35,17 +36,17 @@ import kotlin.uuid.Uuid
  * hand-edited or corrupted file is rejected with a readable reason instead of failing half-way
  * through an import or crashing a later read.
  *
- * Writes [VERSION] (8). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
+ * Writes [VERSION] (9). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
  * group-link fields, which default to null, v1–v3 files have numeric goal ids, which
  * [upgradeLegacyGoalIds] replaces before decoding, v1–v4 files link a goal to one `linkedAssetId`,
  * which [upgradeSingleLinkedAsset] turns into a list, v1–v5 files have no custom account types nor
  * emojis, which default to empty, v3–v6 files may carry a `subscriptions` section from the removed
- * subscriptions feature, which is ignored like any unknown key, and v1–v7 files have no portfolio holdings,
- * which default to empty.
+ * subscriptions feature, which is ignored like any unknown key, v1–v7 files have no portfolio holdings, which
+ * default to empty, and v1–v8 holdings have no bank or broker, which defaults to null.
  */
 object BackupCodec {
     const val FORMAT = "patrimonio-backup"
-    const val VERSION = 8
+    const val VERSION = 9
 
     private val json = Json {
         prettyPrint = true
@@ -249,10 +250,21 @@ private fun validateHolding(holding: PortfolioHoldingBackup) {
     val label = "El valor de cartera '${holding.name}'"
     if (holding.type !in INSTRUMENT_TYPES) invalid("$label tiene un tipo desconocido: ${holding.type}.")
     if (holding.currency !in CURRENCIES) invalid("$label tiene una divisa no soportada: ${holding.currency}.")
+    if (holding.broker != null) validateBroker(holding.broker, label)
     when (holding.kind) {
         HoldingKind.QUOTED.name -> validateQuotedHolding(holding, label)
         HoldingKind.MANUAL.name -> validateManualHolding(holding, label)
         else -> invalid("$label tiene una clase desconocida: ${holding.kind}.")
+    }
+}
+
+/** Mirrors `normalizeBroker`: a stored broker is trimmed, not blank and within the cap, or reading it would crash. */
+private fun validateBroker(broker: String, label: String) {
+    if (broker.isBlank() || broker != broker.trim()) {
+        invalid("$label tiene un banco o bróker vacío o con espacios sobrantes.")
+    }
+    if (broker.length > MAX_BROKER_LENGTH) {
+        invalid("$label tiene un banco o bróker de más de $MAX_BROKER_LENGTH caracteres.")
     }
 }
 

@@ -37,6 +37,10 @@ interface PortfolioHoldingDao {
     )
     suspend fun updateManualValue(id: String, valueMinor: Long, currency: String, valuedAtEpochMs: Long): Int
 
+    /** Targeted so editing the broker never touches the value or the price. @return rows touched (0 or 1). */
+    @Query("UPDATE portfolio_holdings SET broker = :broker WHERE id = :id")
+    suspend fun updateBroker(id: String, broker: String?): Int
+
     @Query(
         "UPDATE portfolio_holdings SET priceScaled = :priceScaled, priceDateEpochDay = :priceDateEpochDay, " +
             "priceFetchedAtEpochMs = :fetchedAtEpochMs WHERE id = :id AND kind = 'QUOTED'",

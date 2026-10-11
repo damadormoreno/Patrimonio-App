@@ -55,6 +55,8 @@ class BackupCodecTest {
         valuedAtEpochMs = 7,
     )
 
+    private val brokerPainting = painting.copy(id = "p4", broker = "Openbank")
+
     private val full = BackupDocument(
         exportedAt = "2026-10-06T10:00:00Z",
         accountTypes = listOf(watches),
@@ -68,7 +70,7 @@ class BackupCodecTest {
             SavingsGoalAllocationEventBackup(1, "goal-1", 50_000, 1_000),
             SavingsGoalAllocationEventBackup(2, "goal-1", -20_000, 2_000),
         ),
-        portfolioHoldings = listOf(pricedFund, unpricedEtf, painting),
+        portfolioHoldings = listOf(pricedFund, unpricedEtf, painting, brokerPainting),
         savingsGoalLinkEvents = listOf(
             SavingsGoalLinkEventBackup(1, "goal-1", null, "a1", "LINK", 1_000),
             SavingsGoalLinkEventBackup(2, "goal-2", null, null, "LINK", 1_000, fromGroupId = null, toGroupId = "g1"),
@@ -98,7 +100,7 @@ class BackupCodecTest {
         val json = BackupCodec.encode(BackupDocument(exportedAt = "2026-10-06T10:00:00Z"))
 
         assertTrue(""""format": "patrimonio-backup"""" in json, json)
-        assertTrue(""""version": 8""" in json, json)
+        assertTrue(""""version": 9""" in json, json)
         assertTrue(""""portfolioHoldings"""" in json, json)
         assertFalse("subscriptions" in json, json)
     }
@@ -219,10 +221,10 @@ class BackupCodecTest {
     @Test
     fun `newer format version is rejected with an update hint`() {
         val error = assertFailsWith<InvalidBackupException> {
-            BackupCodec.decode("""{"format":"patrimonio-backup","version":9,"exportedAt":"x"}""")
+            BackupCodec.decode("""{"format":"patrimonio-backup","version":10,"exportedAt":"x"}""")
         }
 
-        assertTrue("v9" in error.message.orEmpty())
+        assertTrue("v10" in error.message.orEmpty())
     }
 
     @Test
@@ -259,7 +261,7 @@ class BackupCodecTest {
     @Test
     fun `a version 5 backup has no custom types nor emojis and its built-in types still read`() {
         val json = BackupCodec.encode(BackupDocument(exportedAt = "2026-10-06T10:00:00Z", assets = listOf(asset)))
-            .replace(""""version": 8""", """"version": 5""")
+            .replace(""""version": 9""", """"version": 5""")
             .replace(Regex(""",\s*"emoji": null"""), "")
             .replace(Regex(""",\s*"accountTypes": \[\s*]"""), "")
 
@@ -373,7 +375,7 @@ class BackupCodecTest {
     fun `portfolio holdings of both variants survive a round trip`() {
         val decoded = BackupCodec.decode(BackupCodec.encode(full))
 
-        assertEquals(listOf(pricedFund, unpricedEtf, painting), decoded.portfolioHoldings)
+        assertEquals(listOf(pricedFund, unpricedEtf, painting, brokerPainting), decoded.portfolioHoldings)
     }
 
     @Test
@@ -441,6 +443,44 @@ class BackupCodecTest {
     fun `a quoted holding carries no manual value`() {
         assertTrue("mezcla" in holdingReason(pricedFund.copy(valueMinor = 1)))
         assertTrue("mezcla" in holdingReason(pricedFund.copy(valuedAtEpochMs = 1)))
+    }
+
+    @Test
+    fun `a holding keeps its bank or broker through a round trip and none stays none`() {
+        val withBroker = pricedFund.copy(broker = "MyInvestor")
+
+        assertEquals(listOf(withBroker), roundTrip(withBroker))
+        assertNull(roundTrip(pricedFund).single().broker)
+    }
+
+    @Test
+    fun `a version 8 backup with holdings imports them with no broker`() {
+        val document = BackupCodec.decode(
+            """
+            {
+              "format": "patrimonio-backup",
+              "version": 8,
+              "exportedAt": "2026-10-06T10:00:00Z",
+              "portfolioHoldings": [
+                {"id": "p3", "name": "Cuadro", "type": "OTHER", "kind": "MANUAL", "currency": "USD",
+                 "valueMinor": 250000, "valuedAtEpochMs": 7}
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(listOf(painting), document.portfolioHoldings)
+        assertNull(document.portfolioHoldings.single().broker)
+    }
+
+    @Test
+    fun `a bank or broker must be present text of a sensible length`() {
+        assertTrue("banco o bróker" in holdingReason(pricedFund.copy(broker = "")))
+        assertTrue("banco o bróker" in holdingReason(pricedFund.copy(broker = "   ")))
+        assertTrue("banco o bróker" in holdingReason(pricedFund.copy(broker = " Openbank")))
+        assertTrue("banco o bróker" in holdingReason(pricedFund.copy(broker = "B".repeat(61))))
+        val atCap = pricedFund.copy(broker = "B".repeat(60))
+        assertEquals(listOf(atCap), roundTrip(atCap))
     }
 
     @Test

@@ -168,6 +168,16 @@ class CarteraViewModelTest {
     }
 
     @Test
+    fun `a row carries the bank or broker when the holding has one`() = runTest(dispatcher) {
+        val vm = viewModel(FakePortfolioRepository(listOf(fund.copy(broker = "Openbank"), manual)))
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(listOf("Openbank", null), vm.state.value.rows.map { it.broker })
+        job.cancel()
+    }
+
+    @Test
     fun `the total sums priced holdings in euros and the count covers all of them`() = runTest(dispatcher) {
         val vm = viewModel(FakePortfolioRepository(listOf(fund, usdStock, unpriced, manual)))
         val job = launch { vm.state.collect {} }

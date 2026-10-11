@@ -59,6 +59,7 @@ internal class AddHoldingCallbacks(
     val onNameChange: (String) -> Unit,
     val onTypeChange: (InstrumentType) -> Unit,
     val onCurrencyChange: (Currency) -> Unit,
+    val onBrokerChange: (String) -> Unit,
     val onSave: () -> Unit,
 )
 
@@ -87,6 +88,7 @@ fun AddHoldingSheet(
             onNameChange = viewModel::onNameChange,
             onTypeChange = viewModel::onTypeChange,
             onCurrencyChange = viewModel::onCurrencyChange,
+            onBrokerChange = viewModel::onBrokerChange,
             onSave = viewModel::onSave,
         )
     }
@@ -220,6 +222,8 @@ private fun EntryStep(state: AddHoldingUiState, callbacks: AddHoldingCallbacks) 
     }
     PreviewLine(state.preview)
     Spacer(Modifier.height(20.dp))
+    BrokerField(text = state.broker, onTextChange = callbacks.onBrokerChange)
+    Spacer(Modifier.height(20.dp))
     BackToSearchLink(callbacks, text = "Elegir otro producto")
 }
 
@@ -250,6 +254,8 @@ private fun ManualStep(state: AddHoldingUiState, callbacks: AddHoldingCallbacks)
         lineHeight = 18.sp,
         modifier = Modifier.padding(top = 10.dp),
     )
+    Spacer(Modifier.height(20.dp))
+    BrokerField(text = state.broker, onTextChange = callbacks.onBrokerChange)
     Spacer(Modifier.height(20.dp))
     BackToSearchLink(callbacks)
 }

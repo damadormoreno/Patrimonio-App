@@ -13,6 +13,8 @@ enum class HoldingKind { QUOTED, MANUAL }
  * - `QUOTED`: [provider]/[providerCode], [unitsScaled] (x 1e6) and, once fetched, [priceScaled] (x 1e6, major units),
  *   [priceDateEpochDay] and [priceFetchedAtEpochMs] — all three set together or all null.
  * - `MANUAL`: [valueMinor] and [valuedAtEpochMs].
+ *
+ * [broker] is the optional bank or broker, for either kind; `null` when none was given.
  */
 @Entity(tableName = "portfolio_holdings")
 data class PortfolioHoldingEntity(
@@ -31,4 +33,5 @@ data class PortfolioHoldingEntity(
     val priceFetchedAtEpochMs: Long?,
     val valueMinor: Long?,
     val valuedAtEpochMs: Long?,
+    val broker: String? = null,
 )

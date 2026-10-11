@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.denebapps.patrimonio.ui.components.FormSectionLabel
@@ -61,6 +62,7 @@ fun HoldingDetailSheet(
     HoldingDetailContent(
         state = state,
         onEditChange = viewModel::onEditChange,
+        onBrokerChange = viewModel::onBrokerChange,
         onSave = viewModel::onSave,
         onDelete = viewModel::onDelete,
         onCancel = onNavigateBack,
@@ -72,6 +74,7 @@ fun HoldingDetailSheet(
 internal fun HoldingDetailContent(
     state: HoldingDetailUiState,
     onEditChange: (String) -> Unit,
+    onBrokerChange: (String) -> Unit,
     onSave: () -> Unit,
     onDelete: () -> Unit,
     onCancel: () -> Unit,
@@ -97,7 +100,7 @@ internal fun HoldingDetailContent(
             ) {
                 Identity(state)
                 ValueCard(state, modifier = Modifier.padding(top = 18.dp))
-                EditSection(state, onEditChange, modifier = Modifier.padding(top = 22.dp))
+                EditSection(state, onEditChange, onBrokerChange, modifier = Modifier.padding(top = 22.dp))
                 Text(
                     text = "Eliminar",
                     color = colors.expense,
@@ -154,6 +157,17 @@ private fun Identity(state: HoldingDetailUiState) {
             modifier = Modifier.weight(1f),
         )
     }
+    state.broker?.let {
+        Text(
+            text = it,
+            color = colors.ink2,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 6.dp),
+        )
+    }
 }
 
 /** Current value, with the euro equivalent below when it is in another currency, and the price it comes from. */
@@ -185,7 +199,12 @@ private fun ValueCard(state: HoldingDetailUiState, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun EditSection(state: HoldingDetailUiState, onEditChange: (String) -> Unit, modifier: Modifier = Modifier) {
+private fun EditSection(
+    state: HoldingDetailUiState,
+    onEditChange: (String) -> Unit,
+    onBrokerChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier) {
         if (state.isQuoted) {
             FormSectionLabel("Participaciones")
@@ -195,5 +214,6 @@ private fun EditSection(state: HoldingDetailUiState, onEditChange: (String) -> U
             FixedCurrencyAmountField(text = state.editText, currency = state.currency, onTextChange = onEditChange)
         }
         PreviewLine(state.preview)
+        BrokerField(text = state.brokerText, onTextChange = onBrokerChange, modifier = Modifier.padding(top = 20.dp))
     }
 }

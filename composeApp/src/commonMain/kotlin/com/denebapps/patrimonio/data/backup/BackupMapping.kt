@@ -92,6 +92,7 @@ internal fun PortfolioHoldingEntity.toBackup() = PortfolioHoldingBackup(
     priceFetchedAtEpochMs,
     valueMinor,
     valuedAtEpochMs,
+    broker,
 )
 
 internal fun PortfolioHoldingBackup.toEntity() = PortfolioHoldingEntity(
@@ -110,4 +111,5 @@ internal fun PortfolioHoldingBackup.toEntity() = PortfolioHoldingEntity(
     priceFetchedAtEpochMs,
     valueMinor,
     valuedAtEpochMs,
+    broker,
 )

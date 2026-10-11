@@ -83,6 +83,7 @@ class PortfolioRepositoryTest {
         currency: Currency = Currency.EUR,
         units: Long = 2_500_000,
         lastQuote: LastQuote? = null,
+        broker: String? = null,
     ) = PortfolioHolding(
         id = id,
         name = name,
@@ -90,15 +91,17 @@ class PortfolioRepositoryTest {
         isin = "IE00B03HCZ61",
         ticker = null,
         valuation = HoldingValuation.Quoted(ref(code), currency, Units(units), lastQuote),
+        broker = broker,
     )
 
-    private fun manual(id: String, name: String = id) = PortfolioHolding(
+    private fun manual(id: String, name: String = id, broker: String? = null) = PortfolioHolding(
         id = id,
         name = name,
         type = InstrumentType.OTHER,
         isin = null,
         ticker = null,
         valuation = HoldingValuation.Manual(CurrencyAmount(Money(250_000), Currency.EUR), valuedAtEpochMs = 7L),
+        broker = broker,
     )
 
     private fun lastQuote(scaled: Long, fetchedAgoMs: Long, currency: Currency = Currency.EUR) =
@@ -393,6 +396,91 @@ class PortfolioRepositoryTest {
         assertEquals(0, result.refreshed)
         assertEquals(0, result.upToDate)
         assertEquals(emptyList(), source.calls)
+        db.close()
+    }
+
+    @Test
+    fun `a holding is stored with its broker and without one`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repository = repositoryFor(db)
+        val withBroker = quoted("p1", name = "Amundi", broker = "Openbank")
+        val painting = manual("m1", name = "Cuadro", broker = "MyInvestor")
+        val bare = manual("m2", name = "Zeta")
+
+        repository.add(withBroker)
+        repository.add(painting)
+        repository.add(bare)
+
+        assertEquals(listOf(withBroker, painting, bare), repository.observeAll().first())
+        assertEquals(listOf("Openbank", "MyInvestor", null), repository.observeAll().first().map { it.broker })
+        db.close()
+    }
+
+    @Test
+    fun `updating the broker changes only the broker and can clear it`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repository = repositoryFor(db)
+        val original = quoted("p1", lastQuote = lastQuote(12_345_678, HOUR_MS))
+        repository.add(original)
+        repository.add(manual("m1"))
+
+        repository.updateBroker("p1", "Openbank")
+        repository.updateBroker("m1", "MyInvestor")
+
+        val byId = repository.observeAll().first().associateBy { it.id }
+        assertEquals(original.copy(broker = "Openbank"), byId.getValue("p1"))
+        assertEquals(manual("m1", broker = "MyInvestor"), byId.getValue("m1"))
+
+        repository.updateBroker("p1", null)
+
+        assertEquals(original, repository.observeAll().first().first { it.id == "p1" })
+        db.close()
+    }
+
+    @Test
+    fun `updating the broker trims it, turns a blank one into none and rejects an overlong one`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repository = repositoryFor(db)
+        repository.add(manual("m1", broker = "Openbank"))
+
+        repository.updateBroker("m1", "  MyInvestor ")
+        assertEquals("MyInvestor", repository.observeAll().first().single().broker)
+
+        assertFailsWith<IllegalArgumentException> { repository.updateBroker("m1", "B".repeat(61)) }
+        assertEquals("MyInvestor", repository.observeAll().first().single().broker)
+
+        repository.updateBroker("m1", "   ")
+        assertEquals(null, repository.observeAll().first().single().broker)
+        db.close()
+    }
+
+    @Test
+    fun `updating the broker of an unknown holding is reported`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repository = repositoryFor(db)
+
+        assertFailsWith<PortfolioHoldingNotFoundException> { repository.updateBroker("nope", "Openbank") }
+        db.close()
+    }
+
+    @Test
+    fun `a broker survives a units edit a manual value edit and a price refresh`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val source = FakeQuoteSource()
+        source.answer(ref("p1")) { quote("p1", 10_000_000) }
+        val repository = repositoryFor(db, source)
+        repository.add(quoted("p1", broker = "Openbank"))
+        repository.add(manual("m1", broker = "MyInvestor"))
+
+        repository.updateUnits("p1", Units(4_000_000))
+        repository.updateManualValue("m1", CurrencyAmount(Money(100_000), Currency.EUR))
+        repository.refreshPrices(force = true)
+
+        val byId = repository.observeAll().first().associateBy { it.id }
+        assertEquals("Openbank", byId.getValue("p1").broker)
+        assertEquals(Units(4_000_000), byId.getValue("p1").quotedValuation().units)
+        assertEquals(10_000_000L, byId.getValue("p1").quotedValuation().lastQuote?.price?.scaled)
+        assertEquals("MyInvestor", byId.getValue("m1").broker)
         db.close()
     }
 

@@ -8,6 +8,7 @@ import com.denebapps.patrimonio.domain.model.InstrumentCandidate
 import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.LastQuote
+import com.denebapps.patrimonio.domain.model.MAX_BROKER_LENGTH
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Price
@@ -506,6 +507,92 @@ class AddHoldingViewModelTest {
         )
         runCurrent()
         assertEquals(1, closed.size)
+    }
+
+    @Test
+    fun `a quoted holding is saved with the trimmed bank or broker`() = runTest(dispatcher) {
+        val vm = viewModel()
+        pickFund(vm)
+        vm.onUnitsChange("10")
+        vm.onBrokerChange("  Openbank ")
+
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertEquals("Openbank", repository.current.single().broker)
+    }
+
+    @Test
+    fun `a quoted holding without a bank or broker is saved with none`() = runTest(dispatcher) {
+        val vm = viewModel()
+        pickFund(vm)
+        vm.onUnitsChange("10")
+
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertNull(repository.current.single().broker)
+    }
+
+    @Test
+    fun `a blank broker is saved as none`() = runTest(dispatcher) {
+        val vm = viewModel()
+        pickFund(vm)
+        vm.onUnitsChange("10")
+        vm.onBrokerChange("   ")
+
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertNull(repository.current.single().broker)
+    }
+
+    @Test
+    fun `a manual holding is saved with its bank or broker`() = runTest(dispatcher) {
+        val vm = viewModel()
+        vm.onStartManual()
+        vm.onNameChange("Plan de pensiones")
+        vm.onAmountChange("12500")
+        vm.onBrokerChange("MyInvestor")
+
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertEquals("MyInvestor", repository.current.single().broker)
+    }
+
+    @Test
+    fun `the bank or broker is optional and never decides whether the form can be saved`() = runTest(dispatcher) {
+        val vm = viewModel()
+        pickFund(vm)
+        vm.onBrokerChange("Openbank")
+        assertFalse(vm.state.value.canSave)
+
+        vm.onUnitsChange("10")
+        assertTrue(vm.state.value.canSave)
+        vm.onBrokerChange("")
+        assertTrue(vm.state.value.canSave)
+    }
+
+    @Test
+    fun `the bank or broker field holds at most the maximum length`() = runTest(dispatcher) {
+        val vm = viewModel()
+        pickFund(vm)
+
+        vm.onBrokerChange("B".repeat(MAX_BROKER_LENGTH + 5))
+
+        assertEquals("B".repeat(MAX_BROKER_LENGTH), vm.state.value.broker)
+    }
+
+    @Test
+    fun `going back to the search drops the bank or broker typed so far`() = runTest(dispatcher) {
+        val vm = viewModel()
+        pickFund(vm)
+        vm.onBrokerChange("Openbank")
+
+        vm.onBackToSearch()
+
+        assertEquals("", vm.state.value.broker)
     }
 
     @Test
