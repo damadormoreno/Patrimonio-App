@@ -12,7 +12,8 @@ import kotlinx.serialization.Serializable
  * Version 4 turned savings goal ids into UUID strings and added
  * [SavingsGoalBackup.createdAtEpochMs]; version 5 replaced the single `linkedAssetId` with
  * [SavingsGoalBackup.linkedAssetIds]; version 6 added the user's [accountTypes] and each account's
- * `emoji`, both empty in older files; version 8 added the investment [portfolioHoldings], empty in older files.
+ * `emoji`, both empty in older files; version 8 added the investment [portfolioHoldings], empty in older files;
+ * version 9 added each holding's optional `broker`, null in older files.
  * [BackupCodec] upgrades older files on read.
  *
  * Enum-like fields hold the domain enum `name`s and currencies their ISO code; amounts are minor
@@ -127,7 +128,7 @@ data class SavingsGoalLinkEventBackup(
  * code. A `QUOTED` holding carries [provider], [providerCode] (a `QuoteProvider` name and its instrument code),
  * [unitsScaled] (units x 1,000,000) and, once priced, [priceScaled] (price in major units x 1,000,000),
  * [priceDateEpochDay] and [priceFetchedAtEpochMs] together; a `MANUAL` one carries [valueMinor] (minor units of
- * [currency]) and [valuedAtEpochMs] instead.
+ * [currency]) and [valuedAtEpochMs] instead. [broker] is the optional bank or broker, for either kind.
  */
 @Serializable
 data class PortfolioHoldingBackup(
@@ -146,4 +147,5 @@ data class PortfolioHoldingBackup(
     val priceFetchedAtEpochMs: Long? = null,
     val valueMinor: Long? = null,
     val valuedAtEpochMs: Long? = null,
+    val broker: String? = null,
 )

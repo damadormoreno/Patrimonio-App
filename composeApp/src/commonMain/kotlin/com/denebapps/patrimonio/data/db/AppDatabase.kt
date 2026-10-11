@@ -41,15 +41,17 @@ import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
         AccountTypeEntity::class,
         PortfolioHoldingEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
     // 5 -> 6 only adds the custom account types table and the accounts' nullable emoji column. 6 -> 7 (drops
     // the subscriptions table) is the hand-written MIGRATION_6_7. 7 -> 8 only adds the portfolio holdings table.
+    // 8 -> 9 only adds their nullable broker column.
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
         AutoMigration(from = 5, to = 6),
         AutoMigration(from = 7, to = 8),
+        AutoMigration(from = 8, to = 9),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)

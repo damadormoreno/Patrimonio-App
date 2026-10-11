@@ -5,7 +5,8 @@ import kotlinx.datetime.LocalDate
 /**
  * One position of the investment portfolio. The identity shared by every position lives here; how it is valued is
  * the [valuation]: priced by a quote source ([HoldingValuation.Quoted]) or entered by hand ([HoldingValuation.Manual]).
- * Ids are random UUID strings, like the rest of the app.
+ * Ids are random UUID strings, like the rest of the app. [broker] is the optional bank or broker that manages the
+ * position (free text, kept as typed); it is a property of the holding, whichever way it is valued.
  */
 data class PortfolioHolding(
     val id: String,
@@ -14,11 +15,29 @@ data class PortfolioHolding(
     val isin: String?,
     val ticker: String?,
     val valuation: HoldingValuation,
+    val broker: String? = null,
 ) {
     init {
         require(id.isNotBlank()) { "holding id must not be blank" }
         require(name.isNotBlank()) { "holding name must not be blank" }
+        require(broker == null || normalizeBroker(broker) == broker) {
+            "holding broker must be trimmed, not blank and at most $MAX_BROKER_LENGTH characters"
+        }
     }
+}
+
+/** The longest bank or broker name a holding accepts, after trimming. */
+const val MAX_BROKER_LENGTH = 60
+
+/**
+ * The bank or broker as it is stored: trimmed, `null` when nothing is left, casing untouched.
+ *
+ * @throws IllegalArgumentException when the trimmed text is longer than [MAX_BROKER_LENGTH].
+ */
+fun normalizeBroker(raw: String?): String? {
+    val trimmed = raw?.trim().orEmpty()
+    require(trimmed.length <= MAX_BROKER_LENGTH) { "broker must have at most $MAX_BROKER_LENGTH characters" }
+    return trimmed.ifEmpty { null }
 }
 
 /**

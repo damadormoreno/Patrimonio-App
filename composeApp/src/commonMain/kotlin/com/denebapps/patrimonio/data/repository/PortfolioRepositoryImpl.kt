@@ -18,6 +18,7 @@ import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.Units
+import com.denebapps.patrimonio.domain.model.normalizeBroker
 import com.denebapps.patrimonio.domain.repository.PortfolioHoldingNotFoundException
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.PriceRefreshFailure
@@ -84,6 +85,14 @@ class PortfolioRepositoryImpl(
             check(row.kind == HoldingKind.MANUAL.name) { "Holding '$id' is priced by a quote source, not by hand" }
             dao.updateManualValue(id, value.amount.minorUnits, value.currency.code, clock.now().toEpochMilliseconds())
             snapshotUpserter.refreshCurrentMonth()
+        }
+    }
+
+    override suspend fun updateBroker(id: String, broker: String?) {
+        val normalized = normalizeBroker(broker)
+        seedingGate.await()
+        appDatabase.writeTransaction {
+            if (dao.updateBroker(id, normalized) == 0) throw PortfolioHoldingNotFoundException(id)
         }
     }
 
@@ -164,6 +173,7 @@ private fun toEntity(holding: PortfolioHolding): PortfolioHoldingEntity = when (
         priceFetchedAtEpochMs = valuation.lastQuote?.fetchedAtEpochMs,
         valueMinor = null,
         valuedAtEpochMs = null,
+        broker = holding.broker,
     )
     is HoldingValuation.Manual -> PortfolioHoldingEntity(
         id = holding.id,
@@ -181,6 +191,7 @@ private fun toEntity(holding: PortfolioHolding): PortfolioHoldingEntity = when (
         priceFetchedAtEpochMs = null,
         valueMinor = valuation.value.amount.minorUnits,
         valuedAtEpochMs = valuation.valuedAtEpochMs,
+        broker = holding.broker,
     )
 }
 
@@ -214,5 +225,6 @@ internal fun portfolioHoldingToDomain(row: PortfolioHoldingEntity): PortfolioHol
         isin = row.isin,
         ticker = row.ticker,
         valuation = valuation,
+        broker = row.broker,
     )
 }

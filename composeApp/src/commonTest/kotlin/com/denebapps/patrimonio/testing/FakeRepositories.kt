@@ -24,6 +24,7 @@ import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEvent
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
 import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.model.YearMonth
+import com.denebapps.patrimonio.domain.model.normalizeBroker
 import com.denebapps.patrimonio.domain.repository.AccountGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
@@ -502,6 +503,10 @@ class FakePortfolioRepository(
         val holding = find(id)
         check(holding.valuation is HoldingValuation.Manual) { "Holding '$id' is not a manual holding" }
         replace(holding.copy(valuation = HoldingValuation.Manual(value, valuedAtEpochMs)))
+    }
+
+    override suspend fun updateBroker(id: String, broker: String?) {
+        replace(find(id).copy(broker = normalizeBroker(broker)))
     }
 
     override suspend fun delete(id: String) {

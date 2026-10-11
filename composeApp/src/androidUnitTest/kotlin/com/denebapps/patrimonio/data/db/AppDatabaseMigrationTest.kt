@@ -371,6 +371,50 @@ class AppDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun `migration 8 to 9 keeps every holding and gives it no broker`() {
+        helper.createDatabase(8).use { connection ->
+            connection.execSQL(
+                "INSERT INTO portfolio_holdings (id, name, type, isin, ticker, kind, provider, providerCode, " +
+                    "currency, unitsScaled, priceScaled, priceDateEpochDay, priceFetchedAtEpochMs, valueMinor, " +
+                    "valuedAtEpochMs) VALUES ('p1', 'Vanguard Global', 'FUND', 'IE00B03HCZ61', NULL, 'QUOTED', " +
+                    "'MORNINGSTAR', '0P00012PP6', 'EUR', 8100001, 12345678, 20000, 1000, NULL, NULL)",
+            )
+            connection.execSQL(
+                "INSERT INTO portfolio_holdings (id, name, type, isin, ticker, kind, provider, providerCode, " +
+                    "currency, unitsScaled, priceScaled, priceDateEpochDay, priceFetchedAtEpochMs, valueMinor, " +
+                    "valuedAtEpochMs) VALUES ('p2', 'Cuadro', 'OTHER', NULL, NULL, 'MANUAL', NULL, NULL, " +
+                    "'EUR', NULL, NULL, NULL, NULL, 250000, 2000)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(9, emptyList()).use { connection ->
+            assertEquals(2L, connection.count("portfolio_holdings"))
+            connection.prepare(
+                "SELECT id, name, unitsScaled, valueMinor, broker FROM portfolio_holdings ORDER BY id",
+            ).use { rows ->
+                assertTrue(rows.step())
+                assertEquals("p1", rows.getText(0))
+                assertEquals("Vanguard Global", rows.getText(1))
+                assertEquals(8_100_001L, rows.getLong(2))
+                assertTrue(rows.isNull(3))
+                assertTrue(rows.isNull(4))
+                assertTrue(rows.step())
+                assertEquals("p2", rows.getText(0))
+                assertTrue(rows.isNull(2))
+                assertEquals(250_000L, rows.getLong(3))
+                assertTrue(rows.isNull(4))
+                assertFalse(rows.step())
+            }
+
+            connection.execSQL("UPDATE portfolio_holdings SET broker = 'Openbank' WHERE id = 'p1'")
+            connection.prepare("SELECT broker FROM portfolio_holdings WHERE id = 'p1'").use { row ->
+                assertTrue(row.step())
+                assertEquals("Openbank", row.getText(0))
+            }
+        }
+    }
+
     /** Version 1 data: an asset, two groups (one with a member), two goals (one linked to the asset),
      *  allocation events and one link event. */
     private fun SQLiteConnection.seedVersion1() {
