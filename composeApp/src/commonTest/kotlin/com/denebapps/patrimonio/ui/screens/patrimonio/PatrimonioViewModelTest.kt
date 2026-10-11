@@ -30,6 +30,7 @@ import com.denebapps.patrimonio.testing.FakeLiabilityRepository
 import com.denebapps.patrimonio.testing.FakeNetWorthRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
 import com.denebapps.patrimonio.testing.FakeSavingsGoalRepository
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -76,6 +77,7 @@ class PatrimonioViewModelTest {
 
     private fun manualHolding(id: String, minor: Long, currency: Currency = Currency.EUR) = PortfolioHolding(
         id = id,
+        portfolioId = TEST_PORTFOLIO_ID,
         name = id,
         type = InstrumentType.OTHER,
         isin = null,
@@ -550,6 +552,7 @@ class PatrimonioViewModelTest {
         runTest(dispatcher) {
             val unpriced = PortfolioHolding(
                 id = "u1",
+                portfolioId = TEST_PORTFOLIO_ID,
                 name = "u1",
                 type = InstrumentType.FUND,
                 isin = null,

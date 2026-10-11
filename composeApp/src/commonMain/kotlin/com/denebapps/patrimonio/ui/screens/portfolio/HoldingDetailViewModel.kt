@@ -17,7 +17,9 @@ import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.model.normalizeBroker
 import com.denebapps.patrimonio.domain.repository.FxRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioHoldingNotFoundException
+import com.denebapps.patrimonio.domain.repository.PortfolioNotFoundException
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.ui.components.amountInputText
 import com.denebapps.patrimonio.ui.components.formatMoney
@@ -30,6 +32,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 
@@ -41,7 +44,8 @@ private const val MANUAL_SOURCE = "Valor manual"
  * One holding in detail. [valueText]/[valueEurText] are its current value; [priceText]/[priceDateText] the last
  * price (for a manual holding only the day it was valued). [editText] is the units of a quoted holding or the value
  * of a manual one, in [currency] for the latter; [preview] is what the units come to at the last price. [broker] is
- * the stored bank or broker (shown with the identity) and [brokerText] what the field holds.
+ * the stored bank or broker (shown with the identity) and [brokerText] what the field holds. [portfolios] are the
+ * portfolios to move it to and [portfolioId] the one chosen (its own until the user picks another).
  */
 data class HoldingDetailUiState(
     val loaded: Boolean = false,
@@ -59,25 +63,27 @@ data class HoldingDetailUiState(
     val preview: String? = null,
     val broker: String? = null,
     val brokerText: String = "",
+    val portfolios: List<PortfolioOptionUi> = emptyList(),
+    val portfolioId: String = "",
     val canSave: Boolean = false,
 )
 
+/** What the user typed or picked; `null` for a field left untouched, so it follows the stored value. */
+private data class HoldingEdits(val value: String? = null, val broker: String? = null, val portfolioId: String? = null)
+
 /**
- * Detail sheet of the holding [holdingId]: shows it, edits its units (quoted) or its value (manual) and its bank or
- * broker, and deletes it. What the user types survives price refreshes; the sheet closes through [navigateBack] after a save or a
+ * Detail sheet of the holding [holdingId]: shows it, edits its units (quoted) or its value (manual), its bank or
+ * broker and the portfolio it is in, and deletes it. What the user types survives price refreshes; the sheet closes through [navigateBack] after a save or a
  * delete, and also if the holding disappears while it is open.
  */
 class HoldingDetailViewModel(
     private val holdingId: String,
     private val portfolioRepository: PortfolioRepository,
+    private val portfolios: PortfolioCollectionRepository,
     fxRepository: FxRepository,
     private val zoneProvider: () -> TimeZone,
 ) : ViewModel() {
-    /** What the user typed, `null` while untouched so the field follows the stored value. */
-    private val edit = MutableStateFlow<String?>(null)
-
-    /** Same for the bank or broker field. */
-    private val brokerEdit = MutableStateFlow<String?>(null)
+    private val edits = MutableStateFlow(HoldingEdits())
 
     private val navigateBackChannel = Channel<Unit>(Channel.BUFFERED)
 
@@ -88,11 +94,11 @@ class HoldingDetailViewModel(
 
     val state: StateFlow<HoldingDetailUiState> = combine(
         portfolioRepository.observeAll(),
+        portfolios.observePortfolios(),
         fxRepository.observeRates(),
-        edit,
-        brokerEdit,
-    ) { holdings, rates, typed, typedBroker ->
-        holdings.firstOrNull { it.id == holdingId }?.let { buildState(it, rates, typed, typedBroker) }
+        edits,
+    ) { holdings, allPortfolios, rates, typed ->
+        holdings.firstOrNull { it.id == holdingId }?.let { buildState(it, allPortfolios.toOptions(), rates, typed) }
             ?: HoldingDetailUiState()
     }.stateIn(
         scope = viewModelScope,
@@ -108,13 +114,15 @@ class HoldingDetailViewModel(
         }
     }
 
-    fun onEditChange(text: String) {
-        edit.value = text
-    }
+    fun onEditChange(text: String) = edits.update { it.copy(value = text) }
 
     /** The field holds at most [MAX_BROKER_LENGTH] characters; trimming happens once, when saving. */
-    fun onBrokerChange(text: String) {
-        brokerEdit.value = text.take(MAX_BROKER_LENGTH)
+    fun onBrokerChange(text: String) = edits.update { it.copy(broker = text.take(MAX_BROKER_LENGTH)) }
+
+    /** Moves the holding to [portfolioId] when saved; ignored if there is no such portfolio. */
+    fun onPortfolioChange(portfolioId: String) {
+        if (state.value.portfolios.none { it.id == portfolioId }) return
+        edits.update { it.copy(portfolioId = portfolioId) }
     }
 
     fun onSave() {
@@ -129,8 +137,11 @@ class HoldingDetailViewModel(
                 if (normalizeBroker(form.brokerText) != stored.broker) {
                     portfolioRepository.updateBroker(holdingId, form.brokerText)
                 }
+                if (form.portfolioId != stored.portfolioId) portfolios.moveHolding(holdingId, form.portfolioId)
             } catch (e: PortfolioHoldingNotFoundException) {
                 // Deleted meanwhile: closing is all that is left to do.
+            } catch (e: PortfolioNotFoundException) {
+                // The chosen portfolio was deleted meanwhile: the rest was saved and the holding stays where it was.
             }
             close()
         }
@@ -170,12 +181,14 @@ class HoldingDetailViewModel(
 
     private fun buildState(
         holding: PortfolioHolding,
+        options: List<PortfolioOptionUi>,
         rates: FxRates,
-        typed: String?,
-        typedBroker: String?,
+        typed: HoldingEdits,
     ): HoldingDetailUiState {
         val (valueText, valueEurText) = holdingValueTexts(holding, rates)
-        val brokerText = typedBroker ?: holding.broker.orEmpty()
+        val brokerText = typed.broker ?: holding.broker.orEmpty()
+        // A portfolio picked and deleted since is no longer a choice: the holding's own stands.
+        val portfolioId = typed.portfolioId?.takeIf { id -> options.any { it.id == id } } ?: holding.portfolioId
         val base = HoldingDetailUiState(
             loaded = true,
             name = holding.name,
@@ -185,12 +198,15 @@ class HoldingDetailViewModel(
             valueEurText = valueEurText,
             broker = holding.broker,
             brokerText = brokerText,
+            portfolios = options,
+            portfolioId = portfolioId,
         )
-        // Editing the broker alone may be saved, but never while the units or the value being typed are invalid.
-        val brokerChanged = normalizeBroker(brokerText) != holding.broker
+        // Editing the broker or the portfolio alone may be saved, but never while the units or the value being typed
+        // are invalid.
+        val otherChanged = normalizeBroker(brokerText) != holding.broker || portfolioId != holding.portfolioId
         return when (val valuation = holding.valuation) {
             is HoldingValuation.Quoted -> {
-                val editText = typed ?: unitsInputText(valuation.units)
+                val editText = typed.value ?: unitsInputText(valuation.units)
                 val units = parseUnitsEs(editText)
                 base.copy(
                     source = providerLabel(valuation.ref.provider),
@@ -202,12 +218,12 @@ class HoldingDetailViewModel(
                     preview = units?.let { entered ->
                         valuation.lastQuote?.let { quotedPreview(entered, it.price) }
                     },
-                    canSave = units != null && (units != valuation.units || brokerChanged),
+                    canSave = units != null && (units != valuation.units || otherChanged),
                 )
             }
             is HoldingValuation.Manual -> {
                 val currency = valuation.value.currency
-                val editText = typed ?: amountInputText(valuation.value.amount, currency)
+                val editText = typed.value ?: amountInputText(valuation.value.amount, currency)
                 val minor = parseAmountToMinor(editText, currency)
                 base.copy(
                     source = MANUAL_SOURCE,
@@ -215,7 +231,7 @@ class HoldingDetailViewModel(
                     isQuoted = false,
                     currency = currency,
                     editText = editText,
-                    canSave = minor != null && (minor != valuation.value.amount.minorUnits || brokerChanged),
+                    canSave = minor != null && (minor != valuation.value.amount.minorUnits || otherChanged),
                 )
             }
         }

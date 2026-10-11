@@ -12,6 +12,7 @@ import okio.Path.Companion.toPath
 private val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
 private val FIRST_NAME_KEY = stringPreferencesKey("first_name")
 private val LAST_NAME_KEY = stringPreferencesKey("last_name")
+private val SELECTED_PORTFOLIO_KEY = stringPreferencesKey("selected_portfolio_id")
 
 /** Default theme mode when no preference has been written yet (spec: `datastore-preferences`). */
 private val DEFAULT_THEME_MODE = ThemeMode.SYSTEM
@@ -44,5 +45,15 @@ class PreferencesRepositoryImpl(filePath: String) : PreferencesRepository {
 
     override suspend fun setLastName(value: String) {
         dataStore.edit { it[LAST_NAME_KEY] = value }
+    }
+
+    override fun observeSelectedPortfolioId(): Flow<String?> = dataStore.data.map { prefs ->
+        prefs[SELECTED_PORTFOLIO_KEY]
+    }
+
+    override suspend fun setSelectedPortfolioId(id: String?) {
+        dataStore.edit { prefs ->
+            if (id == null) prefs.remove(SELECTED_PORTFOLIO_KEY) else prefs[SELECTED_PORTFOLIO_KEY] = id
+        }
     }
 }

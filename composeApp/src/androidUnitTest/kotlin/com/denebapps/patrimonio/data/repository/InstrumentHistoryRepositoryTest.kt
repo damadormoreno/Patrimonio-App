@@ -5,6 +5,7 @@ import com.denebapps.patrimonio.data.db.buildInMemoryTestDatabase
 import com.denebapps.patrimonio.data.db.entity.InstrumentPriceEntity
 import com.denebapps.patrimonio.data.db.entity.InstrumentPriceSyncEntity
 import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
+import com.denebapps.patrimonio.data.db.insertTestPortfolio
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.Price
@@ -13,6 +14,7 @@ import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.repository.HistoryUnavailableException
 import com.denebapps.patrimonio.domain.repository.QuoteUnavailableException
 import com.denebapps.patrimonio.testing.FakePriceHistorySource
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.Clock
@@ -70,9 +72,11 @@ class InstrumentHistoryRepositoryTest {
     private val firstDays = (1..9).map { eur(it, 100_000_000L + it) }
 
     private suspend fun holdQuoted(id: String, ref: InstrumentRef) {
+        if (db.portfolioDao().find(TEST_PORTFOLIO_ID) == null) db.insertTestPortfolio()
         db.portfolioHoldingDao().insert(
             PortfolioHoldingEntity(
                 id = id,
+                portfolioId = TEST_PORTFOLIO_ID,
                 name = id,
                 type = "FUND",
                 isin = null,

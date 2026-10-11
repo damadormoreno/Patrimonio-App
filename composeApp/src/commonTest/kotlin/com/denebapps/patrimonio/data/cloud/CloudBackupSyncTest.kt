@@ -231,6 +231,16 @@ class CloudBackupSyncTest {
     }
 
     @Test
+    fun `the portfolios themselves are not records so a device with only the default one is still empty`() {
+        val onlyPortfolios = Json.parseToJsonElement(
+            "{\"assets\":[],\"portfolios\":[{\"id\":\"pf-1\",\"name\":\"Mi cartera\",\"sortOrder\":0}]," +
+                "\"portfolioHoldings\":[]}",
+        ).jsonObject
+
+        assertEquals(0, recordCount(onlyPortfolios))
+    }
+
+    @Test
     fun `an empty device with an old copy without a record count asks too`() = runTest {
         remote.document = cloudCopy("rev-0", records = null)
         links.link = CloudLink("uid-1", "rev-0", 1_000)

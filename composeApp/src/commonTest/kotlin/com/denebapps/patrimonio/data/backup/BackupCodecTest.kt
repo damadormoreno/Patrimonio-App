@@ -20,8 +20,12 @@ class BackupCodecTest {
     private val watches = AccountTypeBackup("t1", "ASSET", "Relojes", "⌚", "GOLD", 0)
     private val watch = AssetBackup("a3", "t1", "Rolex", null, 900_000, "EUR", emoji = "⌚")
 
+    private val miCartera = PortfolioBackup("pf-1", "Mi cartera", 0)
+    private val hijos = PortfolioBackup("pf-2", "Hijos", 1)
+
     private val pricedFund = PortfolioHoldingBackup(
         id = "p1",
+        portfolioId = "pf-1",
         name = "Vanguard Global Stock",
         type = "FUND",
         isin = "IE00B03HCZ61",
@@ -36,6 +40,7 @@ class BackupCodecTest {
     )
     private val unpricedEtf = PortfolioHoldingBackup(
         id = "p2",
+        portfolioId = "pf-1",
         name = "iShares MSCI World",
         type = "ETF",
         ticker = "IWDA.AS",
@@ -47,6 +52,7 @@ class BackupCodecTest {
     )
     private val painting = PortfolioHoldingBackup(
         id = "p3",
+        portfolioId = "pf-1",
         name = "Cuadro",
         type = "OTHER",
         kind = "MANUAL",
@@ -55,7 +61,7 @@ class BackupCodecTest {
         valuedAtEpochMs = 7,
     )
 
-    private val brokerPainting = painting.copy(id = "p4", broker = "Openbank")
+    private val brokerPainting = painting.copy(id = "p4", portfolioId = "pf-2", broker = "Openbank")
 
     private val fundamentalsFund = pricedFund.copy(
         id = "p5",
@@ -78,6 +84,7 @@ class BackupCodecTest {
             SavingsGoalAllocationEventBackup(1, "goal-1", 50_000, 1_000),
             SavingsGoalAllocationEventBackup(2, "goal-1", -20_000, 2_000),
         ),
+        portfolios = listOf(miCartera, hijos),
         portfolioHoldings = listOf(pricedFund, unpricedEtf, painting, brokerPainting, fundamentalsFund),
         savingsGoalLinkEvents = listOf(
             SavingsGoalLinkEventBackup(1, "goal-1", null, "a1", "LINK", 1_000),
@@ -108,8 +115,9 @@ class BackupCodecTest {
         val json = BackupCodec.encode(BackupDocument(exportedAt = "2026-10-06T10:00:00Z"))
 
         assertTrue(""""format": "patrimonio-backup"""" in json, json)
-        assertTrue(""""version": 10""" in json, json)
+        assertTrue(""""version": 11""" in json, json)
         assertTrue(""""portfolioHoldings"""" in json, json)
+        assertTrue(""""portfolios"""" in json, json)
         assertFalse("subscriptions" in json, json)
     }
 
@@ -229,10 +237,10 @@ class BackupCodecTest {
     @Test
     fun `newer format version is rejected with an update hint`() {
         val error = assertFailsWith<InvalidBackupException> {
-            BackupCodec.decode("""{"format":"patrimonio-backup","version":11,"exportedAt":"x"}""")
+            BackupCodec.decode("""{"format":"patrimonio-backup","version":12,"exportedAt":"x"}""")
         }
 
-        assertTrue("v11" in error.message.orEmpty())
+        assertTrue("v12" in error.message.orEmpty())
     }
 
     @Test
@@ -376,6 +384,10 @@ class BackupCodecTest {
     private fun holdingReason(holding: PortfolioHoldingBackup): String =
         reasonFor(full.copy(portfolioHoldings = listOf(holding)))
 
+    /** The reason a file with exactly these [portfolios] (and no holding, which would need one) is refused. */
+    private fun portfolioReason(vararg portfolios: PortfolioBackup): String =
+        reasonFor(full.copy(portfolios = portfolios.toList(), portfolioHoldings = emptyList()))
+
     private fun roundTrip(holding: PortfolioHoldingBackup): List<PortfolioHoldingBackup> =
         BackupCodec.decode(BackupCodec.encode(full.copy(portfolioHoldings = listOf(holding)))).portfolioHoldings
 
@@ -404,6 +416,7 @@ class BackupCodecTest {
 
         assertEquals(listOf(asset), document.assets)
         assertEquals(emptyList(), document.portfolioHoldings)
+        assertEquals(listOf("Mi cartera"), document.portfolios.map { it.name })
     }
 
     @Test
@@ -480,7 +493,7 @@ class BackupCodecTest {
             """.trimIndent(),
         )
 
-        assertEquals(listOf(painting), document.portfolioHoldings)
+        assertEquals(listOf(painting.copy(portfolioId = document.portfolios.single().id)), document.portfolioHoldings)
         assertNull(document.portfolioHoldings.single().broker)
     }
 
@@ -522,7 +535,10 @@ class BackupCodecTest {
             """.trimIndent(),
         )
 
-        assertEquals(listOf(painting.copy(broker = "Openbank")), document.portfolioHoldings)
+        assertEquals(
+            listOf(painting.copy(portfolioId = document.portfolios.single().id, broker = "Openbank")),
+            document.portfolioHoldings,
+        )
         assertNull(document.portfolioHoldings.single().riskLevel)
     }
 
@@ -537,6 +553,112 @@ class BackupCodecTest {
         }
         val atCap = fundamentalsFund.copy(category = "C".repeat(120), riskLevel = 7, ongoingChargePercentScaled = 0)
         assertEquals(listOf(atCap), roundTrip(atCap))
+    }
+
+    @Test
+    fun `portfolios survive a round trip in the order they were saved`() {
+        val decoded = BackupCodec.decode(BackupCodec.encode(full))
+
+        assertEquals(listOf(miCartera, hijos), decoded.portfolios)
+        assertEquals(
+            mapOf("p1" to "pf-1", "p2" to "pf-1", "p3" to "pf-1", "p4" to "pf-2", "p5" to "pf-1"),
+            decoded.portfolioHoldings.associate { it.id to it.portfolioId },
+        )
+    }
+
+    @Test
+    fun `a version 10 backup imports its holdings into a new Mi cartera`() {
+        val document = BackupCodec.decode(
+            """
+            {
+              "format": "patrimonio-backup",
+              "version": 10,
+              "exportedAt": "2026-10-06T10:00:00Z",
+              "portfolioHoldings": [
+                {"id": "p3", "name": "Cuadro", "type": "OTHER", "kind": "MANUAL", "currency": "USD",
+                 "valueMinor": 250000, "valuedAtEpochMs": 7, "broker": "Openbank", "riskLevel": 3},
+                {"id": "p1", "name": "Fondo", "type": "FUND", "kind": "QUOTED", "currency": "EUR",
+                 "provider": "MORNINGSTAR", "providerCode": "0P00012PP6", "unitsScaled": 8100001}
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val portfolio = document.portfolios.single()
+        assertEquals("Mi cartera", portfolio.name)
+        assertEquals(0, portfolio.sortOrder)
+        assertTrue(UUID.matches(portfolio.id), portfolio.id)
+        assertEquals(listOf("p3", "p1"), document.portfolioHoldings.map { it.id })
+        assertEquals(listOf(portfolio.id, portfolio.id), document.portfolioHoldings.map { it.portfolioId })
+        assertEquals("Openbank", document.portfolioHoldings.first().broker)
+        assertEquals(3, document.portfolioHoldings.first().riskLevel)
+    }
+
+    @Test
+    fun `every older backup gets a new Mi cartera of its own even without holdings`() {
+        val v1 = """{"format":"patrimonio-backup","version":1,"exportedAt":"x"}"""
+
+        val first = BackupCodec.decode(v1).portfolios.single()
+        val second = BackupCodec.decode(v1).portfolios.single()
+
+        assertEquals("Mi cartera", first.name)
+        assertTrue(UUID.matches(first.id), first.id)
+        assertNotEquals(first.id, second.id)
+    }
+
+    @Test
+    fun `a version 11 backup keeps exactly the portfolios it has and may have none without holdings`() {
+        val withoutPortfolios = BackupCodec.decode(
+            """{"format":"patrimonio-backup","version":11,"exportedAt":"x"}""",
+        )
+        val oneEmpty = BackupCodec.decode(BackupCodec.encode(full.copy(portfolioHoldings = emptyList())))
+
+        assertEquals(emptyList(), withoutPortfolios.portfolios)
+        assertEquals(listOf(miCartera, hijos), oneEmpty.portfolios)
+    }
+
+    @Test
+    fun `a version 11 holding without a portfolio is rejected`() {
+        val error = assertFailsWith<InvalidBackupException> {
+            BackupCodec.decode(
+                """
+                {
+                  "format": "patrimonio-backup",
+                  "version": 11,
+                  "exportedAt": "x",
+                  "portfolios": [{"id": "pf-1", "name": "Mi cartera", "sortOrder": 0}],
+                  "portfolioHoldings": [
+                    {"id": "p3", "name": "Cuadro", "type": "OTHER", "kind": "MANUAL", "currency": "USD",
+                     "valueMinor": 250000, "valuedAtEpochMs": 7}
+                  ]
+                }
+                """.trimIndent(),
+            )
+        }
+
+        assertTrue("campos" in error.message.orEmpty(), error.message)
+    }
+
+    @Test
+    fun `a holding must be in a portfolio that is in the file`() {
+        assertTrue("cartera que no existe" in holdingReason(pricedFund.copy(portfolioId = "nope")))
+        assertTrue("cartera que no existe" in holdingReason(pricedFund.copy(portfolioId = "")))
+        assertTrue("cartera que no existe" in reasonFor(full.copy(portfolios = emptyList())))
+    }
+
+    @Test
+    fun `portfolios need a unique id and a unique trimmed name of a sensible length`() {
+        assertTrue("id duplicado" in portfolioReason(miCartera, miCartera.copy(name = "Otra")))
+        assertTrue("sin id" in portfolioReason(miCartera.copy(id = " ")))
+        assertTrue("mismo nombre" in portfolioReason(miCartera, hijos.copy(name = "MI CARTERA")))
+        listOf("", "   ", " Hijos", "Hijos ", "H".repeat(41)).forEach { name ->
+            assertTrue("nombre" in portfolioReason(hijos.copy(name = name)), name)
+        }
+        val atCap = hijos.copy(name = "H".repeat(40))
+        assertEquals(
+            listOf(miCartera, atCap),
+            BackupCodec.decode(BackupCodec.encode(full.copy(portfolios = listOf(miCartera, atCap)))).portfolios,
+        )
     }
 
     @Test

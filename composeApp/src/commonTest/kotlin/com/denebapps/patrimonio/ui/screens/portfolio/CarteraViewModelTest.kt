@@ -15,7 +15,10 @@ import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.repository.PriceRefreshFailure
 import com.denebapps.patrimonio.domain.repository.PriceRefreshResult
 import com.denebapps.patrimonio.testing.FakeFxRepository
+import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
+import com.denebapps.patrimonio.testing.FakePreferencesRepository
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -58,6 +61,7 @@ class CarteraViewModelTest {
         type: InstrumentType = InstrumentType.FUND,
     ) = PortfolioHolding(
         id = id,
+        portfolioId = TEST_PORTFOLIO_ID,
         name = name,
         type = type,
         isin = null,
@@ -81,6 +85,7 @@ class CarteraViewModelTest {
     private val unpriced = quoted("new", "Fondo Nuevo", 5_000_000, price = null)
     private val manual = PortfolioHolding(
         id = "art",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Cuadro",
         type = InstrumentType.OTHER,
         isin = null,
@@ -90,6 +95,8 @@ class CarteraViewModelTest {
 
     private fun viewModel(repository: FakePortfolioRepository) = CarteraViewModel(
         portfolioRepository = repository,
+        portfolios = FakePortfolioCollectionRepository(holdings = repository),
+        preferences = FakePreferencesRepository(),
         fxRepository = FakeFxRepository(rates),
         zoneProvider = { TimeZone.UTC },
     )

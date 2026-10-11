@@ -107,11 +107,13 @@ val presentationModule = module {
             initialWithdraw = params.getOrNull() ?: false,
         )
     }
-    viewModel { CarteraViewModel(get(), get(), get<() -> TimeZone>()) }
-    viewModel { AddHoldingViewModel(get(), get(), get()) }
-    viewModel { params -> HoldingDetailViewModel(params.get(), get(), get(), get<() -> TimeZone>()) }
-    viewModel {
+    viewModel { CarteraViewModel(get(), get(), get(), get(), get<() -> TimeZone>()) }
+    viewModel { AddHoldingViewModel(get(), get(), get(), get(), get()) }
+    viewModel { params -> HoldingDetailViewModel(params.get(), get(), get(), get(), get<() -> TimeZone>()) }
+    viewModel { params ->
         PortfolioDetailViewModel(
+            portfolioId = params.getOrNull(),
+            portfolios = get(),
             portfolioRepository = get(),
             fxRepository = get(),
             fxHistoryRepository = get(),
@@ -124,6 +126,7 @@ val presentationModule = module {
         PositionDetailViewModel(
             holdingId = params.get(),
             portfolioRepository = get(),
+            portfolios = get(),
             fxRepository = get(),
             historyRepository = get(),
             clock = get(),

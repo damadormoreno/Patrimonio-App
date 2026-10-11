@@ -17,6 +17,7 @@ import com.denebapps.patrimonio.domain.model.PricePoint
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.UNITS_SCALE
 import com.denebapps.patrimonio.domain.model.Units
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.plus
@@ -164,6 +165,7 @@ class PortfolioAnalyticsTest {
         currency: Currency = price?.currency ?: Currency.EUR,
     ) = PortfolioHolding(
         id = id,
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Holding $id",
         type = type,
         isin = null,
@@ -185,6 +187,7 @@ class PortfolioAnalyticsTest {
         fundamentals: InstrumentFundamentals? = null,
     ) = PortfolioHolding(
         id = id,
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Holding $id",
         type = InstrumentType.OTHER,
         isin = null,

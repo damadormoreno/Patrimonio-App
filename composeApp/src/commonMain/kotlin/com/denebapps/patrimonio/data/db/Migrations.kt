@@ -120,3 +120,45 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
         connection.execSQL("DROP TABLE IF EXISTS `subscriptions`")
     }
 }
+
+/**
+ * 10 -> 11: the investment holdings are grouped in portfolios. Creates `portfolios`, inserts the single portfolio
+ * "Mi cartera" (a random UUID built in SQL like [MIGRATION_3_4]'s goal ids, sort order 0) and rebuilds
+ * `portfolio_holdings` with a NOT NULL `portfolioId` that points at it, since SQLite cannot add a NOT NULL foreign key
+ * column to a table with rows. Every holding keeps all its other columns and lands in "Mi cartera", so nothing about
+ * the net worth changes. The foreign key restricts instead of cascading: deleting a portfolio can never delete
+ * holdings. Same rebuild pattern and final check as [MIGRATION_3_4].
+ */
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(connection: SQLiteConnection) {
+        MIGRATION_10_11_STATEMENTS.forEach(connection::execSQL)
+        connection.prepare("PRAGMA foreign_key_check").use { violations ->
+            check(!violations.step()) { "Migration 10 -> 11 left foreign key violations" }
+        }
+    }
+}
+
+private val MIGRATION_10_11_STATEMENTS = listOf(
+    "CREATE TABLE IF NOT EXISTS `portfolios` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, " +
+        "`sortOrder` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+    "INSERT INTO `portfolios` (`id`, `name`, `sortOrder`) VALUES ($RANDOM_UUID_SQL, 'Mi cartera', 0)",
+    "CREATE TABLE `_new_portfolio_holdings` (`id` TEXT NOT NULL, `portfolioId` TEXT NOT NULL, `name` TEXT NOT NULL, " +
+        "`type` TEXT NOT NULL, `isin` TEXT, `ticker` TEXT, `kind` TEXT NOT NULL, `provider` TEXT, " +
+        "`providerCode` TEXT, `currency` TEXT NOT NULL, `unitsScaled` INTEGER, `priceScaled` INTEGER, " +
+        "`priceDateEpochDay` INTEGER, `priceFetchedAtEpochMs` INTEGER, `valueMinor` INTEGER, " +
+        "`valuedAtEpochMs` INTEGER, `broker` TEXT, `ongoingChargePercentScaled` INTEGER, `riskLevel` INTEGER, " +
+        "`category` TEXT, `managementCompany` TEXT, `fundamentalsFetchedAtEpochMs` INTEGER, PRIMARY KEY(`id`), " +
+        "FOREIGN KEY(`portfolioId`) REFERENCES `portfolios`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+    "INSERT INTO `_new_portfolio_holdings` (`id`, `portfolioId`, `name`, `type`, `isin`, `ticker`, `kind`, " +
+        "`provider`, `providerCode`, `currency`, `unitsScaled`, `priceScaled`, `priceDateEpochDay`, " +
+        "`priceFetchedAtEpochMs`, `valueMinor`, `valuedAtEpochMs`, `broker`, `ongoingChargePercentScaled`, " +
+        "`riskLevel`, `category`, `managementCompany`, `fundamentalsFetchedAtEpochMs`) " +
+        "SELECT h.`id`, (SELECT p.`id` FROM `portfolios` p LIMIT 1), h.`name`, h.`type`, h.`isin`, h.`ticker`, " +
+        "h.`kind`, h.`provider`, h.`providerCode`, h.`currency`, h.`unitsScaled`, h.`priceScaled`, " +
+        "h.`priceDateEpochDay`, h.`priceFetchedAtEpochMs`, h.`valueMinor`, h.`valuedAtEpochMs`, h.`broker`, " +
+        "h.`ongoingChargePercentScaled`, h.`riskLevel`, h.`category`, h.`managementCompany`, " +
+        "h.`fundamentalsFetchedAtEpochMs` FROM `portfolio_holdings` h",
+    "DROP TABLE `portfolio_holdings`",
+    "ALTER TABLE `_new_portfolio_holdings` RENAME TO `portfolio_holdings`",
+    "CREATE INDEX IF NOT EXISTS `index_portfolio_holdings_portfolioId` ON `portfolio_holdings` (`portfolioId`)",
+)

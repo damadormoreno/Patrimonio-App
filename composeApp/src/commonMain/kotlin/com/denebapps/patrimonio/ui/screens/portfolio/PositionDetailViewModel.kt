@@ -14,10 +14,12 @@ import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.HoldingValuation
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.PERCENT_SCALE
+import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.PricePoint
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.InstrumentHistoryRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.ui.components.charts.ChartPoint
 import com.denebapps.patrimonio.ui.components.formatEur
@@ -154,6 +156,9 @@ data class PositionDetailUiState(
 /** The state of the download of this position's data, kept apart from the data itself. */
 private data class SyncState(val running: Boolean, val failed: Boolean = false)
 
+/** Every holding and every portfolio, which together say how much of its portfolio and of the total a position is. */
+private data class Placement(val holdings: List<PortfolioHolding>, val portfolios: List<Portfolio>)
+
 /**
  * Position detail of the holding [holdingId]: its header, the product's price chart over a selectable range, the
  * return per calendar year, annualized returns, volatility and deepest fall, and the provider's product data. The
@@ -165,6 +170,7 @@ private data class SyncState(val running: Boolean, val failed: Boolean = false)
 class PositionDetailViewModel(
     private val holdingId: String,
     private val portfolioRepository: PortfolioRepository,
+    portfolios: PortfolioCollectionRepository,
     fxRepository: FxRepository,
     private val historyRepository: InstrumentHistoryRepository,
     private val clock: Clock,
@@ -188,15 +194,17 @@ class PositionDetailViewModel(
         .distinctUntilChanged()
         .flatMapLatest { ref -> if (ref == null) flowOf(emptyList()) else historyRepository.observe(ref) }
 
+    private val placement = combine(portfolioRepository.observeAll(), portfolios.observePortfolios(), ::Placement)
+
     val state: StateFlow<PositionDetailUiState> = combine(
-        portfolioRepository.observeAll(),
+        placement,
         history,
         fxRepository.observeRates(),
         selectedRange,
         sync,
-    ) { holdings, points, rates, range, syncState ->
-        holdings.firstOrNull { it.id == holdingId }
-            ?.let { buildState(it, holdings, points, rates, range, syncState) }
+    ) { placed, points, rates, range, syncState ->
+        placed.holdings.firstOrNull { it.id == holdingId }
+            ?.let { buildState(it, placed, points, rates, range, syncState) }
             ?: PositionDetailUiState()
     }.stateIn(
         scope = viewModelScope,
@@ -282,7 +290,7 @@ class PositionDetailViewModel(
 
     private fun buildState(
         holding: PortfolioHolding,
-        holdings: List<PortfolioHolding>,
+        placed: Placement,
         points: List<PricePoint>,
         rates: FxRates,
         range: HistoryRange,
@@ -290,7 +298,7 @@ class PositionDetailViewModel(
     ): PositionDetailUiState {
         val base = PositionDetailUiState(
             loaded = true,
-            header = buildHeader(holding, holdings, rates),
+            header = buildHeader(holding, placed, rates),
             product = productData(holding, rates),
         )
         if (holding.valuation !is HoldingValuation.Quoted) return base.copy(note = MANUAL_NOTE)
@@ -313,14 +321,9 @@ class PositionDetailViewModel(
         )
     }
 
-    private fun buildHeader(
-        holding: PortfolioHolding,
-        holdings: List<PortfolioHolding>,
-        rates: FxRates,
-    ): PositionHeaderUi {
+    private fun buildHeader(holding: PortfolioHolding, placed: Placement, rates: FxRates): PositionHeaderUi {
         val (valueText, valueEurText) = holdingValueTexts(holding, rates)
         val source = (holding.valuation as? HoldingValuation.Quoted)?.let { providerLabel(it.ref.provider) }
-        val weight = holdingWeights(holdings, rates).firstOrNull { it.holding.id == holding.id }?.weight
         return PositionHeaderUi(
             name = holding.name,
             typeLabel = instrumentTypeLabel(holding.type),
@@ -331,15 +334,28 @@ class PositionDetailViewModel(
             valueText = valueText,
             valueEurText = valueEurText,
             detailText = holdingDetailLine(holding, zoneProvider()),
-            weightText = weight?.let {
-                "Peso en tu cartera: ${formatPercent(
-                    it,
-                    signed = false,
-                    decimals = WEIGHT_DECIMALS,
-                )}"
-            },
+            weightText = weightText(holding, placed, rates),
         )
     }
+
+    /**
+     * "Peso en «Hijos»: 49,5 %", and with several portfolios also " · 36,1 % del total": the weight of the position in
+     * its own portfolio and in everything. `null` while it has no value.
+     */
+    private fun weightText(holding: PortfolioHolding, placed: Placement, rates: FxRates): String? {
+        val inPortfolio = weightOf(holding, placed.holdings.inPortfolio(holding.portfolioId), rates) ?: return null
+        val portfolioName = placed.portfolios.firstOrNull { it.id == holding.portfolioId }?.name
+        val label = portfolioName?.let { "«$it»" } ?: "tu cartera"
+        val text = "Peso en $label: ${percentText(inPortfolio)}"
+        if (placed.portfolios.size < MIN_PORTFOLIOS_TO_CHOOSE) return text
+        val inTotal = weightOf(holding, placed.holdings, rates) ?: return text
+        return "$text · ${percentText(inTotal)} del total"
+    }
+
+    private fun weightOf(holding: PortfolioHolding, among: List<PortfolioHolding>, rates: FxRates) =
+        holdingWeights(among, rates).firstOrNull { it.holding.id == holding.id }?.weight
+
+    private fun percentText(weight: Double) = formatPercent(weight, signed = false, decimals = WEIGHT_DECIMALS)
 
     private fun annualizedReturns(points: List<PricePoint>): List<FigureUi> = CAGR_YEARS.map { years ->
         val annualized = annualizedReturn(points, years)

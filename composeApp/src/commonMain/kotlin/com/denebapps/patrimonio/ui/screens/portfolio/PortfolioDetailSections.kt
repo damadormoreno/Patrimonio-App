@@ -44,12 +44,12 @@ private const val CAPTION_HINT = "Toca una celda para ver el par."
 
 // ---- header ----------------------------------------------------------------------------------------------
 
-/** The total, how many products there are and how many are quoted or manual. */
+/** The title (the portfolio's name), the total, how many products there are and how many are quoted or manual. */
 @Composable
 internal fun PortfolioHeader(header: PortfolioHeaderUi) {
     val colors = LocalAppColors.current
     Text(
-        text = "Tu cartera",
+        text = header.title,
         color = colors.ink,
         fontSize = 22.sp,
         fontWeight = FontWeight.SemiBold,

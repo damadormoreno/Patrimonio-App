@@ -5,12 +5,19 @@ import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Units
 import kotlinx.coroutines.flow.Flow
 
-/** The user's investment holdings and their latest prices. */
+/**
+ * The user's investment holdings and their latest prices. Which portfolio each one is in is managed by
+ * [PortfolioCollectionRepository].
+ */
 interface PortfolioRepository {
     /** Every holding, ordered by name; re-emits when a holding or its price changes. */
     fun observeAll(): Flow<List<PortfolioHolding>>
 
-    /** Stores a new holding; its id must not exist yet. */
+    /**
+     * Stores a new holding in its [PortfolioHolding.portfolioId]; its id must not exist yet.
+     *
+     * @throws PortfolioNotFoundException when that portfolio does not exist.
+     */
     suspend fun add(holding: PortfolioHolding)
 
     /**

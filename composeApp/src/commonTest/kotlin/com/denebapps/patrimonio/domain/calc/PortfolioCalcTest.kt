@@ -13,6 +13,7 @@ import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.UNITS_SCALE
 import com.denebapps.patrimonio.domain.model.Units
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.datetime.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -27,6 +28,7 @@ class PortfolioCalcTest {
     private fun quoted(units: Units, price: Price?, currency: Currency = price?.currency ?: Currency.EUR) =
         PortfolioHolding(
             id = "h-${units.scaled}-${price?.scaled}",
+            portfolioId = TEST_PORTFOLIO_ID,
             name = "Fund",
             type = InstrumentType.FUND,
             isin = null,
@@ -41,6 +43,7 @@ class PortfolioCalcTest {
 
     private fun manual(amount: Long, currency: Currency) = PortfolioHolding(
         id = "m-$amount-$currency",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Painting",
         type = InstrumentType.OTHER,
         isin = null,

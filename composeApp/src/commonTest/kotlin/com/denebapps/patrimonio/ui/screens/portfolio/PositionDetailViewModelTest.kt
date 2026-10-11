@@ -12,6 +12,7 @@ import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.LastQuote
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.PricePoint
@@ -22,7 +23,9 @@ import com.denebapps.patrimonio.domain.repository.FundamentalsSyncResult
 import com.denebapps.patrimonio.domain.repository.HistoryUnavailableException
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeInstrumentHistoryRepository
+import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -71,6 +74,7 @@ class PositionDetailViewModelTest {
     // 10 units at 245,12 € = 2.451,20 €; ongoing charge 0,18 %.
     private val fund = PortfolioHolding(
         id = "fund",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Fondo Global",
         type = InstrumentType.FUND,
         isin = "IE00B4L5Y983",
@@ -93,6 +97,7 @@ class PositionDetailViewModelTest {
     // 10 shares at 200,00 $ = 2.000,00 $ = 1.840,00 €; ongoing charge 0,5 %.
     private val stock = PortfolioHolding(
         id = "stock",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Acme Corp",
         type = InstrumentType.STOCK,
         isin = null,
@@ -107,6 +112,7 @@ class PositionDetailViewModelTest {
     )
     private val manual = PortfolioHolding(
         id = "art",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Cuadro",
         type = InstrumentType.OTHER,
         isin = null,
@@ -139,6 +145,7 @@ class PositionDetailViewModelTest {
 
     private class Setup(
         val portfolio: FakePortfolioRepository,
+        val portfolios: FakePortfolioCollectionRepository,
         val history: FakeInstrumentHistoryRepository,
         val vm: PositionDetailViewModel,
     )
@@ -147,18 +154,22 @@ class PositionDetailViewModelTest {
         id: String,
         holdings: List<PortfolioHolding> = listOf(fund, stock),
         fundHistory: List<PricePoint> = shortHistory,
+        portfolios: List<Portfolio>? = null,
     ): Setup {
         val portfolio = FakePortfolioRepository(holdings)
         val history = FakeInstrumentHistoryRepository().apply { set(fundRef, fundHistory) }
+        val collection = portfolios?.let { FakePortfolioCollectionRepository(it, portfolio) }
+            ?: FakePortfolioCollectionRepository(holdings = portfolio)
         val vm = PositionDetailViewModel(
             holdingId = id,
             portfolioRepository = portfolio,
+            portfolios = collection,
             fxRepository = FakeFxRepository(rates),
             historyRepository = history,
             clock = clock,
             zoneProvider = { TimeZone.UTC },
         )
-        return Setup(portfolio, history, vm)
+        return Setup(portfolio, collection, history, vm)
     }
 
     private fun TestScope.collect(vm: PositionDetailViewModel): Job = launch { vm.state.collect {} }
@@ -184,7 +195,7 @@ class PositionDetailViewModelTest {
         assertEquals("2.451,20 €", header.valueText)
         assertNull(header.valueEurText)
         assertEquals("10,00 part. · 245,12 € · 09/10/2026", header.detailText)
-        assertEquals("Peso en tu cartera: 57,1 %", header.weightText)
+        assertEquals("Peso en «Mi cartera»: 57,1 %", header.weightText)
         job.cancel()
     }
 
@@ -199,7 +210,7 @@ class PositionDetailViewModelTest {
         assertEquals("ACME · Yahoo Finance", header.identifier)
         assertEquals("2.000,00 $", header.valueText)
         assertEquals("≈ 1.840,00 €", header.valueEurText)
-        assertEquals("Peso en tu cartera: 42,9 %", header.weightText)
+        assertEquals("Peso en «Mi cartera»: 42,9 %", header.weightText)
         assertNull(header.broker)
         job.cancel()
     }
@@ -472,7 +483,7 @@ class PositionDetailViewModelTest {
         assertEquals("", state.header.identifier)
         assertEquals("2.500,00 €", state.header.valueText)
         assertEquals("Valor manual · 10/10/2026", state.header.detailText)
-        assertEquals("Peso en tu cartera: 100,0 %", state.header.weightText)
+        assertEquals("Peso en «Mi cartera»: 100,0 %", state.header.weightText)
         assertEquals(HistoryStatus.NOT_APPLICABLE, state.historyStatus)
         assertNull(state.chart)
         assertTrue(state.ranges.isEmpty())
@@ -657,7 +668,7 @@ class PositionDetailViewModelTest {
         advanceUntilIdle()
 
         assertEquals("4.902,40 €", s.vm.state.value.header.valueText)
-        assertEquals("Peso en tu cartera: 72,7 %", s.vm.state.value.header.weightText)
+        assertEquals("Peso en «Mi cartera»: 72,7 %", s.vm.state.value.header.weightText)
         job.cancel()
     }
 
@@ -675,6 +686,60 @@ class PositionDetailViewModelTest {
         assertNull(state.header.weightText)
         assertNull(state.product?.yearlyCostText)
         assertEquals("0,18 %", state.product?.terText)
+        job.cancel()
+    }
+
+    // ---- weight in the portfolio and in the total ----------------------------------------------------------------
+
+    private val twoPortfolios = listOf(Portfolio(TEST_PORTFOLIO_ID, "Mi cartera", 0), Portfolio("pf-hijos", "Hijos", 1))
+
+    // Mi cartera: the fund (2.451,20 €) and the painting (2.500 €); Hijos: the stock (1.840 €). Total 6.791,20 €.
+    private val split = listOf(fund, stock.copy(portfolioId = "pf-hijos"), manual)
+
+    @Test
+    fun `with several portfolios the weight is given in its portfolio and in the total`() = runTest(dispatcher) {
+        val s = setup("fund", holdings = split, portfolios = twoPortfolios)
+        val job = collect(s.vm)
+        advanceUntilIdle()
+
+        assertEquals("Peso en «Mi cartera»: 49,5 % · 36,1 % del total", s.vm.state.value.header.weightText)
+        job.cancel()
+    }
+
+    @Test
+    fun `a holding alone in its portfolio weighs all of it`() = runTest(dispatcher) {
+        val s = setup("stock", holdings = split, portfolios = twoPortfolios)
+        val job = collect(s.vm)
+        advanceUntilIdle()
+
+        assertEquals("Peso en «Hijos»: 100,0 % · 27,1 % del total", s.vm.state.value.header.weightText)
+        job.cancel()
+    }
+
+    @Test
+    fun `moving the holding to another portfolio changes where its weight is counted`() = runTest(dispatcher) {
+        val s = setup("fund", holdings = split, portfolios = twoPortfolios)
+        val job = collect(s.vm)
+        advanceUntilIdle()
+
+        s.portfolios.moveHolding("fund", "pf-hijos")
+        advanceUntilIdle()
+
+        // 2.451,20 of 4.291,20 in Hijos.
+        assertEquals("Peso en «Hijos»: 57,1 % · 36,1 % del total", s.vm.state.value.header.weightText)
+        job.cancel()
+    }
+
+    @Test
+    fun `renaming the portfolio renames the weight label`() = runTest(dispatcher) {
+        val s = setup("stock", holdings = split, portfolios = twoPortfolios)
+        val job = collect(s.vm)
+        advanceUntilIdle()
+
+        s.portfolios.renamePortfolio("pf-hijos", "Los peques")
+        advanceUntilIdle()
+
+        assertEquals("Peso en «Los peques»: 100,0 % · 27,1 % del total", s.vm.state.value.header.weightText)
         job.cancel()
     }
 }

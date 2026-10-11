@@ -12,6 +12,7 @@ import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.LastQuote
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.PricePoint
@@ -25,8 +26,10 @@ import com.denebapps.patrimonio.domain.repository.HistoryUnavailableException
 import com.denebapps.patrimonio.testing.FakeFxHistoryRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeInstrumentHistoryRepository
+import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
 import com.denebapps.patrimonio.testing.FxSyncCall
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -85,6 +88,7 @@ class PortfolioDetailViewModelTest {
         fundamentals: InstrumentFundamentals? = null,
     ) = PortfolioHolding(
         id = id,
+        portfolioId = TEST_PORTFOLIO_ID,
         name = name,
         type = type,
         isin = null,
@@ -139,6 +143,7 @@ class PortfolioDetailViewModelTest {
 
     private fun manual(euros: Long) = PortfolioHolding(
         id = "art",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Cuadro",
         type = InstrumentType.OTHER,
         isin = null,
@@ -196,6 +201,7 @@ class PortfolioDetailViewModelTest {
 
     private class Setup(
         val portfolio: FakePortfolioRepository,
+        val portfolios: FakePortfolioCollectionRepository,
         val history: FakeInstrumentHistoryRepository,
         val fx: FakeFxHistoryRepository,
         val vm: PortfolioDetailViewModel,
@@ -203,6 +209,8 @@ class PortfolioDetailViewModelTest {
 
     private fun setup(
         holdings: List<PortfolioHolding> = listOf(fund, etf, stock, art),
+        portfolioId: String? = null,
+        portfolios: List<Portfolio>? = null,
         histories: Map<InstrumentRef, List<PricePoint>> = mapOf(
             fundRef to fundSeries,
             etfRef to etfSeries,
@@ -220,7 +228,11 @@ class PortfolioDetailViewModelTest {
             }
         }
         val fx = FakeFxHistoryRepository(fxHistory)
+        val collection = portfolios?.let { FakePortfolioCollectionRepository(it, portfolio) }
+            ?: FakePortfolioCollectionRepository(holdings = portfolio)
         val vm = PortfolioDetailViewModel(
+            portfolioId = portfolioId,
+            portfolios = collection,
             portfolioRepository = portfolio,
             fxRepository = FakeFxRepository(rates),
             fxHistoryRepository = fx,
@@ -229,7 +241,7 @@ class PortfolioDetailViewModelTest {
             zoneProvider = { TimeZone.UTC },
             computationDispatcher = dispatcher,
         )
-        return Setup(portfolio, history, fx, vm)
+        return Setup(portfolio, collection, history, fx, vm)
     }
 
     private fun TestScope.collect(vm: PortfolioDetailViewModel): Job = launch { vm.state.collect {} }
@@ -238,6 +250,95 @@ class PortfolioDetailViewModelTest {
         val job = collect(s.vm)
         advanceUntilIdle()
         return job
+    }
+
+    // ---- one portfolio or all of them ----------------------------------------------------------------------------
+
+    private val twoPortfolios = listOf(Portfolio(TEST_PORTFOLIO_ID, "Mi cartera", 0), Portfolio("pf-hijos", "Hijos", 1))
+
+    // Mi cartera: the fund and the ETF (3.451,20 €); Hijos: the stock and the painting (4.340,00 €).
+    private val split = listOf(fund, etf, stock.copy(portfolioId = "pf-hijos"), art.copy(portfolioId = "pf-hijos"))
+
+    @Test
+    fun `all the portfolios are titled Tu cartera and add up everything`() = runTest(dispatcher) {
+        val s = setup(holdings = split, portfolios = twoPortfolios)
+        val job = open(s)
+
+        val header = s.vm.state.value.header
+        assertEquals("Tu cartera", header.title)
+        assertEquals("7.791,20 €", header.totalText)
+        assertEquals("4 productos", header.productsText)
+        job.cancel()
+    }
+
+    @Test
+    fun `a portfolio is titled with its name and shows only its holdings`() = runTest(dispatcher) {
+        val s = setup(holdings = split, portfolios = twoPortfolios, portfolioId = "pf-hijos")
+        val job = open(s)
+
+        val state = s.vm.state.value
+        assertEquals("Hijos", state.header.title)
+        assertEquals("4.340,00 €", state.header.totalText)
+        assertEquals("2 productos", state.header.productsText)
+        assertEquals("1 con cotización · 1 manual", state.header.mixText)
+        job.cancel()
+    }
+
+    @Test
+    fun `the analysis of a portfolio only counts its own holdings`() = runTest(dispatcher) {
+        val s = setup(holdings = split, portfolios = twoPortfolios, portfolioId = TEST_PORTFOLIO_ID)
+        val job = open(s)
+
+        val state = s.vm.state.value
+        assertEquals("3.451,20 €", state.header.totalText)
+        // The largest holding of Mi cartera is the fund, not the (larger) painting of the other portfolio.
+        assertEquals("Fondo Global", state.concentration?.name)
+        assertEquals(listOf("Fondo", "ETF"), state.allocations.first().rows.map { it.label })
+        assertEquals(HistoryStatus.AVAILABLE, state.historyStatus)
+        job.cancel()
+    }
+
+    @Test
+    fun `a portfolio of manual holdings has no history to draw`() = runTest(dispatcher) {
+        val s = setup(
+            holdings = listOf(art.copy(portfolioId = "pf-hijos"), fund),
+            portfolios = twoPortfolios,
+            portfolioId = "pf-hijos",
+        )
+        val job = open(s)
+
+        assertEquals(HistoryStatus.NOT_APPLICABLE, s.vm.state.value.historyStatus)
+        assertEquals("1 producto", s.vm.state.value.header.productsText)
+        job.cancel()
+    }
+
+    @Test
+    fun `an empty portfolio is loaded with a zero total`() = runTest(dispatcher) {
+        val s = setup(
+            holdings = listOf(fund),
+            portfolios = twoPortfolios + Portfolio("pf-vacia", "Vacía", 2),
+            portfolioId = "pf-vacia",
+        )
+        val job = open(s)
+
+        val state = s.vm.state.value
+        assertTrue(state.loaded)
+        assertEquals("Vacía", state.header.title)
+        assertEquals("0,00 €", state.header.totalText)
+        assertEquals("Sin productos", state.header.productsText)
+        job.cancel()
+    }
+
+    @Test
+    fun `the title follows a rename`() = runTest(dispatcher) {
+        val s = setup(holdings = split, portfolios = twoPortfolios, portfolioId = "pf-hijos")
+        val job = open(s)
+
+        s.portfolios.renamePortfolio("pf-hijos", "Los peques")
+        advanceUntilIdle()
+
+        assertEquals("Los peques", s.vm.state.value.header.title)
+        job.cancel()
     }
 
     // ---- header ----------------------------------------------------------------------------------------------

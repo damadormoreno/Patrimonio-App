@@ -9,6 +9,7 @@ import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.SeedingGate
 import com.denebapps.patrimonio.data.db.configureAppDatabase
 import com.denebapps.patrimonio.data.db.createAppDatabaseBuilder
+import com.denebapps.patrimonio.data.db.dao.PortfolioDao
 import com.denebapps.patrimonio.data.db.dao.PortfolioHoldingDao
 import com.denebapps.patrimonio.data.db.dao.SavingsGoalDao
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
@@ -19,6 +20,7 @@ import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.HoldingValuation
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
@@ -32,6 +34,7 @@ import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.InstrumentHistoryRepository
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.PriceHistorySource
@@ -322,8 +325,10 @@ class KoinModuleTest {
     fun `PortfolioRepository resolves via DI as a singleton and persists through the shared DAO`() = runTest {
         val koin = startTestKoin(fxModule, quotesModule)
         val repository = koin.get<PortfolioRepository>()
+        val portfolioId = koin.get<PortfolioCollectionRepository>().observePortfolios().first().single().id
         val manual = PortfolioHolding(
             id = "painting",
+            portfolioId = portfolioId,
             name = "Cuadro",
             type = InstrumentType.OTHER,
             isin = null,
@@ -336,6 +341,29 @@ class KoinModuleTest {
         assertSame(repository, koin.get<PortfolioRepository>())
         assertSame(koin.get<AppDatabase>().portfolioHoldingDao(), koin.get<PortfolioHoldingDao>())
         assertEquals(listOf(manual), repository.observeAll().first())
+    }
+
+    @Test
+    fun `PortfolioCollectionRepository resolves via DI as a singleton over the shared DAOs`() = runTest {
+        val koin = startTestKoin(fxModule, quotesModule)
+        val portfolios = koin.get<PortfolioCollectionRepository>()
+
+        val created = portfolios.createPortfolio("Jubilación")
+
+        assertSame(portfolios, koin.get<PortfolioCollectionRepository>())
+        assertSame(koin.get<AppDatabase>().portfolioDao(), koin.get<PortfolioDao>())
+        assertEquals(listOf("Mi cartera", "Jubilación"), portfolios.observePortfolios().first().map { it.name })
+        val stored = koin.get<PortfolioDao>().find(created.id)
+        assertEquals(created, stored?.let { Portfolio(it.id, it.name, it.sortOrder) })
+    }
+
+    @Test
+    fun `a fresh database is seeded with a single Mi cartera through DI`() = runTest {
+        val koin = startTestKoin(fxModule, quotesModule)
+
+        val portfolios = koin.get<PortfolioCollectionRepository>().observePortfolios().first()
+
+        assertEquals(listOf("Mi cartera"), portfolios.map { it.name })
     }
 
     @Test

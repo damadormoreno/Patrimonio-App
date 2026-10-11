@@ -5,7 +5,10 @@ import androidx.room.Room
 import androidx.sqlite.driver.AndroidSQLiteDriver
 import androidx.test.core.app.ApplicationProvider
 import com.denebapps.patrimonio.data.db.dao.SavingsGoalDao
+import com.denebapps.patrimonio.data.db.entity.PortfolioEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
+import com.denebapps.patrimonio.domain.model.DEFAULT_PORTFOLIO_NAME
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 
@@ -39,6 +42,13 @@ suspend fun SavingsGoalDao.insertGoalReturningId(goal: SavingsGoalEntity): Strin
 }
 
 /** A [SeedingGate] whose [DatabaseInitializer.ensureSeeded] starts immediately on [this] scope —
- *  used by repository tests that need the FX seed rows. */
+ *  used by repository tests that need the FX seed rows and the default portfolio, whose id is [TEST_PORTFOLIO_ID]. */
 fun CoroutineScope.testSeedingGate(db: AppDatabase): SeedingGate =
-    SeedingGate(this, DatabaseInitializer(db, db.fxRateDao()))
+    SeedingGate(this, DatabaseInitializer(db, db.fxRateDao(), newPortfolioId = { TEST_PORTFOLIO_ID }))
+
+/** Inserts the portfolio [id] for tests that write holdings straight into a database that was not seeded. */
+suspend fun AppDatabase.insertTestPortfolio(
+    id: String = TEST_PORTFOLIO_ID,
+    name: String = DEFAULT_PORTFOLIO_NAME,
+    sortOrder: Int = 0,
+) = portfolioDao().insert(PortfolioEntity(id, name, sortOrder))

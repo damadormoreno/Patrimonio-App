@@ -9,12 +9,15 @@ import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.LastQuote
 import com.denebapps.patrimonio.domain.model.MAX_BROKER_LENGTH
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.testing.FakeFxRepository
+import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -54,6 +57,7 @@ class HoldingDetailViewModelTest {
 
     private val fund = PortfolioHolding(
         id = "fund",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Fondo Global",
         type = InstrumentType.FUND,
         isin = "IE00B4L5Y983",
@@ -67,6 +71,7 @@ class HoldingDetailViewModelTest {
     )
     private val usdStock = PortfolioHolding(
         id = "stock",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Acme Corp",
         type = InstrumentType.STOCK,
         isin = null,
@@ -80,6 +85,7 @@ class HoldingDetailViewModelTest {
     )
     private val unpriced = PortfolioHolding(
         id = "new",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Fondo Nuevo",
         type = InstrumentType.FUND,
         isin = "ES0000000001",
@@ -92,6 +98,7 @@ class HoldingDetailViewModelTest {
     )
     private val manual = PortfolioHolding(
         id = "art",
+        portfolioId = TEST_PORTFOLIO_ID,
         name = "Cuadro",
         type = InstrumentType.OTHER,
         isin = null,
@@ -99,9 +106,14 @@ class HoldingDetailViewModelTest {
         valuation = HoldingValuation.Manual(CurrencyAmount(Money(250_000), Currency.EUR), manualValuedAt),
     )
 
-    private fun viewModel(id: String, repository: FakePortfolioRepository) = HoldingDetailViewModel(
+    private fun viewModel(
+        id: String,
+        repository: FakePortfolioRepository,
+        portfolios: FakePortfolioCollectionRepository = FakePortfolioCollectionRepository(holdings = repository),
+    ) = HoldingDetailViewModel(
         holdingId = id,
         portfolioRepository = repository,
+        portfolios = portfolios,
         fxRepository = FakeFxRepository(rates),
         zoneProvider = { TimeZone.UTC },
     )
@@ -516,6 +528,132 @@ class HoldingDetailViewModelTest {
         assertEquals("11", vm.state.value.editText)
         assertEquals("2.625,00 €", vm.state.value.valueText)
         assertEquals("≈ 2.750,00 €", vm.state.value.preview)
+        job.cancel()
+    }
+
+    // ---- portfolio -----------------------------------------------------------------------------------------------
+
+    private val hijos = Portfolio("pf-hijos", "Hijos", 1)
+
+    private fun twoPortfolios(repository: FakePortfolioRepository) = FakePortfolioCollectionRepository(
+        listOf(Portfolio(TEST_PORTFOLIO_ID, "Mi cartera", 0), hijos),
+        repository,
+    )
+
+    @Test
+    fun `the sheet offers the portfolios and starts on the one the holding is in`() = runTest(dispatcher) {
+        val repository = FakePortfolioRepository(listOf(fund))
+        val vm = viewModel("fund", repository, twoPortfolios(repository))
+        val job = collect(vm)
+        advanceUntilIdle()
+
+        val state = vm.state.value
+        assertEquals(listOf("Mi cartera", "Hijos"), state.portfolios.map { it.name })
+        assertEquals(TEST_PORTFOLIO_ID, state.portfolioId)
+        assertFalse(state.canSave)
+        job.cancel()
+    }
+
+    @Test
+    fun `with a single portfolio there is only one option`() = runTest(dispatcher) {
+        val vm = viewModel("fund", FakePortfolioRepository(listOf(fund)))
+        val job = collect(vm)
+        advanceUntilIdle()
+
+        assertEquals(1, vm.state.value.portfolios.size)
+        job.cancel()
+    }
+
+    @Test
+    fun `choosing another portfolio enables saving and choosing the same one again disables it`() =
+        runTest(dispatcher) {
+            val repository = FakePortfolioRepository(listOf(fund))
+            val vm = viewModel("fund", repository, twoPortfolios(repository))
+            val job = collect(vm)
+            advanceUntilIdle()
+
+            vm.onPortfolioChange("pf-hijos")
+            advanceUntilIdle()
+            assertEquals("pf-hijos", vm.state.value.portfolioId)
+            assertTrue(vm.state.value.canSave)
+
+            vm.onPortfolioChange(TEST_PORTFOLIO_ID)
+            advanceUntilIdle()
+            assertFalse(vm.state.value.canSave)
+            job.cancel()
+        }
+
+    @Test
+    fun `saving only a new portfolio moves the holding and leaves everything else as it was`() = runTest(dispatcher) {
+        val repository = FakePortfolioRepository(listOf(manual), valuedAtEpochMs = stampedAt)
+        val vm = viewModel("art", repository, twoPortfolios(repository))
+        val job = collect(vm)
+        val closed = collectNavigateBack(vm)
+        advanceUntilIdle()
+        vm.onPortfolioChange("pf-hijos")
+        advanceUntilIdle()
+
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertEquals(manual.copy(portfolioId = "pf-hijos"), repository.current.single())
+        assertEquals(1, closed.size)
+        job.cancel()
+    }
+
+    @Test
+    fun `a new portfolio, units and broker edited together are all saved`() = runTest(dispatcher) {
+        val repository = FakePortfolioRepository(listOf(fund))
+        val vm = viewModel("fund", repository, twoPortfolios(repository))
+        val job = collect(vm)
+        val closed = collectNavigateBack(vm)
+        advanceUntilIdle()
+        vm.onEditChange("11,25")
+        vm.onBrokerChange("Openbank")
+        vm.onPortfolioChange("pf-hijos")
+        advanceUntilIdle()
+
+        vm.onSave()
+        advanceUntilIdle()
+
+        val saved = repository.current.single()
+        assertEquals("pf-hijos", saved.portfolioId)
+        assertEquals("Openbank", saved.broker)
+        assertEquals(Units(11_250_000), (saved.valuation as HoldingValuation.Quoted).units)
+        assertEquals(1, closed.size)
+        job.cancel()
+    }
+
+    @Test
+    fun `a chosen portfolio is not saved while the units are invalid`() = runTest(dispatcher) {
+        val repository = FakePortfolioRepository(listOf(fund))
+        val vm = viewModel("fund", repository, twoPortfolios(repository))
+        val job = collect(vm)
+        advanceUntilIdle()
+        vm.onEditChange("0")
+        vm.onPortfolioChange("pf-hijos")
+        advanceUntilIdle()
+
+        assertFalse(vm.state.value.canSave)
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertEquals(TEST_PORTFOLIO_ID, repository.current.single().portfolioId)
+        job.cancel()
+    }
+
+    @Test
+    fun `a portfolio that does not exist cannot be chosen`() = runTest(dispatcher) {
+        val repository = FakePortfolioRepository(listOf(fund))
+        val vm = viewModel("fund", repository, twoPortfolios(repository))
+        val job = collect(vm)
+        advanceUntilIdle()
+
+        vm.onPortfolioChange("pf-deleted")
+        advanceUntilIdle()
+
+        assertEquals(TEST_PORTFOLIO_ID, vm.state.value.portfolioId)
+        assertFalse(vm.state.value.canSave)
         job.cancel()
     }
 }

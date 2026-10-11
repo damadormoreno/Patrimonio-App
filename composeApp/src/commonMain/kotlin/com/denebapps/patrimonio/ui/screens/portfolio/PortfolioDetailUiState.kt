@@ -2,8 +2,14 @@ package com.denebapps.patrimonio.ui.screens.portfolio
 
 // What the portfolio detail screen shows, every text ready to show.
 
-/** The top of the screen: the total in EUR, how many products there are and how many are quoted or manual. */
+/** The title of the detail of every portfolio together; the detail of one is titled with its name. */
+internal const val ALL_PORTFOLIOS_TITLE = "Tu cartera"
+
+/**
+ * The top of the screen: the [title], the total in EUR, how many products there are and how many are quoted or manual.
+ */
 data class PortfolioHeaderUi(
+    val title: String = ALL_PORTFOLIOS_TITLE,
     val totalText: String = "",
     val productsText: String = "",
     val mixText: String? = null,

@@ -23,6 +23,7 @@ internal fun Module.bindDatabaseDependents() {
     single { get<AppDatabase>().netWorthDao() }
     single { get<AppDatabase>().fxRateDao() }
     single { get<AppDatabase>().savingsGoalDao() }
+    single { get<AppDatabase>().portfolioDao() }
     single { get<AppDatabase>().portfolioHoldingDao() }
     single { get<AppDatabase>().instrumentPriceDao() }
     single { get<AppDatabase>().fxHistoryDao() }

@@ -1,6 +1,8 @@
 package com.denebapps.patrimonio.data.db.entity
 
 import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /** Which variant of a portfolio holding a row stores; the columns that only apply to the other one stay null. */
@@ -14,6 +16,9 @@ enum class HoldingKind { QUOTED, MANUAL }
  *   [priceDateEpochDay] and [priceFetchedAtEpochMs] — all three set together or all null.
  * - `MANUAL`: [valueMinor] and [valuedAtEpochMs].
  *
+ * [portfolioId] is the portfolio the holding is in. The foreign key restricts instead of cascading: a portfolio that
+ * still has holdings cannot be deleted, so deleting one never deletes a holding (they are moved first).
+ *
  * [broker] is the optional bank or broker, for either kind; `null` when none was given.
  *
  * The fundamentals a data provider published about the product, for either kind, all `null` when unknown:
@@ -21,9 +26,21 @@ enum class HoldingKind { QUOTED, MANUAL }
  * [fundamentalsFetchedAtEpochMs] is local sync state, not part of the backup: when the provider was last asked, so the
  * lookup runs at most once a day per holding; `null` until then.
  */
-@Entity(tableName = "portfolio_holdings")
+@Entity(
+    tableName = "portfolio_holdings",
+    foreignKeys = [
+        ForeignKey(
+            entity = PortfolioEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["portfolioId"],
+            onDelete = ForeignKey.RESTRICT,
+        ),
+    ],
+    indices = [Index("portfolioId")],
+)
 data class PortfolioHoldingEntity(
     @PrimaryKey val id: String,
+    val portfolioId: String,
     val name: String,
     val type: String,
     val isin: String?,

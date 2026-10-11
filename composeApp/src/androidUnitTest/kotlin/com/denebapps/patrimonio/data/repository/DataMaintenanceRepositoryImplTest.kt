@@ -16,9 +16,11 @@ import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
+import com.denebapps.patrimonio.data.db.insertTestPortfolio
 import com.denebapps.patrimonio.data.db.testSeedingGate
 import com.denebapps.patrimonio.domain.repository.DataMaintenanceRepository
 import com.denebapps.patrimonio.domain.repository.ThemeMode
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.produceIn
 import kotlinx.coroutines.test.runTest
@@ -75,10 +77,17 @@ class DataMaintenanceRepositoryImplTest {
             ),
         )
         db.netWorthDao().upsert(NetWorthSnapshotEntity("2026-06", 10_000, 50_000))
+        db.insertTestPortfolio(id = "portfolio-2", name = "Hijos", sortOrder = 1)
         db.portfolioHoldingDao().insert(
             PortfolioHoldingEntity(
-                "holding-1", "Cuadro", "OTHER", null, null, "MANUAL", null, null, "EUR",
+                "holding-1", TEST_PORTFOLIO_ID, "Cuadro", "OTHER", null, null, "MANUAL", null, null, "EUR",
                 null, null, null, null, 250_000, 1L,
+            ),
+        )
+        db.portfolioHoldingDao().insert(
+            PortfolioHoldingEntity(
+                "holding-2", "portfolio-2", "Fondo", "OTHER", null, null, "MANUAL", null, null, "EUR",
+                null, null, null, null, 100_000, 1L,
             ),
         )
         val price = InstrumentPriceEntity("MORNINGSTAR", "0P00012PP6", 20_000L, 5L, "EUR")
@@ -95,6 +104,7 @@ class DataMaintenanceRepositoryImplTest {
         assertTrue(db.savingsGoalDao().listAllLinkedAssets().isEmpty(), "goal accounts not cleared")
         assertTrue(db.netWorthDao().observeAll().first().isEmpty(), "net-worth snapshots not cleared")
         assertTrue(db.portfolioHoldingDao().list().isEmpty(), "portfolio holdings not cleared")
+        assertEquals(listOf("Mi cartera"), db.portfolioDao().list().map { it.name }, "portfolios not reset")
         assertEquals(0, db.instrumentPriceDao().count(), "price history not cleared")
         assertNull(db.instrumentPriceDao().findSync("MORNINGSTAR", "0P00012PP6"), "price sync state not cleared")
     }
@@ -109,6 +119,35 @@ class DataMaintenanceRepositoryImplTest {
         repository.clearAllFinancialData()
 
         assertAllFinancialTablesEmpty(db)
+        db.close()
+    }
+
+    @Test
+    fun `clear leaves exactly one empty Mi cartera whatever portfolios there were`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        testSeedingGate(db).await()
+        populateAllTables(db)
+        assertEquals(2, db.portfolioDao().count())
+
+        DataMaintenanceRepositoryImpl(db).clearAllFinancialData()
+
+        val portfolio = db.portfolioDao().list().single()
+        assertEquals("Mi cartera", portfolio.name)
+        assertEquals(0, portfolio.sortOrder)
+        assertEquals(0, db.portfolioHoldingDao().countInPortfolio(portfolio.id))
+        db.close()
+    }
+
+    @Test
+    fun `clearing twice still leaves exactly one Mi cartera`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        testSeedingGate(db).await()
+        val repository = DataMaintenanceRepositoryImpl(db)
+
+        repository.clearAllFinancialData()
+        repository.clearAllFinancialData()
+
+        assertEquals(listOf("Mi cartera"), db.portfolioDao().list().map { it.name })
         db.close()
     }
 
