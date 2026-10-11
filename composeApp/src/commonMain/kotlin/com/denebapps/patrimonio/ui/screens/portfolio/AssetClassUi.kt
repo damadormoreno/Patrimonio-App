@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.Color
 import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.inferAssetClass
+import com.denebapps.patrimonio.ui.theme.AppColors
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 
 // How the asset class of a holding is named, chosen and drawn.
@@ -68,17 +69,17 @@ fun assetClassChoice(explicit: AssetClass?, category: String?, type: InstrumentT
 
 /** The color of a class in the bars and legends: one theme token each, so the same class reads the same everywhere. */
 @Composable
-internal fun assetClassColor(assetClass: AssetClass?): Color {
-    val colors = LocalAppColors.current
-    return when (assetClass) {
-        AssetClass.EQUITY -> colors.chartGain
-        AssetClass.FIXED_INCOME -> colors.catHome
-        AssetClass.MONEY_MARKET -> colors.catTrans
-        AssetClass.MIXED -> colors.catSubs
-        AssetClass.COMMODITIES -> colors.catFun
-        AssetClass.REAL_ESTATE -> colors.catRest
-        AssetClass.CRYPTO -> colors.chartLoss
-        AssetClass.OTHER -> colors.brand
-        null -> colors.catOther
-    }
+internal fun assetClassColor(assetClass: AssetClass?): Color = LocalAppColors.current.assetClassColor(assetClass)
+
+/** The token of [assetClass] in this theme; pure, so the palette can be checked without a composition. */
+internal fun AppColors.assetClassColor(assetClass: AssetClass?): Color = when (assetClass) {
+    AssetClass.EQUITY -> classEquity
+    AssetClass.FIXED_INCOME -> classFixedIncome
+    AssetClass.MONEY_MARKET -> classMoneyMarket
+    AssetClass.MIXED -> classMixed
+    AssetClass.COMMODITIES -> classCommodities
+    AssetClass.REAL_ESTATE -> classRealEstate
+    AssetClass.CRYPTO -> classCrypto
+    AssetClass.OTHER -> classOther
+    null -> classUnclassified
 }

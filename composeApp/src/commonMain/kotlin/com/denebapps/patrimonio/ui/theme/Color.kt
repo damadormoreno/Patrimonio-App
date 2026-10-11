@@ -4,7 +4,8 @@ import androidx.compose.ui.graphics.Color
 
 /**
  * Light and dark token instances transcribed 1:1 from `design-reference/tokens.css`
- * (`:root` for light, `[data-theme="dark"]` for dark).
+ * (`:root` for light, `[data-theme="dark"]` for dark), plus the chart tokens added since (`chartPortfolio` and the
+ * `class...` ones), which are tuned against color-vision deficiencies rather than taken from the design.
  */
 val LightColors =
     AppColors(
@@ -39,6 +40,16 @@ val LightColors =
         catOther = Color(0xFF8E8675),
         chartGain = Color(0xFF2F6DA8),
         chartLoss = Color(0xFFBF5B2C),
+        chartPortfolio = Color(0xFF283B4F),
+        classEquity = Color(0xFF3B74B1),
+        classFixedIncome = Color(0xFF889173),
+        classMoneyMarket = Color(0xFF7A95B9),
+        classMixed = Color(0xFF7C5579),
+        classCommodities = Color(0xFFBD9F55),
+        classRealEstate = Color(0xFF975650),
+        classCrypto = Color(0xFFB85D2F),
+        classOther = Color(0xFF544320),
+        classUnclassified = Color(0xFF838A8C),
     )
 
 val DarkColors =
@@ -74,4 +85,14 @@ val DarkColors =
         catOther = Color(0xFFA89F8E),
         chartGain = Color(0xFF5A8ED0),
         chartLoss = Color(0xFFD4733F),
+        chartPortfolio = Color(0xFFD9E4E8),
+        classEquity = Color(0xFF6297DC),
+        classFixedIncome = Color(0xFFB1CFAE),
+        classMoneyMarket = Color(0xFF9AAFC8),
+        classMixed = Color(0xFFA378A5),
+        classCommodities = Color(0xFFF2D28A),
+        classRealEstate = Color(0xFFA37062),
+        classCrypto = Color(0xFFCA6F3C),
+        classOther = Color(0xFFC8A877),
+        classUnclassified = Color(0xFFA79B8D),
     )

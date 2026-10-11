@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
@@ -319,6 +322,27 @@ private fun HoldingsCard(rows: List<HoldingRowUi>, onOpenHolding: (String) -> Un
     }
 }
 
+/** The class of a holding: its color dot, as in the class bars, and its name, muted and on one line. */
+@Composable
+private fun AssetClassTag(text: String, color: Color, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier.padding(top = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Box(Modifier.size(6.dp).background(color, CircleShape))
+        Text(
+            text = text,
+            color = LocalAppColors.current.muted,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+    }
+}
+
 @Composable
 private fun HoldingRow(row: HoldingRowUi, showDivider: Boolean, onClick: () -> Unit) {
     val colors = LocalAppColors.current
@@ -358,6 +382,7 @@ private fun HoldingRow(row: HoldingRowUi, showDivider: Boolean, onClick: () -> U
                 )
                 Pill(text = row.typeLabel)
             }
+            row.assetClassText?.let { AssetClassTag(text = it, color = assetClassColor(row.assetClass)) }
             row.portfolioName?.let {
                 Text(
                     text = it,

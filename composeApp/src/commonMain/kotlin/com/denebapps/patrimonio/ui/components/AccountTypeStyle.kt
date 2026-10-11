@@ -18,6 +18,7 @@ import com.denebapps.patrimonio.domain.model.Asset.AssetGroup
 import com.denebapps.patrimonio.domain.model.Liability.LiabilityGroup
 import com.denebapps.patrimonio.domain.model.TypeColor
 import com.denebapps.patrimonio.ui.icons.AppIcons
+import com.denebapps.patrimonio.ui.theme.AppColors
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 
 private val BUILTIN_TYPE_ICONS: Map<String, ImageVector> by lazy {
@@ -53,7 +54,7 @@ fun TypeBadge(
     cornerRadius: Dp = 9.dp,
 ) {
     Box(
-        modifier = modifier.size(size).background(type.color.toColor(), RoundedCornerShape(cornerRadius)),
+        modifier = modifier.size(size).background(type.toColor(), RoundedCornerShape(cornerRadius)),
         contentAlignment = Alignment.Center,
     ) {
         if (emoji != null) {
@@ -71,16 +72,24 @@ fun TypeBadge(
 
 /** The theme's category colour for [TypeColor]. */
 @Composable
-fun TypeColor.toColor(): Color {
-    val colors = LocalAppColors.current
-    return when (this) {
-        TypeColor.BLUE -> colors.catTrans
-        TypeColor.GREEN -> colors.catSalary
-        TypeColor.SAGE -> colors.catHome
-        TypeColor.TERRACOTTA -> colors.catRest
-        TypeColor.PURPLE -> colors.catSubs
-        TypeColor.GOLD -> colors.catFun
-        TypeColor.CARAMEL -> colors.catFood
-        TypeColor.GREY -> colors.catOther
-    }
+fun TypeColor.toColor(): Color = LocalAppColors.current.typeColor(this)
+
+/** The colour [look] has in the charts and badges: its type colour, or the portfolio's own for the Cartera share. */
+@Composable
+fun TypeLook.toColor(): Color = LocalAppColors.current.typeColor(this)
+
+/** The token of [color] in this theme; pure, so the palette can be checked without a composition. */
+fun AppColors.typeColor(color: TypeColor): Color = when (color) {
+    TypeColor.BLUE -> catTrans
+    TypeColor.GREEN -> catSalary
+    TypeColor.SAGE -> catHome
+    TypeColor.TERRACOTTA -> catRest
+    TypeColor.PURPLE -> catSubs
+    TypeColor.GOLD -> catFun
+    TypeColor.CARAMEL -> catFood
+    TypeColor.GREY -> catOther
 }
+
+/** The token of [look] in this theme. */
+fun AppColors.typeColor(look: TypeLook): Color =
+    if (look.id == PORTFOLIO_TYPE_ID) chartPortfolio else typeColor(look.color)

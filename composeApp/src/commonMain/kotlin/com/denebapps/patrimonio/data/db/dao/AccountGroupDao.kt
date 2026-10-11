@@ -32,11 +32,13 @@ interface AccountGroupDao {
     @Query("SELECT * FROM account_group_members ORDER BY groupId, assetId")
     suspend fun listMembers(): List<AccountGroupMemberEntity>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    /** Adds a new group; an id that already exists fails (ABORT) instead of replacing the row. REPLACE would delete
+     *  the old row first, and that fires `ON DELETE SET NULL` on the goals linked to it and the members' CASCADE. */
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertGroup(group: AccountGroupEntity)
 
-    /** Edits a group in place. Never use [insertGroup] for edits: its REPLACE deletes the row first,
-     *  which cascades to the members and unlinks every savings goal pointing at the group. */
+    /** Edits a group in place, keeping its members and the goals linked to it. Never delete and re-insert a group to
+     *  edit it: that cascades to the members and unlinks every savings goal pointing at the group. */
     @Query("UPDATE account_groups SET name = :name, showBalance = :showBalance WHERE id = :id")
     suspend fun updateGroup(id: String, name: String, showBalance: Boolean): Int
 

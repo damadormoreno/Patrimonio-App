@@ -21,6 +21,12 @@ data class TypeLook(
     val isCustom: Boolean get() = emoji != null
 }
 
+/** Id of the Cartera entry of the composition bar: the investment portfolio is not an account type. */
+const val PORTFOLIO_TYPE_ID = "portfolio"
+
+/** The Cartera share of the assets composition. Its [TypeLook.color] is never drawn: see `typeColor`. */
+val PORTFOLIO_LOOK = TypeLook(PORTFOLIO_TYPE_ID, "Cartera", TypeColor.GREEN)
+
 /** Labels from `design-reference/shared.jsx`'s `ASSET_GROUPS` and `LIAB_GROUPS`, plus the types added
  *  since. Built-in ids never repeat between assets and liabilities. */
 private val BUILTIN_TYPES = listOf(
