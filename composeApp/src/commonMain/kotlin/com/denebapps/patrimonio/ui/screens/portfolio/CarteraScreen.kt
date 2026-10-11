@@ -56,7 +56,7 @@ import org.koin.compose.viewmodel.koinViewModel
 /**
  * Cartera tab: the portfolio total, the holdings valued at their latest price, and a price refresh (header button or
  * pull down). [onAddHolding] opens the add form (the FAB does too, see `MainScaffold`); [onOpenHolding] opens one
- * holding's detail.
+ * holding's detail and [onOpenPortfolio] (the portfolio total) the detail of the whole portfolio.
  */
 @Composable
 fun CarteraScreen(
@@ -64,6 +64,7 @@ fun CarteraScreen(
     viewModel: CarteraViewModel = koinViewModel(),
     onAddHolding: () -> Unit = {},
     onOpenHolding: (String) -> Unit = {},
+    onOpenPortfolio: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     CarteraContent(
@@ -72,6 +73,7 @@ fun CarteraScreen(
         onDismissMessage = viewModel::onMessageDismiss,
         onAddHolding = onAddHolding,
         onOpenHolding = onOpenHolding,
+        onOpenPortfolio = onOpenPortfolio,
         modifier = modifier,
     )
 }
@@ -84,6 +86,7 @@ internal fun CarteraContent(
     onDismissMessage: () -> Unit,
     onAddHolding: () -> Unit,
     onOpenHolding: (String) -> Unit,
+    onOpenPortfolio: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAppColors.current
@@ -102,7 +105,7 @@ internal fun CarteraContent(
             Column(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
             ) {
-                TotalCard(total = state.total)
+                TotalCard(total = state.total, onClick = onOpenPortfolio.takeUnless { state.isEmpty })
                 state.refreshMessage?.let { message ->
                     RefreshNotice(
                         message = message,
@@ -163,9 +166,9 @@ private fun RefreshButton(refreshing: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** The portfolio total in EUR, big, in the style of the net-worth card. */
+/** The portfolio total in EUR, big, in the style of the net-worth card; with an [onClick] it opens the detail. */
 @Composable
-private fun TotalCard(total: Money, modifier: Modifier = Modifier) {
+private fun TotalCard(total: Money, onClick: (() -> Unit)?, modifier: Modifier = Modifier) {
     val colors = LocalAppColors.current
     val shapes = LocalAppShapes.current
     val amount = formatEur(total).removeSuffix(" €")
@@ -180,6 +183,14 @@ private fun TotalCard(total: Money, modifier: Modifier = Modifier) {
                 shape = RoundedCornerShape(shapes.xl),
             )
             .border(width = 1.dp, color = colors.line, shape = RoundedCornerShape(shapes.xl))
+            .clip(RoundedCornerShape(shapes.xl))
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(onClickLabel = "Ver detalle de la cartera", onClick = onClick)
+                } else {
+                    Modifier
+                },
+            )
             .padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 18.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -191,6 +202,16 @@ private fun TotalCard(total: Money, modifier: Modifier = Modifier) {
                 letterSpacing = 1.2.sp,
             )
             Pill(text = "EUR · €")
+            if (onClick != null) {
+                Spacer(Modifier.weight(1f))
+                Text(text = "Ver detalle", color = colors.ink2, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Icon(
+                    imageVector = AppIcons.chevronR,
+                    contentDescription = null,
+                    tint = colors.ink2,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
         }
         Row(
             modifier = Modifier.padding(top = 10.dp),

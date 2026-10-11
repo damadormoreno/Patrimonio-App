@@ -79,6 +79,10 @@ object AddHolding
 @Serializable
 data class PositionDetail(val holdingId: String)
 
+/** Portfolio detail: value over time, correlation between products, split, costs and concentration (pushed). */
+@Serializable
+object PortfolioDetail
+
 /** Edit sheet of one portfolio holding: its value, units to edit, and delete; opened from [PositionDetail]. */
 @Serializable
 data class HoldingDetail(val holdingId: String)

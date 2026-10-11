@@ -1,9 +1,12 @@
 package com.denebapps.patrimonio.testing
 
+import com.denebapps.patrimonio.domain.model.Currency
+import com.denebapps.patrimonio.domain.model.FxHistory
 import com.denebapps.patrimonio.domain.model.InstrumentFundamentals
 import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.PricePoint
 import com.denebapps.patrimonio.domain.repository.FundamentalsSource
+import com.denebapps.patrimonio.domain.repository.FxHistoryRepository
 import com.denebapps.patrimonio.domain.repository.HistorySyncResult
 import com.denebapps.patrimonio.domain.repository.InstrumentHistoryRepository
 import com.denebapps.patrimonio.domain.repository.PriceHistorySource
@@ -61,6 +64,7 @@ class FakeFundamentalsSource : FundamentalsSource {
 /**
  * In-memory [InstrumentHistoryRepository] for ViewModel tests: [set] stores the history of a ref (and re-emits it),
  * [sync] records `(ref, force)` in [syncCalls], suspends on [syncGate] when one is set, and throws [syncFailure].
+ * [syncAll] records `(refs, force)` in [syncAllCalls], with the same gate and failure, and answers [syncAllResult].
  */
 class FakeInstrumentHistoryRepository : InstrumentHistoryRepository {
     private val series = mutableMapOf<InstrumentRef, MutableStateFlow<List<PricePoint>>>()
@@ -68,6 +72,9 @@ class FakeInstrumentHistoryRepository : InstrumentHistoryRepository {
     val syncCalls = mutableListOf<Pair<InstrumentRef, Boolean>>()
     var syncFailure: Throwable? = null
     var syncGate: CompletableDeferred<Unit>? = null
+
+    val syncAllCalls = mutableListOf<Pair<Set<InstrumentRef>, Boolean>>()
+    var syncAllResult = HistorySyncResult(synced = 0, upToDate = 0, failures = emptyList())
 
     fun set(ref: InstrumentRef, points: List<PricePoint>) {
         flowOf(ref).value = points
@@ -81,8 +88,39 @@ class FakeInstrumentHistoryRepository : InstrumentHistoryRepository {
         syncFailure?.let { throw it }
     }
 
-    override suspend fun syncAll(refs: Collection<InstrumentRef>, force: Boolean): HistorySyncResult =
-        HistorySyncResult(synced = 0, upToDate = 0, failures = emptyList())
+    override suspend fun syncAll(refs: Collection<InstrumentRef>, force: Boolean): HistorySyncResult {
+        syncAllCalls += refs.toSet() to force
+        syncGate?.await()
+        syncFailure?.let { throw it }
+        return syncAllResult
+    }
 
     private fun flowOf(ref: InstrumentRef) = series.getOrPut(ref) { MutableStateFlow(emptyList()) }
+}
+
+/** One recorded [FxHistoryRepository.sync] call. */
+data class FxSyncCall(val currencies: Set<Currency>, val from: LocalDate, val force: Boolean)
+
+/**
+ * In-memory [FxHistoryRepository] for ViewModel tests: [set] stores the history (and re-emits it), [sync] records its
+ * call in [syncCalls], suspends on [syncGate] when one is set, and throws [syncFailure].
+ */
+class FakeFxHistoryRepository(initial: FxHistory = FxHistory(emptyMap())) : FxHistoryRepository {
+    private val backing = MutableStateFlow(initial)
+
+    val syncCalls = mutableListOf<FxSyncCall>()
+    var syncFailure: Throwable? = null
+    var syncGate: CompletableDeferred<Unit>? = null
+
+    fun set(history: FxHistory) {
+        backing.value = history
+    }
+
+    override fun observe(): Flow<FxHistory> = backing
+
+    override suspend fun sync(currencies: Set<Currency>, from: LocalDate, force: Boolean) {
+        syncCalls += FxSyncCall(currencies, from, force)
+        syncGate?.await()
+        syncFailure?.let { throw it }
+    }
 }

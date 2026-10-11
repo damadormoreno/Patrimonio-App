@@ -12,6 +12,7 @@ import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.AddHoldingViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.CarteraViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.HoldingDetailViewModel
+import com.denebapps.patrimonio.ui.screens.portfolio.PortfolioDetailViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.PositionDetailViewModel
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
 import com.denebapps.patrimonio.ui.screens.settings.AccountTypesViewModel
@@ -109,6 +110,16 @@ val presentationModule = module {
     viewModel { CarteraViewModel(get(), get(), get<() -> TimeZone>()) }
     viewModel { AddHoldingViewModel(get(), get(), get()) }
     viewModel { params -> HoldingDetailViewModel(params.get(), get(), get(), get<() -> TimeZone>()) }
+    viewModel {
+        PortfolioDetailViewModel(
+            portfolioRepository = get(),
+            fxRepository = get(),
+            fxHistoryRepository = get(),
+            historyRepository = get(),
+            clock = get(),
+            zoneProvider = get<() -> TimeZone>(),
+        )
+    }
     viewModel { params ->
         PositionDetailViewModel(
             holdingId = params.get(),

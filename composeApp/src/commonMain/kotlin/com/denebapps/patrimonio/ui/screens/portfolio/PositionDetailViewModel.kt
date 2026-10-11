@@ -4,22 +4,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.denebapps.patrimonio.domain.calc.HistoryRange
 import com.denebapps.patrimonio.domain.calc.annualizedReturn
-import com.denebapps.patrimonio.domain.calc.calendarYearReturns
 import com.denebapps.patrimonio.domain.calc.holdingWeights
-import com.denebapps.patrimonio.domain.calc.maxDrawdown
 import com.denebapps.patrimonio.domain.calc.mulDivHalfEven
-import com.denebapps.patrimonio.domain.calc.pointsIn
-import com.denebapps.patrimonio.domain.calc.rangeChange
 import com.denebapps.patrimonio.domain.calc.toEur
 import com.denebapps.patrimonio.domain.calc.value
-import com.denebapps.patrimonio.domain.calc.volatility
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.HoldingValuation
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.PERCENT_SCALE
-import com.denebapps.patrimonio.domain.model.PRICE_SCALE
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.PricePoint
 import com.denebapps.patrimonio.domain.repository.FxRepository
@@ -47,7 +41,6 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
-import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
 
@@ -297,14 +290,14 @@ class PositionDetailViewModel(
             )
         }
         val today = clock.todayIn(zoneProvider())
-        val (ranges, chart) = buildChart(points, range, today)
+        val (ranges, chart) = priceChartUi(points, range, today)
         return withSync.copy(
             historyStatus = HistoryStatus.AVAILABLE,
             ranges = ranges,
             chart = chart,
-            yearReturns = yearReturns(points, today),
+            yearReturns = yearReturnsUi(points, today),
             annualized = annualizedReturns(points),
-            risk = riskOf(points, today),
+            risk = riskUi(points, today),
             syncError = syncState.failed,
         )
     }
@@ -337,70 +330,12 @@ class PositionDetailViewModel(
         )
     }
 
-    /** The range chips and the chart of the selected range, or of all the history if that one has no data. */
-    private fun buildChart(
-        points: List<PricePoint>,
-        selected: HistoryRange,
-        today: LocalDate,
-    ): Pair<List<RangeChipUi>, ChartUi> {
-        val byRange = HistoryRange.entries.associateWith { pointsIn(points, it, today) }
-        val shown = if ((byRange.getValue(selected).size) >= MIN_CHART_POINTS) selected else HistoryRange.MAX
-        val chips = HistoryRange.entries.map {
-            RangeChipUi(
-                it,
-                rangeLabel(it),
-                enabled = byRange.getValue(it).size >= MIN_CHART_POINTS,
-                selected = it == shown,
-            )
-        }
-        val prices = byRange.getValue(shown)
-        val currency = prices.last().price.currency
-        val change = rangeChange(prices)
-        val chart = ChartUi(
-            points = prices.map {
-                ChartPoint(
-                    it.date.toEpochDays().toLong(),
-                    it.price.scaled / PRICE_SCALE.toDouble(),
-                )
-            },
-            prices = prices,
-            currency = currency,
-            changeText = change?.let { rangeChangeText(it, currency) },
-            changeTone = change?.let { toneOf(it.relative) } ?: PerformanceTone.NEUTRAL,
-            minText = "Mín ${formatPrice(prices.minBy { it.price.scaled }.price)}",
-            maxText = "Máx ${formatPrice(prices.maxBy { it.price.scaled }.price)}",
-            firstDateText = formatShortDate(prices.first().date),
-            lastDateText = formatShortDate(prices.last().date),
-        )
-        return chips to chart
-    }
-
-    private fun yearReturns(points: List<PricePoint>, today: LocalDate): List<YearReturnUi> =
-        calendarYearReturns(points, today).map {
-            YearReturnUi(
-                yearReturnLabel(it, points.first().date),
-                formatPercent(it.returnRatio),
-                toneOf(it.returnRatio),
-            )
-        }
-
     private fun annualizedReturns(points: List<PricePoint>): List<FigureUi> = CAGR_YEARS.map { years ->
         val annualized = annualizedReturn(points, years)
         FigureUi(
             label = annualizedLabel(years),
             valueText = annualized?.let { formatPercent(it) } ?: NO_FIGURE_TEXT,
             tone = annualized?.let { toneOf(it) } ?: PerformanceTone.NEUTRAL,
-        )
-    }
-
-    private fun riskOf(points: List<PricePoint>, today: LocalDate): RiskUi {
-        val volatility = volatility(points, today)
-        val drawdown = maxDrawdown(points)
-        return RiskUi(
-            volatilityLabel = volatilityLabel(volatility, points.first().date, today),
-            volatilityText = volatility?.let { formatPercent(it.annualized, signed = false) } ?: NO_FIGURE_TEXT,
-            drawdownText = drawdown?.let { formatPercent(-it.fall) } ?: NO_FIGURE_TEXT,
-            drawdownDates = drawdown?.takeIf { it.fall > 0 }?.let(::drawdownDatesText),
         )
     }
 
@@ -424,10 +359,5 @@ class PositionDetailViewModel(
             value.currency,
         )
         return "≈ ${formatEur(cost.toEur(rates))}/año con tu posición"
-    }
-
-    private companion object {
-        /** A chart needs a line, that is two points. */
-        const val MIN_CHART_POINTS = 2
     }
 }

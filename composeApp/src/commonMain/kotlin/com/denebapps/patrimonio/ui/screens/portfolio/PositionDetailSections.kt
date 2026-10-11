@@ -129,8 +129,9 @@ internal fun HistoryLoadingCard(modifier: Modifier = Modifier) {
 }
 
 /**
- * The price chart of the product with its range chips and the change over the range. Pressing and dragging over the
- * chart replaces the change with the date and price of the point under the finger.
+ * The chart of a price series with its range chips and the change over the range. Pressing and dragging over the
+ * chart replaces the change with the date and price of the point under the finger. [changeLabel] and [scrubLabel]
+ * name the two readings ("VARIACIÓN DEL PRECIO" and "PRECIO" for a product).
  */
 @Composable
 internal fun ChartCard(
@@ -138,6 +139,8 @@ internal fun ChartCard(
     ranges: List<RangeChipUi>,
     onRangeSelect: (HistoryRange) -> Unit,
     modifier: Modifier = Modifier,
+    changeLabel: String = "VARIACIÓN DEL PRECIO",
+    scrubLabel: String = "PRECIO",
 ) {
     val colors = LocalAppColors.current
     var scrubbed by remember(chart.prices) { mutableStateOf<Int?>(null) }
@@ -148,7 +151,7 @@ internal fun ChartCard(
         RangeChips(ranges = ranges, onSelect = onRangeSelect, modifier = Modifier.padding(top = 14.dp))
         Column(modifier = Modifier.padding(top = 14.dp).defaultMinSize(minHeight = 52.dp)) {
             Text(
-                text = if (point == null) "VARIACIÓN DEL PRECIO" else "PRECIO",
+                text = if (point == null) changeLabel else scrubLabel,
                 color = colors.muted,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -224,7 +227,7 @@ private fun RangeChips(ranges: List<RangeChipUi>, onSelect: (HistoryRange) -> Un
 
 /** A value on the right of a [SectionRow], right aligned and drawn in [color]. */
 @Composable
-private fun RowValue(text: String, color: Color, modifier: Modifier = Modifier) {
+internal fun RowValue(text: String, color: Color, modifier: Modifier = Modifier) {
     Text(
         text = text,
         color = color,

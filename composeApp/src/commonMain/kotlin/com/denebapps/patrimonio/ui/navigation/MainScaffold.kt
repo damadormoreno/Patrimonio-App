@@ -40,6 +40,7 @@ import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.AddHoldingSheet
 import com.denebapps.patrimonio.ui.screens.portfolio.CarteraScreen
 import com.denebapps.patrimonio.ui.screens.portfolio.HoldingDetailSheet
+import com.denebapps.patrimonio.ui.screens.portfolio.PortfolioDetailScreen
 import com.denebapps.patrimonio.ui.screens.portfolio.PositionDetailScreen
 import com.denebapps.patrimonio.ui.screens.savings.GoalAllocateSheet
 import com.denebapps.patrimonio.ui.screens.savings.NewGoalSheet
@@ -147,6 +148,7 @@ fun MainScaffold() {
                 CarteraScreen(
                     onAddHolding = { mainNavController.navigate(AddHolding) },
                     onOpenHolding = { holdingId -> mainNavController.navigate(PositionDetail(holdingId)) },
+                    onOpenPortfolio = { mainNavController.navigate(PortfolioDetail) },
                 )
             }
             composable<Settings> {
@@ -176,6 +178,7 @@ fun MainScaffold() {
                     onEdit = { mainNavController.navigate(HoldingDetail(holdingId)) },
                 )
             }
+            composable<PortfolioDetail> { PortfolioDetailScreen(onBack = { mainNavController.popBackStack() }) }
             composable<HoldingDetail> { backStackEntry ->
                 HoldingDetailSheet(
                     holdingId = backStackEntry.toRoute<HoldingDetail>().holdingId,
