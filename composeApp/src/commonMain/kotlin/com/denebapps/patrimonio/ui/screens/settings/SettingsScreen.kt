@@ -19,8 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -38,7 +36,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.denebapps.patrimonio.domain.repository.CloudBackupState
-import com.denebapps.patrimonio.domain.repository.RenewalReminderSettings
 import com.denebapps.patrimonio.domain.repository.ThemeMode
 import com.denebapps.patrimonio.resources.Res
 import com.denebapps.patrimonio.resources.delete_data_failure_message
@@ -81,10 +78,6 @@ fun SettingsScreen(
     val importLauncher = rememberFilePickerLauncher { file ->
         file?.let { source -> backupViewModel.onImportFileChosen { source.readString() } }
     }
-    var showNotificationsBlocked by rememberSaveable { mutableStateOf(false) }
-    val requestNotifications = rememberNotificationPermissionRequest { granted ->
-        if (granted) viewModel.onRemindersEnabledChange(true) else showNotificationsBlocked = true
-    }
 
     SettingsContent(
         state = state,
@@ -94,10 +87,6 @@ fun SettingsScreen(
         onOpenProfile = onOpenProfile,
         onOpenAccount = onOpenAccount,
         onThemeModeSelect = viewModel::onThemeModeSelect,
-        onRemindersToggle = { enabled ->
-            if (enabled) requestNotifications() else viewModel.onRemindersEnabledChange(false)
-        },
-        onReminderLeadDaysSelect = viewModel::onReminderLeadDaysSelect,
         onExport = { exportLauncher.launch(suggestedName = backupViewModel.suggestedFileName(), extension = "json") },
         onConfirmImport = { importLauncher.launch() },
         onBackupResultConsumed = backupViewModel::onResultConsumed,
@@ -105,19 +94,6 @@ fun SettingsScreen(
         onClearDataResultConsumed = viewModel::onClearDataResultConsumed,
         modifier = modifier,
     )
-
-    if (showNotificationsBlocked) {
-        AlertDialog(
-            onDismissRequest = { showNotificationsBlocked = false },
-            title = { Text("Notificaciones desactivadas") },
-            text = {
-                Text("Para recibir los avisos, permite las notificaciones de la app en los ajustes del sistema.")
-            },
-            confirmButton = {
-                TextButton(onClick = { showNotificationsBlocked = false }) { Text("Aceptar") }
-            },
-        )
-    }
 }
 
 @Composable
@@ -129,8 +105,6 @@ private fun SettingsContent(
     onOpenProfile: () -> Unit,
     onOpenAccount: () -> Unit,
     onThemeModeSelect: (ThemeMode) -> Unit,
-    onRemindersToggle: (Boolean) -> Unit,
-    onReminderLeadDaysSelect: (Int) -> Unit,
     onExport: () -> Unit,
     onConfirmImport: () -> Unit,
     onBackupResultConsumed: () -> Unit,
@@ -186,14 +160,6 @@ private fun SettingsContent(
             SettingsSection(title = "Apariencia", modifier = Modifier.padding(top = 12.dp))
             SettingsCard {
                 ThemePicker(selected = state.themeMode, onSelect = onThemeModeSelect)
-            }
-            SettingsSection(title = "Avisos", modifier = Modifier.padding(top = 12.dp))
-            SettingsCard {
-                RenewalReminders(
-                    settings = state.reminders,
-                    onToggle = onRemindersToggle,
-                    onLeadDaysSelect = onReminderLeadDaysSelect,
-                )
             }
             SecuritySection()
             AccountTypesSection()
@@ -394,51 +360,6 @@ private fun ThemePicker(selected: ThemeMode, onSelect: (ThemeMode) -> Unit) {
         }
         ThemeSegments(selected = selected, onSelect = onSelect)
     }
-}
-
-@Composable
-private fun RenewalReminders(
-    settings: RenewalReminderSettings,
-    onToggle: (Boolean) -> Unit,
-    onLeadDaysSelect: (Int) -> Unit,
-) {
-    val colors = LocalAppColors.current
-    SettingsRow(
-        title = "Avisos de renovación",
-        subtitle = "Una notificación antes de cada cargo",
-        leading = { SettingsIcon(AppIcons.bell) },
-        trailing = {
-            Switch(
-                checked = settings.enabled,
-                onCheckedChange = onToggle,
-                colors = SwitchDefaults.colors(checkedTrackColor = colors.brand),
-            )
-        },
-        onClick = { onToggle(!settings.enabled) },
-        showDivider = settings.enabled,
-    )
-    if (settings.enabled) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-            Text(
-                text = "Antelación",
-                color = colors.ink,
-                fontSize = 15.sp,
-                modifier = Modifier.padding(bottom = 12.dp),
-            )
-            SegmentedPicker(
-                options = RenewalReminderSettings.LEAD_DAY_OPTIONS.map { it to leadDaysLabel(it) },
-                selected = settings.leadDays,
-                onSelect = onLeadDaysSelect,
-            )
-        }
-    }
-}
-
-private fun leadDaysLabel(leadDays: Int): String = when (leadDays) {
-    0 -> "Mismo día"
-    1 -> "1 día"
-    7 -> "1 semana"
-    else -> "$leadDays días"
 }
 
 @Composable

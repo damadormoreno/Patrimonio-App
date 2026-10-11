@@ -16,8 +16,8 @@ import com.denebapps.patrimonio.data.repository.DataMaintenanceRepositoryImpl
 import com.denebapps.patrimonio.data.repository.LiabilityRepositoryImpl
 import com.denebapps.patrimonio.data.repository.NetWorthRepositoryImpl
 import com.denebapps.patrimonio.data.repository.NetWorthSnapshotUpserter
+import com.denebapps.patrimonio.data.repository.PortfolioRepositoryImpl
 import com.denebapps.patrimonio.data.repository.SavingsGoalRepositoryImpl
-import com.denebapps.patrimonio.data.repository.SubscriptionRepositoryImpl
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AccountTypeRepository
 import com.denebapps.patrimonio.domain.repository.AppLock
@@ -26,12 +26,9 @@ import com.denebapps.patrimonio.domain.repository.BackupRepository
 import com.denebapps.patrimonio.domain.repository.DataMaintenanceRepository
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
-import com.denebapps.patrimonio.domain.repository.SubscriptionRepository
-import com.denebapps.patrimonio.notifications.ReminderScheduler
-import com.denebapps.patrimonio.notifications.RenewalReminderSync
-import com.denebapps.patrimonio.notifications.createReminderScheduler
 import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import org.koin.dsl.module
@@ -47,7 +44,7 @@ val dataModule = module {
     single<Clock> { Clock.System }
     single<() -> TimeZone> { { TimeZone.currentSystemDefault() } }
 
-    single { NetWorthSnapshotUpserter(get(), get(), get(), get(), get(), get()) }
+    single { NetWorthSnapshotUpserter(get(), get(), get(), get(), get(), get(), get()) }
 
     single<AssetRepository> {
         AssetRepositoryImpl(
@@ -80,18 +77,17 @@ val dataModule = module {
             accountGroupDao = get(),
         )
     }
-    single<ReminderScheduler> { createReminderScheduler(get<PlatformContext>()) }
-    single {
-        RenewalReminderSync(
-            subscriptionRepository = get(),
-            preferencesRepository = get(),
-            scheduler = get(),
+    single<AccountTypeRepository> { AccountTypeRepositoryImpl(get()) }
+    single<PortfolioRepository> {
+        PortfolioRepositoryImpl(
+            appDatabase = get(),
+            dao = get(),
+            quoteSource = get(),
+            snapshotUpserter = get(),
+            seedingGate = get(),
             clock = get(),
-            zoneProvider = get(),
         )
     }
-    single<SubscriptionRepository> { SubscriptionRepositoryImpl(subscriptionDao = get(), seedingGate = get()) }
-    single<AccountTypeRepository> { AccountTypeRepositoryImpl(get()) }
     single<PreferencesRepository> { PreferencesRepositoryImpl(dataStoreFilePath(get<PlatformContext>())) }
     single<DataMaintenanceRepository> { DataMaintenanceRepositoryImpl(get()) }
     single<AppLock> {

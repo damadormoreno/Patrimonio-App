@@ -1,17 +1,20 @@
 package com.denebapps.patrimonio.data.backup
 
+import com.denebapps.patrimonio.data.db.entity.HoldingKind
 import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalAdd
 import com.denebapps.patrimonio.domain.model.AccountKind
 import com.denebapps.patrimonio.domain.model.Asset
-import com.denebapps.patrimonio.domain.model.BillingCycle
 import com.denebapps.patrimonio.domain.model.Currency
+import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
 import com.denebapps.patrimonio.domain.model.TypeColor
 import com.denebapps.patrimonio.domain.repository.InvalidBackupException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalArithmeticOverflowException
+import kotlinx.datetime.LocalDate
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -32,15 +35,17 @@ import kotlin.uuid.Uuid
  * hand-edited or corrupted file is rejected with a readable reason instead of failing half-way
  * through an import or crashing a later read.
  *
- * Writes [VERSION] (6). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
- * group-link fields, which default to null, v1/v2 files lack subscriptions, which default to empty,
- * v1–v3 files have numeric goal ids, which [upgradeLegacyGoalIds] replaces before decoding, v1–v4
- * files link a goal to one `linkedAssetId`, which [upgradeSingleLinkedAsset] turns into a list, and
- * v1–v5 files have no custom account types nor emojis, which default to empty.
+ * Writes [VERSION] (8). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
+ * group-link fields, which default to null, v1–v3 files have numeric goal ids, which
+ * [upgradeLegacyGoalIds] replaces before decoding, v1–v4 files link a goal to one `linkedAssetId`,
+ * which [upgradeSingleLinkedAsset] turns into a list, v1–v5 files have no custom account types nor
+ * emojis, which default to empty, v3–v6 files may carry a `subscriptions` section from the removed
+ * subscriptions feature, which is ignored like any unknown key, and v1–v7 files have no portfolio holdings,
+ * which default to empty.
  */
 object BackupCodec {
     const val FORMAT = "patrimonio-backup"
-    const val VERSION = 6
+    const val VERSION = 8
 
     private val json = Json {
         prettyPrint = true
@@ -137,7 +142,8 @@ private val TYPE_COLORS = TypeColor.entries.map { it.name }.toSet()
 private val CURRENCIES = Currency.entries.map { it.name }.toSet()
 private val LIFECYCLES = SavingsGoalLifecycle.entries.map { it.name }.toSet()
 private val LINK_KINDS = SavingsGoalLinkEventKind.entries.map { it.name }.toSet()
-private val BILLING_CYCLES = BillingCycle.entries.map { it.name }.toSet()
+private val INSTRUMENT_TYPES = InstrumentType.entries.map { it.name }.toSet()
+private val QUOTE_PROVIDERS = QuoteProvider.entries.map { it.name }.toSet()
 private val YEAR_MONTH = Regex("""\d{4}-(0[1-9]|1[0-2])""")
 
 private fun BackupDocument.validate() {
@@ -232,26 +238,68 @@ private fun BackupDocument.validate() {
         if (event.kind !in LINK_KINDS) invalid("Tipo de cambio de vínculo desconocido: ${event.kind}.")
     }
 
-    requireUnique("suscripción", subscriptions.map { it.id })
-    subscriptions.forEach { subscription ->
-        if (subscription.id.isBlank()) invalid("Hay una suscripción sin id.")
-        if (subscription.name.isEmpty() || subscription.name != subscription.name.trim()) {
-            invalid("Hay una suscripción con un nombre no válido.")
-        }
-        if (subscription.amountMinor <= 0) {
-            invalid("La suscripción '${subscription.name}' tiene un importe no positivo.")
-        }
-        if (subscription.currency !in CURRENCIES) {
-            invalid("La suscripción '${subscription.name}' tiene una divisa no soportada: ${subscription.currency}.")
-        }
-        if (subscription.cycle !in BILLING_CYCLES) {
-            invalid("La suscripción '${subscription.name}' tiene una periodicidad desconocida: ${subscription.cycle}.")
-        }
-        if (subscription.paidFromAssetId != null && subscription.paidFromAssetId !in assetIds) {
-            invalid("La suscripción '${subscription.name}' se paga desde un activo que no existe.")
-        }
+    requireUnique("valor de cartera", portfolioHoldings.map { it.id })
+    portfolioHoldings.forEach(::validateHolding)
+}
+
+/** A holding is either quoted (provider, units and maybe a price) or manual (a typed-in value), never a mix. */
+private fun validateHolding(holding: PortfolioHoldingBackup) {
+    if (holding.id.isBlank()) invalid("Hay un valor de cartera sin id.")
+    if (holding.name.isBlank()) invalid("Hay un valor de cartera sin nombre.")
+    val label = "El valor de cartera '${holding.name}'"
+    if (holding.type !in INSTRUMENT_TYPES) invalid("$label tiene un tipo desconocido: ${holding.type}.")
+    if (holding.currency !in CURRENCIES) invalid("$label tiene una divisa no soportada: ${holding.currency}.")
+    when (holding.kind) {
+        HoldingKind.QUOTED.name -> validateQuotedHolding(holding, label)
+        HoldingKind.MANUAL.name -> validateManualHolding(holding, label)
+        else -> invalid("$label tiene una clase desconocida: ${holding.kind}.")
     }
 }
+
+private fun validateQuotedHolding(holding: PortfolioHoldingBackup, label: String) {
+    if (holding.provider !in QUOTE_PROVIDERS) {
+        invalid("$label tiene un proveedor de precios desconocido: ${holding.provider}.")
+    }
+    if (holding.providerCode.isNullOrBlank()) invalid("$label no tiene el código del instrumento.")
+    if (holding.unitsScaled == null || holding.unitsScaled <= 0) {
+        invalid("$label no tiene un número de unidades positivo.")
+    }
+    val priceFields = listOf(holding.priceScaled, holding.priceDateEpochDay, holding.priceFetchedAtEpochMs)
+    if (priceFields.any { it == null } && priceFields.any { it != null }) {
+        invalid("$label tiene un precio incompleto.")
+    }
+    if (holding.priceScaled != null && holding.priceScaled < 0) invalid("$label tiene un precio negativo.")
+    if (holding.priceDateEpochDay != null && !isCalendarDay(holding.priceDateEpochDay)) {
+        invalid("$label tiene una fecha de precio fuera de rango.")
+    }
+    if (holding.valueMinor != null || holding.valuedAtEpochMs != null) {
+        invalid("$label mezcla datos de precio y de valor manual.")
+    }
+}
+
+private fun validateManualHolding(holding: PortfolioHoldingBackup, label: String) {
+    if (holding.valueMinor == null || holding.valueMinor < 0 || holding.valuedAtEpochMs == null) {
+        invalid("$label no tiene un valor manual válido.")
+    }
+    val quoteFields = listOf(
+        holding.provider,
+        holding.providerCode,
+        holding.unitsScaled,
+        holding.priceScaled,
+        holding.priceDateEpochDay,
+        holding.priceFetchedAtEpochMs,
+    )
+    if (quoteFields.any { it != null }) invalid("$label mezcla datos de precio y de valor manual.")
+}
+
+/** Whether [epochDay] maps to a date `LocalDate` can represent (a corrupt value would crash a later read). */
+private fun isCalendarDay(epochDay: Long): Boolean = epochDay.toInt().toLong() == epochDay &&
+    try {
+        LocalDate.fromEpochDays(epochDay.toInt())
+        true
+    } catch (_: IllegalArgumentException) {
+        false
+    }
 
 /** Mirrors `checkedSavingsGoalProgress`: replayed in the DAO's (timestamp, id) order, no delta
  *  may be zero and the running progress may never go negative or overflow. */

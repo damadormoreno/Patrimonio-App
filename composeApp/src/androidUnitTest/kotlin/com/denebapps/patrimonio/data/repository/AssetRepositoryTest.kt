@@ -223,6 +223,7 @@ class AssetRepositoryTest {
         val snapshotUpserter = NetWorthSnapshotUpserter(
             db.assetDao(),
             db.liabilityDao(),
+            db.portfolioHoldingDao(),
             db.fxRateDao(),
             db.netWorthDao(),
             AssetFixedClock(Instant.parse(DELETION_TIME)),

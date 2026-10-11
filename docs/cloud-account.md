@@ -91,7 +91,7 @@ sangrías), **cifrado en el móvil** (ver [Cifrado](#cifrado)):
 | --- | --- | --- |
 | `revision` | string | UUID de la subida que escribió la copia |
 | `savedAt` | timestamp | cuándo se subió |
-| `records` | integer | cuentas + deudas + grupos + metas + suscripciones |
+| `records` | integer | cuentas + deudas + grupos + metas |
 | `data` | array de strings | el JSON cifrado (Base64) en trozos de ≤ 1.400 bytes |
 | `keyId` | string | UUID de la clave de datos con la que se cifró |
 | `kdfSalt`, `kdfIterations` | string, integer | sal (Base64) e iteraciones de PBKDF2 |

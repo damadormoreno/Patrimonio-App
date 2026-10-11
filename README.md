@@ -1,7 +1,7 @@
 # Patrimonio
 
 App personal para seguir el patrimonio neto: activos, pasivos, grupos de cuentas, histórico
-mensual y metas de ahorro, multi-divisa con conversión a EUR. Sin cuenta ni backend: los datos
+mensual, metas de ahorro y cartera de inversión, multi-divisa con conversión a EUR. Sin cuenta ni backend: los datos
 viven en el dispositivo.
 
 Nace como extracción de la parte de patrimonio de *FinanzasPersonales*, sin movimientos,
@@ -13,7 +13,7 @@ presupuestos, categorías ni analítica.
   (`androidTarget`, `iosArm64`, `iosSimulatorArm64`) + `iosApp/` (Xcode).
 - Kotlin 2.2.0, Compose MP 1.9.0, AGP 8.9.1, minSdk 29 / compileSdk 36 / target 35.
 - Room KMP 2.7.1 (`BundledSQLiteDriver`), DataStore preferences, Koin 4, navigation-compose,
-  Ktor (tipos de cambio de Frankfurter), kotlinx-datetime.
+  Ktor (tipos de cambio de Frankfurter y cotizaciones de Morningstar/Yahoo), kotlinx-datetime.
 - Paquete / applicationId / bundle id: `com.denebapps.patrimonio`.
 
 ## Comandos
@@ -41,23 +41,45 @@ para escribir y testear migraciones. CI falla si el schema generado no coincide 
 ```
 composeApp/src/commonMain/kotlin/com/denebapps/patrimonio/
 ├── domain/   modelo (Money, Currency, Asset, Liability, SavingsGoal…), calc puros, contratos
-├── data/     Room (entities, DAOs), repositorios, FX (Frankfurter), DataStore
+├── data/     Room (entities, DAOs), repositorios, FX (Frankfurter), cotizaciones, DataStore
 ├── di/       módulos Koin
-└── ui/       theme + componentes, navegación, pantallas (patrimonio, savings, settings, perfil)
+└── ui/       theme + componentes, navegación, pantallas (patrimonio, cartera, savings, settings, perfil)
 ```
 
 `design-reference/` contiene el prototipo JSX original (especificación visual; no se distribuye).
+
+## Cartera
+
+Pestaña *Cartera*: fondos, ETF y acciones buscados por ISIN, ticker o nombre. Cada producto se
+añade con las participaciones o con el importe actual (se calculan las participaciones al último
+precio) y se valora a ese precio; lo que no tenga cotización se añade con valor manual. El total en
+EUR suma al patrimonio neto como bloque propio y aparece como *Cartera* en la composición.
+
+- **Precios**: Morningstar (`lt.morningstar.com`: búsqueda por ISIN y valor liquidativo en EUR,
+  sobre todo fondos) y Yahoo Finance (búsqueda y cierres diarios de ETF y acciones), con la misma
+  lógica que [rumbo](https://github.com/danidm98/rumbo) (MIT). Están detrás del puerto
+  `QuoteSource` (`data/quotes/`), así que se pueden cambiar por otra fuente sin tocar el resto.
+- **No son APIs oficiales**: pueden cambiar o dejar de responder sin aviso. Si falla una consulta
+  se conserva el último precio con su fecha. Aceptable para uso personal; antes de publicar la app
+  habría que pasar a una fuente con licencia.
+- Los precios se actualizan al abrir la app si tienen más de 6 horas y con *Actualizar* (o
+  deslizando hacia abajo) en la pestaña. Solo se admiten productos cotizados en EUR, USD, GBP o JPY.
+- Fuera de esta primera fase: movimientos (compras, ventas, traspasos), coste y plusvalías,
+  histórico de precios, rentabilidad (XIRR/TWR) e importación desde brókeres.
 
 ## Copias de seguridad
 
 Ajustes → Datos → *Exportar copia* / *Importar copia* (selector nativo vía
 [FileKit](https://github.com/vinceglb/FileKit)). El archivo es JSON legible
-(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 4}`:
+(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 8}`:
 
 - Incluye activos, pasivos, grupos y miembros, histórico mensual y metas con sus aportaciones y
-  vínculos (una meta se vincula a una cuenta **o** a un grupo) y suscripciones. No incluye tipos de
-  cambio (caché) ni preferencias. Las copias de versiones anteriores se siguen importando; en las de
-  la 1 a la 3 las metas tenían id numérico y reciben un UUID nuevo al importarlas.
+  vínculos (una meta se vincula a una cuenta **o** a un grupo), tipos de cuenta propios y los
+  productos de la cartera con su último precio. No incluye
+  tipos de cambio (caché) ni preferencias. Las copias de versiones anteriores se siguen importando;
+  en las de la 1 a la 3 las metas tenían id numérico y reciben un UUID nuevo al importarlas, y la
+  sección de suscripciones de las copias de la 3 a la 6 se ignora (la función se eliminó en la 7);
+  las anteriores a la 8 se importan sin cartera.
 - Importar **reemplaza** todos los datos en una sola transacción. El archivo se valida entero antes
   (divisas, tipos, ids únicos, referencias, reglas del ledger de metas), así que uno inválido no
   toca nada.
@@ -70,17 +92,10 @@ dispositivo.
 ## Roadmap
 
 1. ~~**Backup**~~: export/import JSON desde Ajustes (ver *Copias de seguridad*).
-2. ~~**Suscripciones**~~: pestaña con gasto mensual/anual en EUR, próximos cargos, pausadas y
-   activo que paga (informativo, no mueve saldos).
-3. ~~**Avisos de renovación**~~: notificación local a las 9:00 el mismo día, 1, 3 o 7 días antes
-   de cada cargo, desactivada por defecto (Ajustes → Avisos). WorkManager en Android y
-   `UNUserNotificationCenter` en iOS. Límites conocidos:
-   - Se programan los próximos 60 días (máx. 50 avisos, por el límite de 64 de iOS); abrir la app
-     amplía esa ventana. Si no abres la app en dos meses, dejan de llegar.
-   - Un aviso cuya hora ya ha pasado al planificar no se envía. Si activas los avisos el mismo día de
-     un cargo después de las 9:00, ese cargo se queda sin aviso.
-   - En iOS no se muestran con la app en primer plano (falta un `UNUserNotificationCenterDelegate`).
-4. **Login + sync** (opcional): Google / Apple / email junto con sincronización. Activos, pasivos,
-   grupos, suscripciones y metas ya tienen id `String` (UUID); la migración 3 → 4 (`MIGRATION_3_4`)
+2. ~~**Cartera** (fase 1)~~: sustituye a Suscripciones, que se eliminaron junto con los avisos de
+   renovación (ver *Cartera*). Siguientes fases: movimientos (compras, ventas, comisiones,
+   dividendos y traspasos), coste FIFO, histórico de precios, rentabilidad e importación.
+3. **Login + sync** (opcional): Google / Apple / email junto con sincronización. Activos, pasivos,
+   grupos y metas ya tienen id `String` (UUID); la migración 3 → 4 (`MIGRATION_3_4`)
    dio un UUID nuevo a las metas existentes. Las aportaciones y cambios de vínculo de cada meta
    siguen con id local autoincremental: cómo sincronizarlas se decide con el diseño del sync.

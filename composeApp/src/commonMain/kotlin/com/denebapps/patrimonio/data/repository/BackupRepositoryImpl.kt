@@ -41,8 +41,8 @@ class BackupRepositoryImpl(
                 savingsGoals = goals.listAllGoals().map { it.toBackup(linkedAssetIds[it.id].orEmpty()) },
                 savingsGoalAllocationEvents = goals.listAllAllocationEvents().map { it.toBackup() },
                 savingsGoalLinkEvents = goals.listAllLinkEvents().map { it.toBackup() },
-                subscriptions = appDatabase.subscriptionDao().list().map { it.toBackup() },
                 accountTypes = appDatabase.accountTypeDao().list().map { it.toBackup() },
+                portfolioHoldings = appDatabase.portfolioHoldingDao().list().map { it.toBackup() },
             )
         }
         return BackupCodec.encode(document)
@@ -66,7 +66,7 @@ class BackupRepositoryImpl(
             }
             document.savingsGoalAllocationEvents.forEach { goals.insertAllocationEvent(it.toEntity()) }
             document.savingsGoalLinkEvents.forEach { goals.insertLinkEvent(it.toEntity()) }
-            document.subscriptions.forEach { appDatabase.subscriptionDao().insert(it.toEntity()) }
+            document.portfolioHoldings.forEach { appDatabase.portfolioHoldingDao().insert(it.toEntity()) }
             snapshotUpserter.refreshCurrentMonth()
         }
     }

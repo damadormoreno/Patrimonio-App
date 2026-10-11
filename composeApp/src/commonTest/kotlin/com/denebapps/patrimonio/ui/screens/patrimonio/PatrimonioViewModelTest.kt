@@ -9,12 +9,18 @@ import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.CustomAccountType
 import com.denebapps.patrimonio.domain.model.FxRates
+import com.denebapps.patrimonio.domain.model.HoldingValuation
+import com.denebapps.patrimonio.domain.model.InstrumentRef
+import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.NetWorthSnapshot
+import com.denebapps.patrimonio.domain.model.PortfolioHolding
+import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
 import com.denebapps.patrimonio.domain.model.TypeColor
+import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.model.YearMonth
 import com.denebapps.patrimonio.testing.FakeAccountGroupRepository
 import com.denebapps.patrimonio.testing.FakeAccountTypeRepository
@@ -22,6 +28,7 @@ import com.denebapps.patrimonio.testing.FakeAssetRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeLiabilityRepository
 import com.denebapps.patrimonio.testing.FakeNetWorthRepository
+import com.denebapps.patrimonio.testing.FakePortfolioRepository
 import com.denebapps.patrimonio.testing.FakeSavingsGoalRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -67,6 +74,15 @@ class PatrimonioViewModelTest {
         amount = CurrencyAmount(Money(minor), Currency.EUR),
     )
 
+    private fun manualHolding(id: String, minor: Long, currency: Currency = Currency.EUR) = PortfolioHolding(
+        id = id,
+        name = id,
+        type = InstrumentType.OTHER,
+        isin = null,
+        ticker = null,
+        valuation = HoldingValuation.Manual(CurrencyAmount(Money(minor), currency), valuedAtEpochMs = 0L),
+    )
+
     private fun viewModel(
         assets: FakeAssetRepository = FakeAssetRepository(),
         liabilities: FakeLiabilityRepository = FakeLiabilityRepository(),
@@ -76,6 +92,7 @@ class PatrimonioViewModelTest {
         month: YearMonth = YearMonth(2026, 5),
         goals: FakeSavingsGoalRepository = FakeSavingsGoalRepository(),
         accountTypes: FakeAccountTypeRepository = FakeAccountTypeRepository(),
+        portfolio: FakePortfolioRepository = FakePortfolioRepository(),
     ) = PatrimonioViewModel(
         assetRepository = assets,
         liabilityRepository = liabilities,
@@ -84,6 +101,7 @@ class PatrimonioViewModelTest {
         fxRepository = fx,
         savingsGoalRepository = goals,
         accountTypeRepository = accountTypes,
+        portfolioRepository = portfolio,
         clock = fixedClock("2026-05-21T12:00:00Z"),
         zoneProvider = { TimeZone.UTC },
         monthFlow = flowOf(month),
@@ -426,6 +444,153 @@ class PatrimonioViewModelTest {
 
         assertEquals(listOf("l1"), vm.state.value.groups.single().items.map { it.id })
         assertNull(vm.state.value.filterSummary)
+        job.cancel()
+    }
+
+    @Test
+    fun `net worth and the assets total include the portfolio`() = runTest(dispatcher) {
+        val vm = viewModel(
+            assets = FakeAssetRepository(listOf(asset("a1", Asset.AssetGroup.BANK, "Cuenta", 500_000))),
+            liabilities = FakeLiabilityRepository(
+                listOf(liability("l1", Liability.LiabilityGroup.CARD, "Tarjeta", 120_000)),
+            ),
+            portfolio = FakePortfolioRepository(listOf(manualHolding("h1", 250_000))),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(Money(750_000), vm.state.value.totalAssets)
+        assertEquals(Money(630_000), vm.state.value.netWorth)
+        assertEquals(Money(120_000), vm.state.value.totalLiabs)
+        job.cancel()
+    }
+
+    @Test
+    fun `the portfolio is converted to EUR and a delta compares against snapshots that include it`() =
+        runTest(dispatcher) {
+            val vm = viewModel(
+                fx = FakeFxRepository(FxRates(mapOf(Currency.USD to 900_000L))),
+                portfolio = FakePortfolioRepository(listOf(manualHolding("h1", 100_000, Currency.USD))),
+                netWorth = FakeNetWorthRepository(
+                    listOf(NetWorthSnapshot(YearMonth(2026, 4), Money(80_000), Money.ZERO)),
+                ),
+            )
+            val job = launch { vm.state.collect {} }
+            advanceUntilIdle()
+
+            assertEquals(Money(90_000), vm.state.value.netWorth)
+            assertEquals(Money(10_000), vm.state.value.delta)
+            job.cancel()
+        }
+
+    @Test
+    fun `composition shows a Cartera share next to the groups, largest first`() = runTest(dispatcher) {
+        val vm = viewModel(
+            assets = FakeAssetRepository(listOf(asset("a1", Asset.AssetGroup.BANK, "Cuenta", 500_000))),
+            portfolio = FakePortfolioRepository(listOf(manualHolding("h1", 250_000))),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        val composition = vm.state.value.composition
+        assertEquals(listOf("Cuentas bancarias", "Cartera"), composition.map { it.label })
+        assertEquals(listOf(67, 33), composition.map { it.sharePct })
+        assertEquals(Money(250_000), composition.last().total)
+        job.cancel()
+    }
+
+    @Test
+    fun `a Cartera bigger than every group goes first`() = runTest(dispatcher) {
+        val vm = viewModel(
+            assets = FakeAssetRepository(listOf(asset("a1", Asset.AssetGroup.BANK, "Cuenta", 100_000))),
+            portfolio = FakePortfolioRepository(listOf(manualHolding("h1", 300_000))),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(listOf("Cartera", "Cuentas bancarias"), vm.state.value.composition.map { it.label })
+        assertEquals(listOf(75, 25), vm.state.value.composition.map { it.sharePct })
+        job.cancel()
+    }
+
+    @Test
+    fun `the liabilities view and the groups list do not include the portfolio`() = runTest(dispatcher) {
+        val vm = viewModel(
+            assets = FakeAssetRepository(listOf(asset("a1", Asset.AssetGroup.BANK, "Cuenta", 500_000))),
+            liabilities = FakeLiabilityRepository(
+                listOf(liability("l1", Liability.LiabilityGroup.CARD, "Tarjeta", 120_000)),
+            ),
+            portfolio = FakePortfolioRepository(listOf(manualHolding("h1", 250_000))),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(listOf("Cuentas bancarias"), vm.state.value.groups.map { it.label })
+        vm.onViewSelect(PatrimonioView.PASIVOS)
+        advanceUntilIdle()
+        assertEquals(listOf("Tarjetas"), vm.state.value.composition.map { it.label })
+        job.cancel()
+    }
+
+    @Test
+    fun `without holdings there is no Cartera share and no portfolio summary`() = runTest(dispatcher) {
+        val vm = viewModel(
+            assets = FakeAssetRepository(listOf(asset("a1", Asset.AssetGroup.BANK, "Cuenta", 500_000))),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        assertNull(vm.state.value.portfolio)
+        assertEquals(listOf("Cuentas bancarias"), vm.state.value.composition.map { it.label })
+        job.cancel()
+    }
+
+    @Test
+    fun `the portfolio summary carries the EUR total and counts holdings that have no value yet`() =
+        runTest(dispatcher) {
+            val unpriced = PortfolioHolding(
+                id = "u1",
+                name = "u1",
+                type = InstrumentType.FUND,
+                isin = null,
+                ticker = null,
+                valuation = HoldingValuation.Quoted(
+                    ref = InstrumentRef(QuoteProvider.MORNINGSTAR, "u1"),
+                    currency = Currency.EUR,
+                    units = Units(1_000_000),
+                ),
+            )
+            val vm = viewModel(portfolio = FakePortfolioRepository(listOf(manualHolding("h1", 250_000), unpriced)))
+            val job = launch { vm.state.collect {} }
+            advanceUntilIdle()
+
+            assertEquals(PortfolioSummaryUi(total = Money(250_000), holdingCount = 2), vm.state.value.portfolio)
+            job.cancel()
+        }
+
+    @Test
+    fun `holdings worth nothing give a summary but no Cartera share`() = runTest(dispatcher) {
+        val vm = viewModel(
+            assets = FakeAssetRepository(listOf(asset("a1", Asset.AssetGroup.BANK, "Cuenta", 500_000))),
+            portfolio = FakePortfolioRepository(listOf(manualHolding("h1", 0))),
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(PortfolioSummaryUi(total = Money.ZERO, holdingCount = 1), vm.state.value.portfolio)
+        assertEquals(listOf("Cuentas bancarias"), vm.state.value.composition.map { it.label })
+        job.cancel()
+    }
+
+    @Test
+    fun `a portfolio alone is not an empty assets view`() = runTest(dispatcher) {
+        val vm = viewModel(portfolio = FakePortfolioRepository(listOf(manualHolding("h1", 250_000))))
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        assertFalse(vm.state.value.isEmpty)
+        assertEquals(listOf("Cartera"), vm.state.value.composition.map { it.label })
+        assertEquals(listOf(100), vm.state.value.composition.map { it.sharePct })
         job.cancel()
     }
 }

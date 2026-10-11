@@ -37,17 +37,18 @@ import com.denebapps.patrimonio.ui.screens.patrimonio.PatrimonioView
 import com.denebapps.patrimonio.ui.screens.perfil.PerfilScreen
 import com.denebapps.patrimonio.ui.screens.perfil.ProfileAvatar
 import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
+import com.denebapps.patrimonio.ui.screens.portfolio.AddHoldingSheet
+import com.denebapps.patrimonio.ui.screens.portfolio.CarteraScreen
+import com.denebapps.patrimonio.ui.screens.portfolio.HoldingDetailSheet
 import com.denebapps.patrimonio.ui.screens.savings.GoalAllocateSheet
 import com.denebapps.patrimonio.ui.screens.savings.NewGoalSheet
 import com.denebapps.patrimonio.ui.screens.settings.SettingsScreen
-import com.denebapps.patrimonio.ui.screens.subscriptions.SubscriptionSheet
-import com.denebapps.patrimonio.ui.screens.subscriptions.SubscriptionsScreen
 import org.koin.compose.viewmodel.koinViewModel
 
 /** Maps a [TabKey] to its route object for `mainNavController.navigate(...)` calls. */
 private fun routeForTab(tab: TabKey): Any = when (tab) {
     TabKey.PATRIMONIO -> Patrimonio
-    TabKey.SUBSCRIPTIONS -> Subscriptions
+    TabKey.CARTERA -> Cartera
 }
 
 /** The start tab doubles as the `popUpTo` anchor for tab switches. */
@@ -71,6 +72,22 @@ fun MainScaffold() {
     // that composable's scope but needs the active Activos/Pasivos toggle to route its tap.
     var patrimonioIsLiability by remember { mutableStateOf(false) }
 
+    // Shared by the tab bar and by in-screen shortcuts (the Patrimonio "Cartera" card).
+    fun selectTab(tab: TabKey) {
+        if (tab == StartTab) {
+            // The start tab is the popUpTo anchor: navigate() with
+            // launchSingleTop is elided when it is already in the stack (not
+            // top), so pushed routes would stay visible. Pop back to it instead.
+            mainNavController.popBackStack(routeForTab(StartTab), inclusive = false)
+        } else {
+            mainNavController.navigate(routeForTab(tab)) {
+                launchSingleTop = true
+                popUpTo(routeForTab(StartTab)) { saveState = true }
+                restoreState = true
+            }
+        }
+    }
+
     Scaffold(
         topBar = { MainHeaderAffordances(routeName = routeName, mainNavController = mainNavController) },
         bottomBar = {
@@ -80,22 +97,7 @@ fun MainScaffold() {
                         TabItem(tab.id, tab.label, AppIcons.get(tab.iconName), tab.iconName)
                     },
                     selected = TabMapping.tabForRoute(routeName)?.id.orEmpty(),
-                    onSelect = { id ->
-                        TabKey.byId(id)?.let { tab ->
-                            if (tab == StartTab) {
-                                // The start tab is the popUpTo anchor: navigate() with
-                                // launchSingleTop is elided when it is already in the stack (not
-                                // top), so pushed routes would stay visible. Pop back to it instead.
-                                mainNavController.popBackStack(routeForTab(StartTab), inclusive = false)
-                            } else {
-                                mainNavController.navigate(routeForTab(tab)) {
-                                    launchSingleTop = true
-                                    popUpTo(routeForTab(StartTab)) { saveState = true }
-                                    restoreState = true
-                                }
-                            }
-                        }
-                    },
+                    onSelect = { id -> TabKey.byId(id)?.let(::selectTab) },
                 )
             }
         },
@@ -107,7 +109,7 @@ fun MainScaffold() {
                             TabKey.PATRIMONIO -> mainNavController.navigate(
                                 AddPatrimonio(isLiability = patrimonioIsLiability, groupId = null),
                             )
-                            TabKey.SUBSCRIPTIONS -> mainNavController.navigate(EditSubscription())
+                            TabKey.CARTERA -> mainNavController.navigate(AddHolding)
                             null -> Unit
                         }
                     },
@@ -137,6 +139,13 @@ fun MainScaffold() {
                     onViewChange = { patrimonioIsLiability = it == PatrimonioView.PASIVOS },
                     onNewGoal = { mainNavController.navigate(NewGoal()) },
                     onGoalTap = { goalId -> mainNavController.navigate(GoalAllocate(goalId = goalId)) },
+                    onOpenCartera = { selectTab(TabKey.CARTERA) },
+                )
+            }
+            composable<Cartera> {
+                CarteraScreen(
+                    onAddHolding = { mainNavController.navigate(AddHolding) },
+                    onOpenHolding = { holdingId -> mainNavController.navigate(HoldingDetail(holdingId)) },
                 )
             }
             composable<Settings> {
@@ -154,6 +163,13 @@ fun MainScaffold() {
                     isLiability = route.isLiability,
                     groupId = route.groupId,
                     itemId = route.itemId,
+                    onNavigateBack = { mainNavController.popBackStack() },
+                )
+            }
+            composable<AddHolding> { AddHoldingSheet(onNavigateBack = { mainNavController.popBackStack() }) }
+            composable<HoldingDetail> { backStackEntry ->
+                HoldingDetailSheet(
+                    holdingId = backStackEntry.toRoute<HoldingDetail>().holdingId,
                     onNavigateBack = { mainNavController.popBackStack() },
                 )
             }
@@ -185,19 +201,6 @@ fun MainScaffold() {
                     withdraw = route.withdraw,
                     onNavigateBack = { mainNavController.popBackStack() },
                     onEdit = { mainNavController.navigate(NewGoal(goalId = route.goalId)) },
-                )
-            }
-            composable<Subscriptions> {
-                SubscriptionsScreen(
-                    onAdd = { mainNavController.navigate(EditSubscription()) },
-                    onOpen = { id -> mainNavController.navigate(EditSubscription(subscriptionId = id)) },
-                )
-            }
-            composable<EditSubscription> { backStackEntry ->
-                val route = backStackEntry.toRoute<EditSubscription>()
-                SubscriptionSheet(
-                    subscriptionId = route.subscriptionId,
-                    onNavigateBack = { mainNavController.popBackStack() },
                 )
             }
         }

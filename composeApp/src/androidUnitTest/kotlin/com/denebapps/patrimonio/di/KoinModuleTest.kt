@@ -9,13 +9,17 @@ import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.SeedingGate
 import com.denebapps.patrimonio.data.db.configureAppDatabase
 import com.denebapps.patrimonio.data.db.createAppDatabaseBuilder
+import com.denebapps.patrimonio.data.db.dao.PortfolioHoldingDao
 import com.denebapps.patrimonio.data.db.dao.SavingsGoalDao
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.platform.PlatformContext
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
+import com.denebapps.patrimonio.domain.model.HoldingValuation
+import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.BackupRepository
@@ -25,9 +29,10 @@ import com.denebapps.patrimonio.domain.repository.DataMaintenanceRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
+import com.denebapps.patrimonio.domain.repository.QuoteSource
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
-import com.denebapps.patrimonio.domain.repository.SubscriptionRepository
 import com.denebapps.patrimonio.ui.screens.account.AccountViewModel
 import com.denebapps.patrimonio.ui.screens.history.NetWorthHistoryViewModel
 import com.denebapps.patrimonio.ui.screens.lock.LockViewModel
@@ -35,13 +40,14 @@ import com.denebapps.patrimonio.ui.screens.patrimonio.AddPatrimonioSheetViewMode
 import com.denebapps.patrimonio.ui.screens.patrimonio.GruposViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.PatrimonioViewModel
 import com.denebapps.patrimonio.ui.screens.perfil.ProfileViewModel
+import com.denebapps.patrimonio.ui.screens.portfolio.AddHoldingViewModel
+import com.denebapps.patrimonio.ui.screens.portfolio.CarteraViewModel
+import com.denebapps.patrimonio.ui.screens.portfolio.HoldingDetailViewModel
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
 import com.denebapps.patrimonio.ui.screens.settings.AccountTypesViewModel
 import com.denebapps.patrimonio.ui.screens.settings.BackupViewModel
 import com.denebapps.patrimonio.ui.screens.settings.SecurityViewModel
 import com.denebapps.patrimonio.ui.screens.settings.SettingsViewModel
-import com.denebapps.patrimonio.ui.screens.subscriptions.SubscriptionSheetViewModel
-import com.denebapps.patrimonio.ui.screens.subscriptions.SubscriptionsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -175,7 +181,6 @@ class KoinModuleTest {
         assertNotNull(koin.get<PreferencesRepository>())
         assertNotNull(koin.get<DataMaintenanceRepository>())
         assertNotNull(koin.get<BackupRepository>())
-        assertNotNull(koin.get<SubscriptionRepository>())
     }
 
     @Test
@@ -282,18 +287,47 @@ class KoinModuleTest {
     }
 
     @Test
+    fun `QuoteSource resolves via DI as a singleton reusing the shared HttpClient`() {
+        val koin = startTestKoin(fxModule, quotesModule)
+
+        assertNotNull(koin.get<QuoteSource>())
+        assertSame(koin.get<QuoteSource>(), koin.get<QuoteSource>())
+    }
+
+    @Test
+    fun `PortfolioRepository resolves via DI as a singleton and persists through the shared DAO`() = runTest {
+        val koin = startTestKoin(fxModule, quotesModule)
+        val repository = koin.get<PortfolioRepository>()
+        val manual = PortfolioHolding(
+            id = "painting",
+            name = "Cuadro",
+            type = InstrumentType.OTHER,
+            isin = null,
+            ticker = null,
+            valuation = HoldingValuation.Manual(CurrencyAmount(Money(250_000), Currency.EUR), valuedAtEpochMs = 1L),
+        )
+
+        repository.add(manual)
+
+        assertSame(repository, koin.get<PortfolioRepository>())
+        assertSame(koin.get<AppDatabase>().portfolioHoldingDao(), koin.get<PortfolioHoldingDao>())
+        assertEquals(listOf(manual), repository.observeAll().first())
+    }
+
+    @Test
     fun `every presentation ViewModel resolves with all dependencies satisfied`() {
-        val koin = startTestKoin(fxModule, authModule, presentationModule)
+        val koin = startTestKoin(fxModule, quotesModule, authModule, presentationModule)
 
         assertNotNull(koin.get<AppViewModel>())
         assertNotNull(koin.get<SettingsViewModel>())
         assertNotNull(koin.get<BackupViewModel>())
-        assertNotNull(koin.get<SubscriptionsViewModel>())
-        assertNotNull(koin.get<SubscriptionSheetViewModel> { parametersOf(null) })
         assertNotNull(koin.get<PatrimonioViewModel>())
         assertNotNull(koin.get<NetWorthHistoryViewModel>())
         assertNotNull(koin.get<AddPatrimonioSheetViewModel> { parametersOf(false, null, null) })
         assertNotNull(koin.get<GruposViewModel>())
+        assertNotNull(koin.get<CarteraViewModel>())
+        assertNotNull(koin.get<AddHoldingViewModel>())
+        assertNotNull(koin.get<HoldingDetailViewModel> { parametersOf("holding-1") })
         assertNotNull(koin.get<SavingsGoalsViewModel>())
         assertNotNull(koin.get<ProfileViewModel>())
         assertNotNull(koin.get<AccountViewModel>())

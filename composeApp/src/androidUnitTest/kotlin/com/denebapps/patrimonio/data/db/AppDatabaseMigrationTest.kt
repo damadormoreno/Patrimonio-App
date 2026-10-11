@@ -270,6 +270,107 @@ class AppDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun `migration 6 to 7 drops subscriptions and keeps every other table`() {
+        helper.createDatabase(6).use { connection ->
+            listOf(
+                "INSERT INTO assets (id, `group`, name, subtitle, amountMinor, currency, emoji) " +
+                    "VALUES ('a1', 'BANK', 'Cuenta', NULL, 150000, 'EUR', NULL)",
+                "INSERT INTO liabilities (id, `group`, name, subtitle, amountMinor, currency, emoji) " +
+                    "VALUES ('l1', 'CARD', 'Visa', NULL, 30000, 'EUR', NULL)",
+                "INSERT INTO account_groups (id, name, showBalance, sortOrder) VALUES ('g1', 'Día a día', 1, 0)",
+                "INSERT INTO account_group_members (groupId, assetId) VALUES ('g1', 'a1')",
+                "INSERT INTO savings_goals (id, name, targetMinor, currency, targetDateEpochDay, lifecycle, " +
+                    "linkedGroupId, createdAtEpochMs) VALUES ('u1', 'Viaje', 300000, 'EUR', NULL, 'OPEN', NULL, 7)",
+                "INSERT INTO savings_goal_allocation_events (id, goalId, deltaMinor, timestampEpochMs) " +
+                    "VALUES (3, 'u1', 50000, 1000)",
+                "INSERT INTO subscriptions " +
+                    "(id, name, amountMinor, currency, cycle, firstChargeEpochDay, paidFromAssetId, active) " +
+                    "VALUES ('s1', 'Netflix', 1299, 'EUR', 'MONTHLY', 20000, 'a1', 1)",
+            ).forEach(connection::execSQL)
+        }
+
+        helper.runMigrationsAndValidate(7, listOf(MIGRATION_6_7)).use { connection ->
+            assertFalse(connection.tableExists("subscriptions"))
+            assertEquals(1L, connection.count("assets"))
+            assertEquals(1L, connection.count("liabilities"))
+            assertEquals(1L, connection.count("account_groups"))
+            assertEquals(1L, connection.count("account_group_members"))
+            assertEquals(1L, connection.count("savings_goals"))
+            assertEquals(1L, connection.count("savings_goal_allocation_events"))
+            connection.prepare("SELECT name, amountMinor FROM assets WHERE id = 'a1'").use { row ->
+                assertTrue(row.step())
+                assertEquals("Cuenta", row.getText(0))
+                assertEquals(150_000L, row.getLong(1))
+            }
+        }
+    }
+
+    @Test
+    fun `a version 6 database with subscriptions opens through the app and keeps its accounts`() = runBlocking {
+        helper.createDatabase(6).use { connection ->
+            listOf(
+                "INSERT INTO assets (id, `group`, name, subtitle, amountMinor, currency, emoji) " +
+                    "VALUES ('a1', 'BANK', 'Cuenta', NULL, 150000, 'EUR', NULL)",
+                "INSERT INTO subscriptions " +
+                    "(id, name, amountMinor, currency, cycle, firstChargeEpochDay, paidFromAssetId, active) " +
+                    "VALUES ('s1', 'Netflix', 1299, 'EUR', 'MONTHLY', 20000, 'a1', 1)",
+            ).forEach(connection::execSQL)
+        }
+
+        val db = Room.databaseBuilder<AppDatabase>(context = context, name = databaseFile.absolutePath)
+            .setDriver(AndroidSQLiteDriver())
+            .configureAppDatabase()
+            .build()
+        try {
+            assertEquals(listOf("Cuenta"), db.assetDao().list().map { it.name })
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun `migration 7 to 8 adds an empty writable portfolio table and keeps every other table`() {
+        helper.createDatabase(7).use { connection ->
+            listOf(
+                "INSERT INTO assets (id, `group`, name, subtitle, amountMinor, currency, emoji) " +
+                    "VALUES ('a1', 'BANK', 'Cuenta', NULL, 150000, 'EUR', NULL)",
+                "INSERT INTO liabilities (id, `group`, name, subtitle, amountMinor, currency, emoji) " +
+                    "VALUES ('l1', 'CARD', 'Visa', NULL, 30000, 'EUR', NULL)",
+                "INSERT INTO account_groups (id, name, showBalance, sortOrder) VALUES ('g1', 'Día a día', 1, 0)",
+                "INSERT INTO account_group_members (groupId, assetId) VALUES ('g1', 'a1')",
+                "INSERT INTO savings_goals (id, name, targetMinor, currency, targetDateEpochDay, lifecycle, " +
+                    "linkedGroupId, createdAtEpochMs) VALUES ('u1', 'Viaje', 300000, 'EUR', NULL, 'OPEN', NULL, 7)",
+                "INSERT INTO net_worth_snapshots (yearMonth, assetsMinor, liabsMinor) " +
+                    "VALUES ('2026-09', 150000, 30000)",
+            ).forEach(connection::execSQL)
+        }
+
+        helper.runMigrationsAndValidate(8, emptyList()).use { connection ->
+            assertEquals(1L, connection.count("assets"))
+            assertEquals(1L, connection.count("liabilities"))
+            assertEquals(1L, connection.count("account_groups"))
+            assertEquals(1L, connection.count("account_group_members"))
+            assertEquals(1L, connection.count("savings_goals"))
+            assertEquals(1L, connection.count("net_worth_snapshots"))
+            assertEquals(0L, connection.count("portfolio_holdings"))
+
+            connection.execSQL(
+                "INSERT INTO portfolio_holdings (id, name, type, isin, ticker, kind, provider, providerCode, " +
+                    "currency, unitsScaled, priceScaled, priceDateEpochDay, priceFetchedAtEpochMs, valueMinor, " +
+                    "valuedAtEpochMs) VALUES ('p1', 'Vanguard Global', 'FUND', 'IE00B03HCZ61', NULL, 'QUOTED', " +
+                    "'MORNINGSTAR', '0P00012PP6', 'EUR', 8100001, 12345678, 20000, 1000, NULL, NULL)",
+            )
+            connection.execSQL(
+                "INSERT INTO portfolio_holdings (id, name, type, isin, ticker, kind, provider, providerCode, " +
+                    "currency, unitsScaled, priceScaled, priceDateEpochDay, priceFetchedAtEpochMs, valueMinor, " +
+                    "valuedAtEpochMs) VALUES ('p2', 'Cuadro', 'OTHER', NULL, NULL, 'MANUAL', NULL, NULL, " +
+                    "'EUR', NULL, NULL, NULL, NULL, 250000, 2000)",
+            )
+            assertEquals(2L, connection.count("portfolio_holdings"))
+        }
+    }
+
     /** Version 1 data: an asset, two groups (one with a member), two goals (one linked to the asset),
      *  allocation events and one link event. */
     private fun SQLiteConnection.seedVersion1() {

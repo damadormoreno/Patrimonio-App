@@ -11,8 +11,8 @@ import com.denebapps.patrimonio.data.db.dao.AssetDao
 import com.denebapps.patrimonio.data.db.dao.FxRateDao
 import com.denebapps.patrimonio.data.db.dao.LiabilityDao
 import com.denebapps.patrimonio.data.db.dao.NetWorthDao
+import com.denebapps.patrimonio.data.db.dao.PortfolioHoldingDao
 import com.denebapps.patrimonio.data.db.dao.SavingsGoalDao
-import com.denebapps.patrimonio.data.db.dao.SubscriptionDao
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
 import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AccountTypeEntity
@@ -20,11 +20,11 @@ import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.FxRateEntity
 import com.denebapps.patrimonio.data.db.entity.LiabilityEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
+import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
-import com.denebapps.patrimonio.data.db.entity.SubscriptionEntity
 
 @Database(
     entities = [
@@ -38,16 +38,18 @@ import com.denebapps.patrimonio.data.db.entity.SubscriptionEntity
         SavingsGoalAllocationEventEntity::class,
         SavingsGoalLinkEventEntity::class,
         SavingsGoalAssetEntity::class,
-        SubscriptionEntity::class,
         AccountTypeEntity::class,
+        PortfolioHoldingEntity::class,
     ],
-    version = 6,
+    version = 8,
     exportSchema = true,
-    // 5 -> 6 only adds the custom account types table and the accounts' nullable emoji column.
+    // 5 -> 6 only adds the custom account types table and the accounts' nullable emoji column. 6 -> 7 (drops
+    // the subscriptions table) is the hand-written MIGRATION_6_7. 7 -> 8 only adds the portfolio holdings table.
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
         AutoMigration(from = 5, to = 6),
+        AutoMigration(from = 7, to = 8),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
@@ -64,9 +66,9 @@ abstract class AppDatabase : RoomDatabase() {
 
     abstract fun savingsGoalDao(): SavingsGoalDao
 
-    abstract fun subscriptionDao(): SubscriptionDao
-
     abstract fun accountTypeDao(): AccountTypeDao
+
+    abstract fun portfolioHoldingDao(): PortfolioHoldingDao
 }
 
 // The Room KSP compiler generates the `actual` implementation of this object for every target

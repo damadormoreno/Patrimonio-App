@@ -22,7 +22,6 @@ androidxTestRunner = "1.7.0"
 navigationCompose = "2.9.2"
 lifecycleViewmodel = "2.9.1"
 filekit = "0.12.0"
-androidxWork = "2.10.0"
 # 0.6.x is built with Kotlin 2.3; 0.5.0 matches the Kotlin 2.2 compiler.
 cryptography = "0.5.0"
 credentials = "1.6.0"
@@ -32,7 +31,6 @@ biometric = "1.1.0"
 fragment = "1.8.5"
 
 [libraries]
-androidx-work-runtime = { module = "androidx.work:work-runtime", version.ref = "androidxWork" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidxActivityCompose" }
 lifecycle-viewmodel = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel", version.ref = "lifecycleViewmodel" }
 lifecycle-runtime-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycleViewmodel" }

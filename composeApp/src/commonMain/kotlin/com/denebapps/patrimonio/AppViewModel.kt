@@ -8,7 +8,6 @@ import com.denebapps.patrimonio.domain.repository.AppLockState
 import com.denebapps.patrimonio.domain.repository.CloudBackup
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.ThemeMode
-import com.denebapps.patrimonio.notifications.RenewalReminderSync
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -16,12 +15,10 @@ import kotlinx.coroutines.launch
 
 private const val APP_STOP_TIMEOUT_MS = 5_000L
 
-/** App-wide state for the root UI: theme and app lock. Also keeps renewal reminders and the cloud backup going
- *  while the app is open: this ViewModel lives as long as the UI and survives configuration changes, so each
- *  starts once. */
+/** App-wide state for the root UI: theme and app lock. Also keeps the cloud backup going while the app is open:
+ *  this ViewModel lives as long as the UI and survives configuration changes, so it starts once. */
 class AppViewModel(
     preferencesRepository: PreferencesRepository,
-    renewalReminderSync: RenewalReminderSync,
     cloudBackup: CloudBackup,
     private val appLock: AppLock,
 ) : ViewModel() {
@@ -36,7 +33,6 @@ class AppViewModel(
 
     init {
         viewModelScope.launch { appLock.start() }
-        viewModelScope.launch { renewalReminderSync.run() }
         viewModelScope.launch { cloudBackup.run() }
     }
 

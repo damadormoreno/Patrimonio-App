@@ -7,11 +7,13 @@ import kotlinx.serialization.Serializable
  * entities so a schema migration never silently changes what an exported file looks like: a
  * format change bumps [version] and [BackupCodec] decides what it can still read. Version 2 added
  * the savings-goal group link (`linkedGroupId`, `fromGroupId`/`toGroupId`); every such field
- * defaults to null so a version 1 file still decodes. Version 3 added [subscriptions], which defaults
- * to empty for older files. Version 4 turned savings goal ids into UUID strings and added
+ * defaults to null so a version 1 file still decodes. Versions 3 to 6 also carried a `subscriptions`
+ * section; version 7 removed it and older files keep decoding because unknown keys are ignored.
+ * Version 4 turned savings goal ids into UUID strings and added
  * [SavingsGoalBackup.createdAtEpochMs]; version 5 replaced the single `linkedAssetId` with
  * [SavingsGoalBackup.linkedAssetIds]; version 6 added the user's [accountTypes] and each account's
- * `emoji`, both empty in older files. [BackupCodec] upgrades older files on read.
+ * `emoji`, both empty in older files; version 8 added the investment [portfolioHoldings], empty in older files.
+ * [BackupCodec] upgrades older files on read.
  *
  * Enum-like fields hold the domain enum `name`s and currencies their ISO code; amounts are minor
  * units, dates epoch days, timestamps epoch milliseconds.
@@ -29,8 +31,8 @@ data class BackupDocument(
     val savingsGoals: List<SavingsGoalBackup> = emptyList(),
     val savingsGoalAllocationEvents: List<SavingsGoalAllocationEventBackup> = emptyList(),
     val savingsGoalLinkEvents: List<SavingsGoalLinkEventBackup> = emptyList(),
-    val subscriptions: List<SubscriptionBackup> = emptyList(),
     val accountTypes: List<AccountTypeBackup> = emptyList(),
+    val portfolioHoldings: List<PortfolioHoldingBackup> = emptyList(),
 )
 
 /** A custom account type; [kind] and [color] are enum names. Accounts point at it from their `group`. */
@@ -120,14 +122,28 @@ data class SavingsGoalLinkEventBackup(
     val toGroupId: String? = null,
 )
 
+/**
+ * An investment holding. [type] and [kind] are enum names (`InstrumentType`, `QUOTED`/`MANUAL`), [currency] an ISO
+ * code. A `QUOTED` holding carries [provider], [providerCode] (a `QuoteProvider` name and its instrument code),
+ * [unitsScaled] (units x 1,000,000) and, once priced, [priceScaled] (price in major units x 1,000,000),
+ * [priceDateEpochDay] and [priceFetchedAtEpochMs] together; a `MANUAL` one carries [valueMinor] (minor units of
+ * [currency]) and [valuedAtEpochMs] instead.
+ */
 @Serializable
-data class SubscriptionBackup(
+data class PortfolioHoldingBackup(
     val id: String,
     val name: String,
-    val amountMinor: Long,
+    val type: String,
+    val isin: String? = null,
+    val ticker: String? = null,
+    val kind: String,
+    val provider: String? = null,
+    val providerCode: String? = null,
     val currency: String,
-    val cycle: String,
-    val firstChargeEpochDay: Long,
-    val paidFromAssetId: String? = null,
-    val active: Boolean = true,
+    val unitsScaled: Long? = null,
+    val priceScaled: Long? = null,
+    val priceDateEpochDay: Long? = null,
+    val priceFetchedAtEpochMs: Long? = null,
+    val valueMinor: Long? = null,
+    val valuedAtEpochMs: Long? = null,
 )

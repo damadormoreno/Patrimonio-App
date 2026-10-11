@@ -7,16 +7,22 @@ import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalSubtract
 import com.denebapps.patrimonio.domain.calc.savingsGoalCancellationDelta
 import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.Asset
+import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.FxRates
+import com.denebapps.patrimonio.domain.model.HoldingValuation
+import com.denebapps.patrimonio.domain.model.InstrumentCandidate
+import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.Liability
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.NetWorthSnapshot
+import com.denebapps.patrimonio.domain.model.PortfolioHolding
+import com.denebapps.patrimonio.domain.model.Quote
 import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.model.SavingsGoalAllocationEvent
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEvent
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
-import com.denebapps.patrimonio.domain.model.Subscription
+import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.model.YearMonth
 import com.denebapps.patrimonio.domain.repository.AccountGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
@@ -31,20 +37,20 @@ import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalTargetExcept
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
 import com.denebapps.patrimonio.domain.repository.NegativeSavingsGoalProgressException
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioHoldingNotFoundException
+import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
-import com.denebapps.patrimonio.domain.repository.RenewalReminderSettings
+import com.denebapps.patrimonio.domain.repository.PriceRefreshResult
+import com.denebapps.patrimonio.domain.repository.QuoteSource
+import com.denebapps.patrimonio.domain.repository.QuoteUnavailableException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalAssetNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalBuiltinGroupException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
-import com.denebapps.patrimonio.domain.repository.SubscriptionNotFoundException
-import com.denebapps.patrimonio.domain.repository.SubscriptionRepository
 import com.denebapps.patrimonio.domain.repository.TerminalSavingsGoalException
 import com.denebapps.patrimonio.domain.repository.ThemeMode
 import com.denebapps.patrimonio.domain.repository.UpdateSavingsGoal
-import com.denebapps.patrimonio.notifications.LocalNotification
-import com.denebapps.patrimonio.notifications.ReminderScheduler
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -77,14 +83,6 @@ class FakePreferencesRepository(
 
     override suspend fun setLastName(value: String) {
         lastNameBacking.value = value
-    }
-
-    private val remindersBacking = MutableStateFlow(RenewalReminderSettings())
-
-    override fun observeRenewalReminders(): StateFlow<RenewalReminderSettings> = remindersBacking
-
-    override suspend fun setRenewalReminders(settings: RenewalReminderSettings) {
-        remindersBacking.value = settings
     }
 }
 
@@ -162,47 +160,6 @@ class FakeAssetRepository(initial: List<Asset> = emptyList()) : AssetRepository 
 
     fun emit(assets: List<Asset>) {
         backing.value = assets
-    }
-}
-
-/** Records every [replaceAll] call; [failure] makes the next calls throw. */
-class FakeReminderScheduler : ReminderScheduler {
-    val calls = mutableListOf<List<LocalNotification>>()
-    var failure: Throwable? = null
-
-    val scheduled: List<LocalNotification> get() = calls.lastOrNull().orEmpty()
-
-    override suspend fun replaceAll(notifications: List<LocalNotification>) {
-        failure?.let { throw it }
-        calls += notifications
-    }
-}
-
-/** `MutableStateFlow`-backed [SubscriptionRepository] fake; [failure] makes every write throw. */
-class FakeSubscriptionRepository(initial: List<Subscription> = emptyList()) : SubscriptionRepository {
-    private val backing = MutableStateFlow(initial)
-    var failure: Throwable? = null
-
-    val current: List<Subscription> get() = backing.value
-
-    override fun observeAll(): Flow<List<Subscription>> = backing
-
-    override suspend fun find(id: String): Subscription? = backing.value.find { it.id == id }
-
-    override suspend fun insert(subscription: Subscription) {
-        failure?.let { throw it }
-        backing.value = backing.value + subscription
-    }
-
-    override suspend fun update(subscription: Subscription) {
-        failure?.let { throw it }
-        if (backing.value.none { it.id == subscription.id }) throw SubscriptionNotFoundException(subscription.id)
-        backing.value = backing.value.map { if (it.id == subscription.id) subscription else it }
-    }
-
-    override suspend fun deleteById(id: String) {
-        failure?.let { throw it }
-        backing.value = backing.value.filterNot { it.id == id }
     }
 }
 
@@ -505,5 +462,93 @@ class FakeSavingsGoalRepository(
 
     private fun setLifecycle(goalId: String, lifecycle: SavingsGoalLifecycle) {
         backing.value = backing.value.map { if (it.id == goalId) it.copy(lifecycle = lifecycle) else it }
+    }
+}
+
+/**
+ * `MutableStateFlow`-backed [PortfolioRepository] fake for ViewModel unit tests. [refreshPrices] records its `force`
+ * argument in [refreshCalls] and answers [refreshResult], or throws [refreshFailure]; it never changes a price.
+ * Manual values are stamped with [valuedAtEpochMs].
+ */
+class FakePortfolioRepository(
+    initial: List<PortfolioHolding> = emptyList(),
+    private val valuedAtEpochMs: Long = 0L,
+) : PortfolioRepository {
+    private val backing = MutableStateFlow(initial)
+
+    val current: List<PortfolioHolding> get() = backing.value
+    val refreshCalls = mutableListOf<Boolean>()
+    var refreshResult = PriceRefreshResult(refreshed = 0, upToDate = 0, failures = emptyList())
+    var refreshFailure: Throwable? = null
+
+    /** When set, [refreshPrices] suspends until it is completed, to observe a refresh in flight. */
+    var refreshGate: CompletableDeferred<Unit>? = null
+
+    override fun observeAll(): Flow<List<PortfolioHolding>> = backing
+
+    override suspend fun add(holding: PortfolioHolding) {
+        check(backing.value.none { it.id == holding.id }) { "Holding '${holding.id}' already exists" }
+        backing.value = backing.value + holding
+    }
+
+    override suspend fun updateUnits(id: String, units: Units) {
+        val holding = find(id)
+        val valuation = holding.valuation as? HoldingValuation.Quoted
+            ?: error("Holding '$id' is not a quoted holding")
+        replace(holding.copy(valuation = valuation.copy(units = units)))
+    }
+
+    override suspend fun updateManualValue(id: String, value: CurrencyAmount) {
+        val holding = find(id)
+        check(holding.valuation is HoldingValuation.Manual) { "Holding '$id' is not a manual holding" }
+        replace(holding.copy(valuation = HoldingValuation.Manual(value, valuedAtEpochMs)))
+    }
+
+    override suspend fun delete(id: String) {
+        find(id)
+        backing.value = backing.value.filterNot { it.id == id }
+    }
+
+    override suspend fun refreshPrices(force: Boolean): PriceRefreshResult {
+        refreshCalls += force
+        refreshGate?.await()
+        refreshFailure?.let { throw it }
+        return refreshResult
+    }
+
+    fun emit(holdings: List<PortfolioHolding>) {
+        backing.value = holdings
+    }
+
+    private fun find(id: String): PortfolioHolding =
+        backing.value.firstOrNull { it.id == id } ?: throw PortfolioHoldingNotFoundException(id)
+
+    private fun replace(holding: PortfolioHolding) {
+        backing.value = backing.value.map { if (it.id == holding.id) holding else it }
+    }
+}
+
+/**
+ * Scriptable [QuoteSource]: [searchResults] answers every search, [quotes] holds the price of each ref, and
+ * [searchFailure]/[quoteFailure] make the matching call throw. Every call is recorded.
+ */
+class FakeQuoteSource : QuoteSource {
+    var searchResults: List<InstrumentCandidate> = emptyList()
+    var searchFailure: Throwable? = null
+    val quotes = mutableMapOf<InstrumentRef, Quote>()
+    var quoteFailure: Throwable? = null
+    val searches = mutableListOf<String>()
+    val quoteRequests = mutableListOf<InstrumentRef>()
+
+    override suspend fun search(query: String): List<InstrumentCandidate> {
+        searches += query
+        searchFailure?.let { throw it }
+        return searchResults
+    }
+
+    override suspend fun latestQuote(ref: InstrumentRef): Quote {
+        quoteRequests += ref
+        quoteFailure?.let { throw it }
+        return quotes[ref] ?: throw QuoteUnavailableException("No quote scripted for $ref")
     }
 }

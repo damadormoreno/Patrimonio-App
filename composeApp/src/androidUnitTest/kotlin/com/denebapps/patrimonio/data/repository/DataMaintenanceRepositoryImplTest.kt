@@ -8,11 +8,11 @@ import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.LiabilityEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
+import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
-import com.denebapps.patrimonio.data.db.entity.SubscriptionEntity
 import com.denebapps.patrimonio.data.db.testSeedingGate
 import com.denebapps.patrimonio.domain.repository.DataMaintenanceRepository
 import com.denebapps.patrimonio.domain.repository.ThemeMode
@@ -71,8 +71,11 @@ class DataMaintenanceRepositoryImplTest {
             ),
         )
         db.netWorthDao().upsert(NetWorthSnapshotEntity("2026-06", 10_000, 50_000))
-        db.subscriptionDao().insert(
-            SubscriptionEntity("sub-1", "Netflix", 1_299, "EUR", "MONTHLY", 20_000, "asset-1", active = true),
+        db.portfolioHoldingDao().insert(
+            PortfolioHoldingEntity(
+                "holding-1", "Cuadro", "OTHER", null, null, "MANUAL", null, null, "EUR",
+                null, null, null, null, 250_000, 1L,
+            ),
         )
     }
 
@@ -83,7 +86,7 @@ class DataMaintenanceRepositoryImplTest {
         assertTrue(db.savingsGoalDao().observeAll().first().isEmpty(), "savings goals not cleared")
         assertTrue(db.savingsGoalDao().listAllLinkedAssets().isEmpty(), "goal accounts not cleared")
         assertTrue(db.netWorthDao().observeAll().first().isEmpty(), "net-worth snapshots not cleared")
-        assertTrue(db.subscriptionDao().list().isEmpty(), "subscriptions not cleared")
+        assertTrue(db.portfolioHoldingDao().list().isEmpty(), "portfolio holdings not cleared")
     }
 
     @Test

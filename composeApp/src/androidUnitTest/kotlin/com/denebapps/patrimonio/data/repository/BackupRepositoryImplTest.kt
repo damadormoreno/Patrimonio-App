@@ -8,11 +8,11 @@ import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.LiabilityEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
+import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
-import com.denebapps.patrimonio.data.db.entity.SubscriptionEntity
 import com.denebapps.patrimonio.data.db.testSeedingGate
 import com.denebapps.patrimonio.domain.repository.InvalidBackupException
 import kotlinx.coroutines.CoroutineScope
@@ -48,17 +48,21 @@ private data class TablesState(
     val allocations: List<SavingsGoalAllocationEventEntity>,
     val links: List<SavingsGoalLinkEventEntity>,
     val goalAssets: List<SavingsGoalAssetEntity>,
-    val subscriptions: List<SubscriptionEntity>,
+    val holdings: List<PortfolioHoldingEntity>,
 )
 
 @RunWith(RobolectricTestRunner::class)
 class BackupRepositoryImplTest {
     private val october2026 = BackupFixedClock(Instant.parse("2026-10-06T10:00:00Z"))
 
-    private fun upserterFor(db: AppDatabase) =
-        NetWorthSnapshotUpserter(db.assetDao(), db.liabilityDao(), db.fxRateDao(), db.netWorthDao(), october2026) {
-            TimeZone.UTC
-        }
+    private fun upserterFor(db: AppDatabase) = NetWorthSnapshotUpserter(
+        db.assetDao(),
+        db.liabilityDao(),
+        db.portfolioHoldingDao(),
+        db.fxRateDao(),
+        db.netWorthDao(),
+        october2026,
+    ) { TimeZone.UTC }
 
     private fun CoroutineScope.repositoryFor(db: AppDatabase) =
         BackupRepositoryImpl(db, upserterFor(db), testSeedingGate(db), october2026)
@@ -73,7 +77,7 @@ class BackupRepositoryImplTest {
         allocations = savingsGoalDao().listAllAllocationEvents(),
         links = savingsGoalDao().listAllLinkEvents(),
         goalAssets = savingsGoalDao().listAllLinkedAssets(),
-        subscriptions = subscriptionDao().list(),
+        holdings = portfolioHoldingDao().list(),
     )
 
     /** Rows in every table, with non-trivial goal/event ids, and a current-month snapshot that
@@ -102,11 +106,23 @@ class BackupRepositoryImplTest {
         db.savingsGoalDao().insertLinkEvent(
             SavingsGoalLinkEventEntity(6, COLCHON, null, null, "LINK", 1_000, toGroupId = "g1"),
         )
-        db.subscriptionDao().insert(
-            SubscriptionEntity("s1", "Netflix", 1_299, "EUR", "MONTHLY", 20_484, "a1", active = true),
+        db.portfolioHoldingDao().insert(
+            PortfolioHoldingEntity(
+                "p1", "Vanguard Global", "FUND", "IE00B03HCZ61", null, "QUOTED", "MORNINGSTAR", "0P00012PP6", "EUR",
+                8_100_001, 12_345_678, 20_000, 1_000, null, null,
+            ),
         )
-        db.subscriptionDao().insert(
-            SubscriptionEntity("s2", "iCloud", 9_900, "USD", "YEARLY", 20_200, null, active = false),
+        db.portfolioHoldingDao().insert(
+            PortfolioHoldingEntity(
+                "p2", "iShares MSCI World", "ETF", null, "IWDA.AS", "QUOTED", "YAHOO", "IWDA.AS", "EUR",
+                2_500_000, null, null, null, null, null,
+            ),
+        )
+        db.portfolioHoldingDao().insert(
+            PortfolioHoldingEntity(
+                "p3", "Cuadro", "OTHER", null, null, "MANUAL", null, null, "USD",
+                null, null, null, null, 250_000, 7,
+            ),
         )
         upserterFor(db).refreshCurrentMonth()
     }
@@ -139,6 +155,7 @@ class BackupRepositoryImplTest {
         assertEquals("2026-10-06T10:00:00Z", document.exportedAt)
         assertEquals(2, document.assets.size)
         assertEquals(listOf(VIAJE, COCHE, COLCHON), document.savingsGoals.map { it.id })
+        assertEquals(listOf("p3", "p2", "p1"), document.portfolioHoldings.map { it.id })
         assertEquals("g1", document.savingsGoals.last().linkedGroupId)
         assertEquals(listOf("a1", "a2"), document.savingsGoals.first().linkedAssetIds)
         db.close()
@@ -156,9 +173,22 @@ class BackupRepositoryImplTest {
 
         val state = db.tables()
         assertTrue(state.assets.isEmpty() && state.goals.isEmpty() && state.allocations.isEmpty())
-        assertTrue(state.subscriptions.isEmpty())
+        assertTrue(state.holdings.isEmpty())
         // The current month is recomputed from the (now empty) assets.
         assertEquals(listOf(NetWorthSnapshotEntity("2026-10", 0, 0)), state.snapshots)
+        db.close()
+    }
+
+    @Test
+    fun `importing a version 7 backup without holdings clears the current portfolio`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        testSeedingGate(db).await()
+        populate(db)
+        val v7 = """{"format": "patrimonio-backup", "version": 7, "exportedAt": "2026-01-01T00:00:00Z"}"""
+
+        repositoryFor(db).importJson(v7)
+
+        assertTrue(db.portfolioHoldingDao().list().isEmpty())
         db.close()
     }
 
