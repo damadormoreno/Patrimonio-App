@@ -18,6 +18,8 @@ import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.model.UnitsBalance
 import com.denebapps.patrimonio.domain.model.inProcessingOrder
+import com.denebapps.patrimonio.domain.repository.HoldingHasTransfersException
+import com.denebapps.patrimonio.domain.repository.HoldingMovementsSummary
 import com.denebapps.patrimonio.domain.repository.InvalidMovementException
 import com.denebapps.patrimonio.domain.repository.MovementDraft
 import com.denebapps.patrimonio.domain.repository.MovementNotFoundException
@@ -26,7 +28,9 @@ import com.denebapps.patrimonio.domain.repository.PortfolioHoldingNotFoundExcept
 import com.denebapps.patrimonio.domain.repository.PortfolioNotFoundException
 import com.denebapps.patrimonio.domain.repository.buildMovement
 import com.denebapps.patrimonio.domain.repository.isQuotedFund
+import com.denebapps.patrimonio.domain.repository.noMovementsError
 import com.denebapps.patrimonio.domain.repository.normalizeMovementNote
+import com.denebapps.patrimonio.domain.repository.notPurchasesOnNewHoldingError
 import com.denebapps.patrimonio.domain.repository.notQuotedMovementError
 import com.denebapps.patrimonio.domain.repository.requireTransferBetweenFunds
 import kotlinx.coroutines.flow.Flow
@@ -200,21 +204,42 @@ class MovementRepositoryImpl(
         ),
     )
 
-    override suspend fun addHoldingWithPurchase(holding: PortfolioHolding, buy: MovementDraft): Movement {
+    override suspend fun addHoldingWithPurchase(holding: PortfolioHolding, buy: MovementDraft): Movement =
+        addHoldingWithPurchases(holding, listOf(buy)).single()
+
+    override suspend fun addHoldingWithPurchases(holding: PortfolioHolding, buys: List<MovementDraft>): List<Movement> {
         seedingGate.await()
         return appDatabase.writeTransaction {
             val valuation = holding.valuation as? HoldingValuation.Quoted ?: throw notQuotedMovementError()
-            if (buy.type != MovementType.BUY) {
-                throw InvalidMovementException("La primera operación de un producto nuevo debe ser una compra.")
-            }
+            if (buys.isEmpty()) throw noMovementsError()
+            if (buys.any { it.type != MovementType.BUY }) throw notPurchasesOnNewHoldingError()
             if (appDatabase.portfolioDao().find(holding.portfolioId) == null) {
                 throw PortfolioNotFoundException(holding.portfolioId)
             }
-            // Its units are those of the purchase, which `commit` materializes; until then it holds none.
+            // Its units are those of the purchases, which `commit` materializes; until then it holds none.
             val empty = holding.copy(valuation = valuation.copy(units = UnitsBalance.ZERO))
             holdingDao.insert(portfolioHoldingToEntity(empty, clock.now().toEpochMilliseconds()))
-            record(holding.id, buy)
+            record(holding.id, buys)
         }
+    }
+
+    override suspend fun replaceHoldingMovements(holdingId: String, drafts: List<MovementDraft>): List<Movement> {
+        seedingGate.await()
+        return appDatabase.writeTransaction {
+            requireQuotedHolding(holdingId)
+            if (dao.countTransferLegs(holdingId) > 0) throw HoldingHasTransfersException(holdingId)
+            if (drafts.isEmpty()) throw noMovementsError()
+            record(holdingId, drafts, replacing = dao.listByHolding(holdingId).map(::movementToDomain))
+        }
+    }
+
+    override suspend fun movementsSummary(holdingId: String): HoldingMovementsSummary {
+        seedingGate.await()
+        requireHolding(holdingId)
+        return HoldingMovementsSummary(
+            movementCount = dao.countForHolding(holdingId),
+            hasTransfers = dao.countTransferLegs(holdingId) > 0,
+        )
     }
 
     /** Commits the two legs of a new transfer and returns its id. Runs inside a transaction. */
@@ -252,12 +277,27 @@ class MovementRepositoryImpl(
     }
 
     /** Builds and commits one new movement on [holdingId]. Runs inside a transaction. */
-    private suspend fun record(holdingId: String, draft: MovementDraft): Movement {
+    private suspend fun record(holdingId: String, draft: MovementDraft): Movement =
+        record(holdingId, listOf(draft)).single()
+
+    /**
+     * Builds [drafts] as new movements of [holdingId], in that order, and commits them in one step together with the
+     * removal of the [replacing] movements. Runs inside a transaction.
+     */
+    private suspend fun record(
+        holdingId: String,
+        drafts: List<MovementDraft>,
+        replacing: List<Movement> = emptyList(),
+    ): List<Movement> {
         val holding = requireQuotedHolding(holdingId)
-        requireNotTransferLeg(draft.type)
-        val movement = buildMovement(draft, newId(), holding.id, Currency.valueOf(holding.currency), nextSequence())
-        commit(added = listOf(movement))
-        return movement
+        drafts.forEach { requireNotTransferLeg(it.type) }
+        val currency = Currency.valueOf(holding.currency)
+        val firstSequence = nextSequence()
+        val movements = drafts.mapIndexed { index, draft ->
+            buildMovement(draft, newId(), holding.id, currency, firstSequence + index)
+        }
+        commit(added = movements, removed = replacing)
+        return movements
     }
 
     /**

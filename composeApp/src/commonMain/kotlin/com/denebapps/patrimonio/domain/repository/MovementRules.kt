@@ -74,6 +74,12 @@ fun normalizeMovementNote(note: String?): String? {
 /** The error of a holding that takes no movements: only quoted ones do (a manual holding has no units). */
 fun notQuotedMovementError() = InvalidMovementException("Solo los productos con precio de mercado admiten movimientos.")
 
+/** The error of a new holding whose first movements are not all purchases. */
+fun notPurchasesOnNewHoldingError() = InvalidMovementException("Un producto nuevo solo puede empezar con compras.")
+
+/** The error of a new history (a new holding's, or the one that replaces another) that has no movement at all. */
+fun noMovementsError() = InvalidMovementException("Hace falta al menos un movimiento.")
+
 /**
  * Checks that [fromId] and [toId] can exchange a fund transfer: two different holdings, both quoted funds.
  *

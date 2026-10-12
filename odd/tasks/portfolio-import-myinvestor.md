@@ -41,7 +41,7 @@ original fiscal date and cost, so cost, latent gain and XIRR are exact without t
 
 - [x] **T1 — Parse + plan (pure)**: CSV reader, ISIN from file name, lots/redemptions, unit split, BUY drafts,
   typed errors/warnings (route: delegated writer).
-- [ ] **T2 — Persistence**: atomic "replace a holding's movements" (blocked by traspasos) and "create a holding
+- [x] **T2 — Persistence**: atomic "replace a holding's movements" (blocked by traspasos) and "create a holding
   from imported movements", reusing the movement-write pipeline (route: delegated writer).
 - [ ] **T3 — UI**: Cartera entry, multi-file pick, preview per file (match/new fund, units field, totals,
   warnings, replace notice), import, result (route: delegated writer).
@@ -72,7 +72,13 @@ original fiscal date and cost, so cost, latent gain and XIRR are exact without t
   export (temporary test, not committed): 19 lots, Σ cost 3.899,34 €, Σ value 4.658,35 €, units sum exact and
   proportional. Notes for T2/T3: drafts carry no holding id (new fund: generate the id first); EUR holdings only
   (`buildMovement` rejects another currency); match by `PortfolioHolding.isin`.
+- **T2** (commit below, `feat(import): replace a fund's movements and create funds from purchases`):
+  `MovementRepository.replaceHoldingMovements` (deletes and inserts in the same `commit` pipeline: replay,
+  materialized units, snapshot; refused with `HoldingHasTransfersException`, empty list or invalid drafts → nothing
+  written), `addHoldingWithPurchases` (generalizes `addHoldingWithPurchase`, all BUY), `movementsSummary`
+  (count + has transfers, for the preview); DAO `countTransferLegs`/`listByHolding`; fake in sync. No schema change.
+  RED: 42 compile errors; GREEN: check.sh (1702 tests), iOS compile; parent re-run of the repository tests green.
 
 ## Next step
 
-T2.
+T3.
