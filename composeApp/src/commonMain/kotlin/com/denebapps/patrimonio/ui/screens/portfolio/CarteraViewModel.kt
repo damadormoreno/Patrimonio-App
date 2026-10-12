@@ -3,6 +3,7 @@ package com.denebapps.patrimonio.ui.screens.portfolio
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.denebapps.patrimonio.domain.calc.portfolioTotalEur
+import com.denebapps.patrimonio.domain.model.AllocationTargets
 import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.HoldingValuation
@@ -12,6 +13,7 @@ import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.PortfolioNameProblem
+import com.denebapps.patrimonio.domain.repository.AllocationTargetRepository
 import com.denebapps.patrimonio.domain.repository.CarteraFilterSelection
 import com.denebapps.patrimonio.domain.repository.DuplicatePortfolioNameException
 import com.denebapps.patrimonio.domain.repository.FxRepository
@@ -99,6 +101,9 @@ sealed interface PortfolioDialogUi {
  * The list can be filtered by class, bank or broker and type ([filter]). Only the [rows] and the [total] are filtered:
  * [countLabel] and [isEmpty] still describe the scope. While a filter is active [filterSummary] says how many of the
  * scope's products are shown, and [noMatches] says that the scope has products but none passes the filter.
+ *
+ * [rebalanceBanner] warns that a portfolio drifted out of its tolerance band (the selected one, or those that need it
+ * while all are shown). It is computed from the whole portfolios: the filters do not touch it.
  */
 data class CarteraUiState(
     val rows: List<HoldingRowUi>,
@@ -117,6 +122,7 @@ data class CarteraUiState(
     val filter: CarteraFilterUi = CarteraFilterUi(),
     val filterSummary: String? = null,
     val noMatches: Boolean = false,
+    val rebalanceBanner: RebalanceBannerUi? = null,
 )
 
 /** What the user is told about the last price refresh, kept apart from the data so a refresh never touches rows. */
@@ -129,6 +135,7 @@ private data class CarteraData(
     val storedSelection: String? = null,
     val storedFilter: CarteraFilterSelection = CarteraFilterSelection(),
     val rates: FxRates = FxRates(emptyMap()),
+    val targets: Map<String, AllocationTargets> = emptyMap(),
 )
 
 /** The management dialog as the ViewModel keeps it; [CarteraUiState.dialog] is derived from it and the data. */
@@ -153,6 +160,7 @@ private sealed interface DialogState {
 class CarteraViewModel(
     private val portfolioRepository: PortfolioRepository,
     private val portfolios: PortfolioCollectionRepository,
+    allocationTargets: AllocationTargetRepository,
     private val preferences: PreferencesRepository,
     fxRepository: FxRepository,
     private val zoneProvider: () -> TimeZone,
@@ -165,11 +173,11 @@ class CarteraViewModel(
     private val repositoryData = combine(
         portfolioRepository.observeAll(),
         portfolios.observePortfolios(),
-        preferences.observeSelectedPortfolioId(),
-        preferences.observeCarteraFilter(),
-        fxRepository.observeRates(),
-        ::CarteraData,
-    )
+        combine(preferences.observeSelectedPortfolioId(), preferences.observeCarteraFilter(), ::Pair),
+        combine(fxRepository.observeRates(), allocationTargets.observeAllTargets(), ::Pair),
+    ) { holdings, all, (selection, filter), (rates, targets) ->
+        CarteraData(holdings, all, selection, filter, rates, targets)
+    }
 
     val state: StateFlow<CarteraUiState> = combine(
         repositoryData,
@@ -360,6 +368,14 @@ class CarteraViewModel(
             filter = filter,
             filterSummary = filterSummaryText(holdings.size, scope.size).takeIf { filter.active.isNotEmpty() },
             noMatches = scope.isNotEmpty() && holdings.isEmpty(),
+            // The only portfolio is the scope even though nothing is "selected" with one.
+            rebalanceBanner = rebalanceBanner(
+                portfolios = data.portfolios,
+                holdings = data.holdings,
+                rates = data.rates,
+                targets = data.targets,
+                scopePortfolioId = if (several) selected?.id else data.portfolios.singleOrNull()?.id,
+            ),
         )
     }
 

@@ -17,6 +17,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -42,6 +43,19 @@ fun PortfolioDetailScreen(
     viewModel: PortfolioDetailViewModel = koinViewModel(parameters = { parametersOf(portfolioId) }),
 ) {
     val state by viewModel.state.collectAsState()
+    val targetsActions = remember(viewModel) {
+        TargetsActions(
+            onEdit = viewModel::onEditTargets,
+            onCalculatorChange = viewModel::onCalculatorChange,
+            editor = TargetsEditorActions(
+                onTargetChange = viewModel::onTargetChange,
+                onToleranceChange = viewModel::onToleranceChange,
+                onSave = viewModel::onSaveTargets,
+                onClear = viewModel::onClearTargets,
+                onDismiss = viewModel::onDismissEditor,
+            ),
+        )
+    }
 
     PortfolioDetailContent(
         state = state,
@@ -49,9 +63,17 @@ fun PortfolioDetailScreen(
         onRangeSelect = viewModel::onRangeSelect,
         onRefresh = viewModel::onRefresh,
         onDismissSyncError = viewModel::onSyncErrorDismiss,
+        targetsActions = targetsActions,
         modifier = modifier,
     )
 }
+
+/** What the "Objetivo de reparto" section and its editor can do, so they can be shown without a ViewModel. */
+internal class TargetsActions(
+    val onEdit: () -> Unit,
+    val onCalculatorChange: (String) -> Unit,
+    val editor: TargetsEditorActions,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +83,7 @@ internal fun PortfolioDetailContent(
     onRangeSelect: (HistoryRange) -> Unit,
     onRefresh: () -> Unit,
     onDismissSyncError: () -> Unit,
+    targetsActions: TargetsActions,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAppColors.current
@@ -80,12 +103,13 @@ internal fun PortfolioDetailContent(
         ) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
                 if (state.loaded) {
-                    LoadedSections(state, onRangeSelect, onRefresh, onDismissSyncError)
+                    LoadedSections(state, onRangeSelect, onRefresh, onDismissSyncError, targetsActions)
                 }
                 Spacer(Modifier.height(32.dp))
             }
         }
     }
+    state.targetsEditor?.let { TargetsEditorSheet(it, targetsActions.editor) }
 }
 
 @Composable
@@ -94,6 +118,7 @@ private fun LoadedSections(
     onRangeSelect: (HistoryRange) -> Unit,
     onRetry: () -> Unit,
     onDismissSyncError: () -> Unit,
+    targetsActions: TargetsActions,
 ) {
     val colors = LocalAppColors.current
     val available = state.historyStatus == HistoryStatus.AVAILABLE
@@ -109,6 +134,7 @@ private fun LoadedSections(
         )
     }
     state.classAllocation?.let { ClassAllocationSection(it) }
+    state.targetSection?.let { TargetsSection(it, targetsActions.onEdit, targetsActions.onCalculatorChange) }
     when (state.historyStatus) {
         HistoryStatus.NOT_APPLICABLE, HistoryStatus.AVAILABLE -> Unit
         HistoryStatus.LOADING -> HistoryLoadingCard(Modifier.padding(top = 16.dp))

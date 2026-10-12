@@ -9,6 +9,7 @@ import com.denebapps.patrimonio.domain.model.MAX_PORTFOLIO_NAME_LENGTH
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
+import com.denebapps.patrimonio.testing.FakeAllocationTargetRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
@@ -81,6 +82,7 @@ class CarteraPortfoliosViewModelTest {
         val vm = CarteraViewModel(
             portfolioRepository = holdingsRepository,
             portfolios = collection,
+            allocationTargets = FakeAllocationTargetRepository(collection),
             preferences = preferences,
             fxRepository = FakeFxRepository(FxRates(emptyMap())),
             zoneProvider = { TimeZone.UTC },

@@ -4,16 +4,21 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.denebapps.patrimonio.domain.calc.HistoryRange
 import com.denebapps.patrimonio.domain.calc.quotedRefs
+import com.denebapps.patrimonio.domain.model.AllocationTargets
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.HoldingValuation
+import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.PricePoint
+import com.denebapps.patrimonio.domain.repository.AllocationTargetRepository
 import com.denebapps.patrimonio.domain.repository.FxHistoryRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.InstrumentHistoryRepository
 import com.denebapps.patrimonio.domain.repository.MovementRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
+import com.denebapps.patrimonio.ui.components.filterAmountInput
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +38,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import kotlinx.datetime.LocalDate
@@ -53,14 +59,20 @@ private data class PortfolioSyncState(val running: Boolean, val failed: Boolean 
  * need are brought up to date when the screen opens; [onRefresh] forces them. Cached data is always shown, even when
  * an update fails. "Tu rentabilidad" is the user's own: it comes from their movements, for the products of the scope
  * that have any. The calculation runs on [computationDispatcher], off the main thread.
+ *
+ * "Objetivo de reparto" is about one portfolio (its targets and tolerance live in [allocationTargets]): with all the
+ * portfolios shown it asks to pick one, unless there is only one, which is then the one it is about. The editor of the
+ * targets and the calculator ("¿Cuánto vas a aportar?") keep their state here; the section is computed from the
+ * holdings and the targets alone, apart from the heavy analysis.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class PortfolioDetailViewModel(
     private val portfolioId: String?,
-    portfolios: PortfolioCollectionRepository,
+    private val portfolios: PortfolioCollectionRepository,
+    private val allocationTargets: AllocationTargetRepository,
     private val portfolioRepository: PortfolioRepository,
     movementRepository: MovementRepository,
-    fxRepository: FxRepository,
+    private val fxRepository: FxRepository,
     private val fxHistoryRepository: FxHistoryRepository,
     private val historyRepository: InstrumentHistoryRepository,
     private val clock: Clock,
@@ -105,13 +117,45 @@ class PortfolioDetailViewModel(
         .map { analyzePortfolio(it, today()) }
         .flowOn(computationDispatcher)
 
+    // ---- targets -------------------------------------------------------------------------------------------------
+
+    /** The portfolio the targets belong to: the one shown, or the only one when all are shown and there is one. */
+    private val targetScope: Flow<TargetScope> = portfolios.observePortfolios()
+        .map { all ->
+            val own = all.firstOrNull { it.id == portfolioId } ?: all.singleOrNull().takeIf { portfolioId == null }
+            TargetScope(own, mustChoose = own == null && portfolioId == null && all.size >= MIN_PORTFOLIOS_TO_CHOOSE)
+        }
+        .distinctUntilChanged()
+
+    private val currentTargets: Flow<AllocationTargets?> = targetScope.flatMapLatest { scope ->
+        scope.portfolio?.let { allocationTargets.observeTargets(it.id) } ?: flowOf(null)
+    }
+
+    /** The split by class of the scope; cheap, so apart from [analysis] and available as soon as the data is. */
+    private val classSplit: Flow<ClassSplit?> =
+        combine(scopedHoldings, fxRepository.observeRates(), ::classSplitOf)
+
+    private val calculatorText = MutableStateFlow("")
+    private val editor = MutableStateFlow<TargetsDraft?>(null)
+
+    private val targetsPanel: Flow<TargetsPanel> = combine(
+        targetScope,
+        classSplit,
+        currentTargets,
+        calculatorText,
+        editor,
+    ) { scope, split, targets, calculator, draft ->
+        targetsPanel(scope, split, targets, calculator, draft)
+    }
+
     val state: StateFlow<PortfolioDetailUiState> = combine(
         analysis,
         selectedRange,
         sync,
         title,
-    ) { data, range, syncState, screenTitle ->
-        buildState(data.copy(header = data.header.copy(title = screenTitle)), range, syncState)
+        targetsPanel,
+    ) { data, range, syncState, screenTitle, targetsState ->
+        buildState(data.copy(header = data.header.copy(title = screenTitle)), range, syncState, targetsState)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(PORTFOLIO_DETAIL_STOP_TIMEOUT_MS),
@@ -136,6 +180,70 @@ class PortfolioDetailViewModel(
 
     fun onSyncErrorDismiss() {
         sync.value = sync.value.copy(failed = false)
+    }
+
+    // ---- targets: calculator and editor --------------------------------------------------------------------------
+
+    /** What the user typed in "¿Cuánto vas a aportar?"; only digits and a decimal comma are kept. */
+    fun onCalculatorChange(text: String) {
+        calculatorText.value = filterAmountInput(text)
+    }
+
+    /** Opens the editor on the targets of the portfolio, or on its current split when it has none; ignored with no portfolio. */
+    fun onEditTargets() {
+        viewModelScope.launch {
+            val portfolio = targetScope.first().portfolio ?: return@launch
+            editor.value = initialDraft(
+                portfolioId = portfolio.id,
+                split = classSplit.first(),
+                targets = allocationTargets.observeTargets(portfolio.id).first(),
+                portfolioToleranceBp = portfolio.rebalanceToleranceBp,
+            )
+        }
+    }
+
+    /** The class field of [assetClass] now holds [text], kept to what a share can be. */
+    fun onTargetChange(assetClass: AssetClass, text: String) {
+        editor.update { it?.withText(assetClass, filterPercentInput(text)) }
+    }
+
+    /** The tolerance field now holds [text] (points). */
+    fun onToleranceChange(text: String) {
+        editor.update { it?.withTolerance(filterPercentInput(text)) }
+    }
+
+    fun onDismissEditor() {
+        editor.value = null
+    }
+
+    /** Stores the targets and the tolerance of the editor and closes it; ignored unless they are valid. */
+    fun onSaveTargets() {
+        val draft = editor.value ?: return
+        val targets = draft.targetsBp()
+        val tolerance = draft.toleranceBp()
+        if (!editorUi(draft).canSave || targets == null || tolerance == null) return
+        runEditorAction(draft) { allocationTargets.setTargets(draft.portfolioId, targets, tolerance) }
+    }
+
+    /** Removes the targets of the portfolio and closes the editor; ignored when it has none. */
+    fun onClearTargets() {
+        val draft = editor.value ?: return
+        if (!editorUi(draft).canRemove) return
+        runEditorAction(draft) { allocationTargets.clearTargets(draft.portfolioId) }
+    }
+
+    private fun runEditorAction(draft: TargetsDraft, action: suspend () -> Unit) {
+        editor.value = draft.copy(saving = true, error = null)
+        viewModelScope.launch {
+            try {
+                action()
+                editor.value = null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                editor.update { it?.copy(saving = false, error = targetsSaveErrorMessage(failure)) }
+            }
+        }
     }
 
     private fun today(): LocalDate = clock.todayIn(zoneProvider())
@@ -197,6 +305,7 @@ class PortfolioDetailViewModel(
         analysis: PortfolioAnalysis,
         range: HistoryRange,
         syncState: PortfolioSyncState,
+        targets: TargetsPanel,
     ): PortfolioDetailUiState {
         val status = when {
             !analysis.hasQuoted -> HistoryStatus.NOT_APPLICABLE
@@ -219,6 +328,8 @@ class PortfolioDetailViewModel(
             note = PORTFOLIO_NOTE.takeIf { available },
             isSyncing = syncState.running,
             syncError = syncState.failed,
+            targetSection = targets.section,
+            targetsEditor = targets.editor,
         )
     }
 
@@ -243,4 +354,27 @@ internal suspend fun attempt(download: suspend () -> Boolean): Boolean = try {
     throw cancelled
 } catch (failure: Exception) {
     true
+}
+
+/** The portfolio the targets of the screen belong to ([portfolio], `null` for none) and whether the user must pick one. */
+private data class TargetScope(val portfolio: Portfolio?, val mustChoose: Boolean)
+
+/** The targets part of the screen: the section and, while it is open, the editor. */
+private data class TargetsPanel(val section: TargetSectionUi?, val editor: TargetsEditorUi?)
+
+private fun targetsPanel(
+    scope: TargetScope,
+    split: ClassSplit?,
+    targets: AllocationTargets?,
+    calculatorText: String,
+    draft: TargetsDraft?,
+): TargetsPanel {
+    val portfolio = scope.portfolio
+    val section = when {
+        portfolio == null -> TargetSectionUi.PickPortfolio(TARGETS_PICK_PORTFOLIO_TEXT).takeIf { scope.mustChoose }
+        split == null -> null
+        targets == null -> TargetSectionUi.Empty(TARGETS_EMPTY_TEXT)
+        else -> rebalanceStatusOf(split, targets)?.let { definedSection(it, calculatorText) }
+    }
+    return TargetsPanel(section, draft?.takeIf { portfolio != null }?.let(::editorUi))
 }

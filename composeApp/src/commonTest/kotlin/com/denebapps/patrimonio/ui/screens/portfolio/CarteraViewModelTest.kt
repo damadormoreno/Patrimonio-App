@@ -16,6 +16,7 @@ import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.repository.PriceRefreshFailure
 import com.denebapps.patrimonio.domain.repository.PriceRefreshResult
+import com.denebapps.patrimonio.testing.FakeAllocationTargetRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
@@ -98,6 +99,7 @@ class CarteraViewModelTest {
     private fun viewModel(repository: FakePortfolioRepository) = CarteraViewModel(
         portfolioRepository = repository,
         portfolios = FakePortfolioCollectionRepository(holdings = repository),
+        allocationTargets = FakeAllocationTargetRepository(),
         preferences = FakePreferencesRepository(),
         fxRepository = FakeFxRepository(rates),
         zoneProvider = { TimeZone.UTC },
