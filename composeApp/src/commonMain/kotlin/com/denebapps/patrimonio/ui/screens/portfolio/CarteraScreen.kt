@@ -67,6 +67,9 @@ import org.koin.compose.viewmodel.koinViewModel
  *
  * `Filtrar` in the scope bar opens the filters (class, broker, type). While some are active, the total and the list
  * show only what passes them, a line says how many of the scope's products that is and a chip per filter removes it.
+ *
+ * When a portfolio drifted out of its target band, a notice under the total says so and opens that portfolio's detail
+ * through [onOpenPortfolio] (with all of them shown, the first one that needs it); the filters do not affect it.
  */
 @Composable
 fun CarteraScreen(
@@ -164,6 +167,13 @@ internal fun CarteraContent(
                     total = state.total,
                     onClick = { onOpenPortfolio(state.selectedPortfolioId) }.takeUnless { state.isEmpty },
                 )
+                state.rebalanceBanner?.let {
+                    RebalanceBannerView(
+                        banner = it,
+                        onClick = { onOpenPortfolio(it.portfolioId) },
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                }
                 state.filterSummary?.let { FilterSummaryLine(text = it, modifier = Modifier.padding(top = 10.dp)) }
                 if (state.filter.active.isNotEmpty()) {
                     ActiveFilterChips(

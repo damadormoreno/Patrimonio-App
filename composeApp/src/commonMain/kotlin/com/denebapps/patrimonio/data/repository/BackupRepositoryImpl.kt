@@ -19,7 +19,8 @@ import kotlinx.datetime.Clock
  * transaction rather than a reader one: the data set is tiny and it reuses the proven
  * [writeTransaction] path). Import decodes and validates the whole file first, then clears and
  * re-inserts parents before children in a single transaction, preserving ids (savings-goal ids
- * included, so ledgers and links keep pointing at the right goal; portfolios before the holdings in them, and those
+ * included, so ledgers and links keep pointing at the right goal; portfolios, with their allocation targets, before the
+ * holdings in them, and those
  * before their movements, whose units replace the holdings' own). Whatever the
  * file holds, the database ends with at least one portfolio. The current month's net-worth
  * snapshot is recomputed from the imported assets, like after any other asset write.
@@ -49,6 +50,7 @@ class BackupRepositoryImpl(
                 portfolios = appDatabase.portfolioDao().list().map { it.toBackup() },
                 portfolioHoldings = appDatabase.portfolioHoldingDao().list().map { it.toBackup() },
                 movements = appDatabase.movementDao().list().map { it.toBackup() },
+                allocationTargets = appDatabase.allocationTargetDao().list().map { it.toBackup() },
             )
         }
         return BackupCodec.encode(document)
@@ -73,6 +75,7 @@ class BackupRepositoryImpl(
             document.savingsGoalAllocationEvents.forEach { goals.insertAllocationEvent(it.toEntity()) }
             document.savingsGoalLinkEvents.forEach { goals.insertLinkEvent(it.toEntity()) }
             document.portfolios.forEach { appDatabase.portfolioDao().insert(it.toEntity()) }
+            appDatabase.allocationTargetDao().insertAll(document.allocationTargets.map { it.toEntity() })
             // A holding with movements gets its units from them (the file's value is redundant); others keep theirs.
             val derivedUnits = computeLedgers(document.movements.map { movementToDomain(it.toEntity()) })
                 .mapValues { (_, ledger) -> ledger.unitsHeld.scaled }

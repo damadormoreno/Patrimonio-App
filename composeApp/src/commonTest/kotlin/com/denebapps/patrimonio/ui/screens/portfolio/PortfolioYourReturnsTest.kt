@@ -27,6 +27,7 @@ import com.denebapps.patrimonio.domain.model.opening
 import com.denebapps.patrimonio.domain.model.transferIn
 import com.denebapps.patrimonio.domain.model.transferOut
 import com.denebapps.patrimonio.domain.model.units
+import com.denebapps.patrimonio.testing.FakeAllocationTargetRepository
 import com.denebapps.patrimonio.testing.FakeFxHistoryRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeInstrumentHistoryRepository
@@ -114,6 +115,7 @@ class PortfolioYourReturnsTest {
         return PortfolioDetailViewModel(
             portfolioId = portfolioId,
             portfolios = FakePortfolioCollectionRepository(portfolios, repository),
+            allocationTargets = FakeAllocationTargetRepository(),
             portfolioRepository = repository,
             movementRepository = FakeMovementRepository(repository, movements),
             fxRepository = FakeFxRepository(FxRates(emptyMap())),

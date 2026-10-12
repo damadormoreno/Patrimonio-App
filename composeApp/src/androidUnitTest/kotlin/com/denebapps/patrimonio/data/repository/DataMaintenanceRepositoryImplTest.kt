@@ -5,6 +5,7 @@ import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.buildInMemoryTestDatabase
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
 import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
+import com.denebapps.patrimonio.data.db.entity.AllocationTargetEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.FxHistoryEntity
 import com.denebapps.patrimonio.data.db.entity.InstrumentPriceEntity
@@ -102,6 +103,14 @@ class DataMaintenanceRepositoryImplTest {
                 "movement-1", "holding-3", "BUY", 20_000, 1_000_000, 10_000, "EUR", 0, 10_000, 0, null, null, 1,
             ),
         )
+        db.portfolioDao().updateTolerance("portfolio-2", 900)
+        db.allocationTargetDao().insertAll(
+            listOf(
+                AllocationTargetEntity(TEST_PORTFOLIO_ID, "EQUITY", 6_000),
+                AllocationTargetEntity(TEST_PORTFOLIO_ID, "FIXED_INCOME", 4_000),
+                AllocationTargetEntity("portfolio-2", "EQUITY", 10_000),
+            ),
+        )
         val price = InstrumentPriceEntity("MORNINGSTAR", "0P00012PP6", 20_000L, 5L, "EUR")
         db.instrumentPriceDao().upsertAll(listOf(price))
         db.instrumentPriceDao().upsertSync(InstrumentPriceSyncEntity("MORNINGSTAR", "0P00012PP6", 1L))
@@ -117,6 +126,7 @@ class DataMaintenanceRepositoryImplTest {
         assertTrue(db.netWorthDao().observeAll().first().isEmpty(), "net-worth snapshots not cleared")
         assertTrue(db.portfolioHoldingDao().list().isEmpty(), "portfolio holdings not cleared")
         assertTrue(db.movementDao().list().isEmpty(), "movements not cleared")
+        assertTrue(db.allocationTargetDao().list().isEmpty(), "allocation targets not cleared")
         assertEquals(listOf("Mi cartera"), db.portfolioDao().list().map { it.name }, "portfolios not reset")
         assertEquals(0, db.instrumentPriceDao().count(), "price history not cleared")
         assertNull(db.instrumentPriceDao().findSync("MORNINGSTAR", "0P00012PP6"), "price sync state not cleared")
@@ -147,6 +157,7 @@ class DataMaintenanceRepositoryImplTest {
         val portfolio = db.portfolioDao().list().single()
         assertEquals("Mi cartera", portfolio.name)
         assertEquals(0, portfolio.sortOrder)
+        assertEquals(500, portfolio.rebalanceToleranceBp)
         assertEquals(0, db.portfolioHoldingDao().countInPortfolio(portfolio.id))
         db.close()
     }

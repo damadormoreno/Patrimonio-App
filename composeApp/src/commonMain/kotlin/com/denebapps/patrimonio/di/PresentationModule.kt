@@ -116,7 +116,7 @@ val presentationModule = module {
             initialWithdraw = params.getOrNull() ?: false,
         )
     }
-    viewModel { CarteraViewModel(get(), get(), get(), get(), get<() -> TimeZone>()) }
+    viewModel { CarteraViewModel(get(), get(), get(), get(), get(), get<() -> TimeZone>()) }
     viewModel { AddHoldingViewModel(get(), get(), get(), get(), get(), get(), get(), get<() -> TimeZone>()) }
     viewModel {
         ImportMyInvestorViewModel(
@@ -159,6 +159,7 @@ val presentationModule = module {
         PortfolioDetailViewModel(
             portfolioId = params.getOrNull(),
             portfolios = get(),
+            allocationTargets = get(),
             portfolioRepository = get(),
             movementRepository = get(),
             fxRepository = get(),

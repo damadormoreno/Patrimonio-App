@@ -12,6 +12,7 @@ import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.UNITS_SCALE
 import com.denebapps.patrimonio.domain.model.UnitsBalance
+import com.denebapps.patrimonio.testing.FakeAllocationTargetRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
@@ -67,6 +68,7 @@ class CarteraClosedRowsTest {
         val vm = CarteraViewModel(
             portfolioRepository = repository,
             portfolios = FakePortfolioCollectionRepository(holdings = repository),
+            allocationTargets = FakeAllocationTargetRepository(),
             preferences = FakePreferencesRepository(),
             fxRepository = FakeFxRepository(FxRates(mapOf(Currency.USD to 920_000))),
             zoneProvider = { TimeZone.UTC },

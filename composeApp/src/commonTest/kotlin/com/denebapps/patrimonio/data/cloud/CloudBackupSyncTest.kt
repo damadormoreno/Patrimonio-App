@@ -240,6 +240,16 @@ class CloudBackupSyncTest {
     }
 
     @Test
+    fun `allocation targets count as records`() {
+        val onlyTargets = Json.parseToJsonElement(
+            "{\"assets\":[],\"allocationTargets\":[{\"portfolioId\":\"pf-1\",\"assetClass\":\"EQUITY\"," +
+                "\"targetBp\":6000},{\"portfolioId\":\"pf-1\",\"assetClass\":\"FIXED_INCOME\",\"targetBp\":4000}]}",
+        ).jsonObject
+
+        assertEquals(2, recordCount(onlyTargets))
+    }
+
+    @Test
     fun `the portfolios themselves are not records so a device with only the default one is still empty`() {
         val onlyPortfolios = Json.parseToJsonElement(
             "{\"assets\":[],\"portfolios\":[{\"id\":\"pf-1\",\"name\":\"Mi cartera\",\"sortOrder\":0}]," +

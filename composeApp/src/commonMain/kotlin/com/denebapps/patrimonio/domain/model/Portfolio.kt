@@ -1,5 +1,7 @@
 package com.denebapps.patrimonio.domain.model
 
+import com.denebapps.patrimonio.domain.calc.DEFAULT_REBALANCE_TOLERANCE_BP
+
 /** The name of the portfolio every install starts with, and the one that is left after clearing all data. */
 const val DEFAULT_PORTFOLIO_NAME = "Mi cartera"
 
@@ -10,9 +12,16 @@ const val MAX_PORTFOLIO_NAME_LENGTH = 40
  * A named group of holdings ("Jubilación", "Hijos"). Each holding belongs to exactly one portfolio and there is always
  * at least one portfolio. [id] is a random UUID string; [sortOrder] orders the portfolios, ties broken by name. The
  * [name] is stored trimmed (see [normalizePortfolioName]); uniqueness, ignoring case, is a rule of the collection and
- * is kept by the repository.
+ * is kept by the repository. [rebalanceToleranceBp] is the band, in basis points either side of each allocation target,
+ * within which the portfolio is on target; it is only changed together with the targets (see
+ * `AllocationTargetRepository`).
  */
-data class Portfolio(val id: String, val name: String, val sortOrder: Int) {
+data class Portfolio(
+    val id: String,
+    val name: String,
+    val sortOrder: Int,
+    val rebalanceToleranceBp: Int = DEFAULT_REBALANCE_TOLERANCE_BP,
+) {
     init {
         require(id.isNotBlank()) { "portfolio id must not be blank" }
         require(normalizePortfolioName(name) == name) { "portfolio name must be trimmed, was '$name'" }

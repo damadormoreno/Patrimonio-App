@@ -358,13 +358,22 @@ class CloudBackupSync(
 }
 
 private val RECORD_KEYS =
-    listOf("assets", "liabilities", "accountGroups", "savingsGoals", "portfolioHoldings", "movements")
+    listOf(
+        "assets",
+        "liabilities",
+        "accountGroups",
+        "savingsGoals",
+        "portfolioHoldings",
+        "movements",
+        "allocationTargets",
+    )
 
 /**
- * Accounts, debts, groups, goals, portfolio holdings and their movements in a backup: zero means there is nothing to
- * protect. The portfolios themselves are deliberately not counted: there is always at least one, so counting them
- * would make a device whose data was cleared look as if it still had something, and an empty backup could then
- * overwrite the cloud copy. The holdings in them are what is worth protecting.
+ * Accounts, debts, groups, goals, portfolio holdings, their movements and allocation targets in a backup: zero means
+ * there is nothing to protect. The portfolios themselves are deliberately not counted: there is always at least one,
+ * so counting them would make a device whose data was cleared look as if it still had something, and an empty backup
+ * could then overwrite the cloud copy. The holdings in them are what is worth protecting, and so are the targets the
+ * user typed (clearing all data removes them, so they never make an emptied device look full).
  */
 internal fun recordCount(backup: JsonObject): Int = RECORD_KEYS.sumOf { (backup[it] as? JsonArray)?.size ?: 0 }
 

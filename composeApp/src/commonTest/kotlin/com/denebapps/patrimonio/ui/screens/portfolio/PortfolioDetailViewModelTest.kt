@@ -24,6 +24,7 @@ import com.denebapps.patrimonio.domain.repository.FundamentalsSyncResult
 import com.denebapps.patrimonio.domain.repository.HistorySyncFailure
 import com.denebapps.patrimonio.domain.repository.HistorySyncResult
 import com.denebapps.patrimonio.domain.repository.HistoryUnavailableException
+import com.denebapps.patrimonio.testing.FakeAllocationTargetRepository
 import com.denebapps.patrimonio.testing.FakeFxHistoryRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeInstrumentHistoryRepository
@@ -235,6 +236,7 @@ class PortfolioDetailViewModelTest {
         val vm = PortfolioDetailViewModel(
             portfolioId = portfolioId,
             portfolios = collection,
+            allocationTargets = FakeAllocationTargetRepository(collection),
             portfolioRepository = portfolio,
             movementRepository = FakeMovementRepository(portfolio),
             fxRepository = FakeFxRepository(rates),

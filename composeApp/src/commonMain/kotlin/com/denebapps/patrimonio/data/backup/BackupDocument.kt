@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.data.backup
 
+import com.denebapps.patrimonio.domain.calc.DEFAULT_REBALANCE_TOLERANCE_BP
 import kotlinx.serialization.Serializable
 
 /**
@@ -17,7 +18,9 @@ import kotlinx.serialization.Serializable
  * fundamentals (`ongoingChargePercentScaled`, `riskLevel`, `category`, `managementCompany`), null in older files;
  * version 11 added the [portfolios] and each holding's `portfolioId`, which older files lack (one "Mi cartera" is made
  * for them); version 12 added each holding's optional `assetClass`, null in older files; version 13 added the
- * [movements] of the positions, empty in older files. [BackupCodec] upgrades older files on read.
+ * [movements] of the positions, empty in older files; version 14 added each portfolio's `rebalanceToleranceBp`, the
+ * default 500 in older files, and the [allocationTargets], empty in older files. [BackupCodec] upgrades older files on
+ * read.
  *
  * Enum-like fields hold the domain enum `name`s and currencies their ISO code; amounts are minor
  * units, dates epoch days, timestamps epoch milliseconds.
@@ -39,17 +42,32 @@ data class BackupDocument(
     val portfolios: List<PortfolioBackup> = emptyList(),
     val portfolioHoldings: List<PortfolioHoldingBackup> = emptyList(),
     val movements: List<MovementBackup> = emptyList(),
+    val allocationTargets: List<AllocationTargetBackup> = emptyList(),
 )
 
 /**
  * A portfolio: a named group of holdings, in [sortOrder]. Names are trimmed, at most 40 characters and unique ignoring
- * case.
+ * case. [rebalanceToleranceBp] is the tolerance band of its allocation targets in basis points, 0 to 10 000; files from
+ * before version 14 lack it and get the default.
  */
 @Serializable
 data class PortfolioBackup(
     val id: String,
     val name: String,
     val sortOrder: Int,
+    val rebalanceToleranceBp: Int = DEFAULT_REBALANCE_TOLERANCE_BP,
+)
+
+/**
+ * The share of the asset class [assetClass] (an `AssetClass` name) that the portfolio [portfolioId] aims for, in basis
+ * points: 1 to 10 000, adding up to 10 000 over the classes of a portfolio. A portfolio without targets has no rows,
+ * and a class without a target has none either (a stored 0 is refused).
+ */
+@Serializable
+data class AllocationTargetBackup(
+    val portfolioId: String,
+    val assetClass: String,
+    val targetBp: Int,
 )
 
 /** A custom account type; [kind] and [color] are enum names. Accounts point at it from their `group`. */

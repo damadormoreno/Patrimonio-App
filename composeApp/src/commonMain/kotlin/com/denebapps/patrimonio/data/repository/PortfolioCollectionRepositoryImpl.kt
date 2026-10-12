@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.map
  * [PortfolioCollectionRepository] over Room. Every write is one transaction: deleting a portfolio moves its holdings
  * and removes it together (the foreign key restricts, so a holding can never go with its portfolio), and the checks
  * that depend on the other rows (a unique name ignoring case, the last portfolio) run inside it. Nothing here changes
- * a value, so the month's net-worth snapshot needs no refresh.
+ * a value, so the month's net-worth snapshot needs no refresh. A portfolio's allocation targets go with it.
  */
 class PortfolioCollectionRepositoryImpl(
     private val appDatabase: AppDatabase,
@@ -93,4 +93,9 @@ class PortfolioCollectionRepositoryImpl(
     }
 }
 
-private fun toDomain(row: PortfolioEntity) = Portfolio(id = row.id, name = row.name, sortOrder = row.sortOrder)
+private fun toDomain(row: PortfolioEntity) = Portfolio(
+    id = row.id,
+    name = row.name,
+    sortOrder = row.sortOrder,
+    rebalanceToleranceBp = row.rebalanceToleranceBp,
+)

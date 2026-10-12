@@ -10,6 +10,7 @@ import com.denebapps.patrimonio.data.lock.PinHasher
 import com.denebapps.patrimonio.data.platform.PlatformContext
 import com.denebapps.patrimonio.data.repository.AccountGroupRepositoryImpl
 import com.denebapps.patrimonio.data.repository.AccountTypeRepositoryImpl
+import com.denebapps.patrimonio.data.repository.AllocationTargetRepositoryImpl
 import com.denebapps.patrimonio.data.repository.AssetRepositoryImpl
 import com.denebapps.patrimonio.data.repository.BackupRepositoryImpl
 import com.denebapps.patrimonio.data.repository.DataMaintenanceRepositoryImpl
@@ -25,6 +26,7 @@ import com.denebapps.patrimonio.data.repository.PortfolioSeriesLoaderImpl
 import com.denebapps.patrimonio.data.repository.SavingsGoalRepositoryImpl
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AccountTypeRepository
+import com.denebapps.patrimonio.domain.repository.AllocationTargetRepository
 import com.denebapps.patrimonio.domain.repository.AppLock
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.BackupRepository
@@ -102,6 +104,7 @@ val dataModule = module {
     single<MovementRepository> {
         MovementRepositoryImpl(appDatabase = get(), snapshotUpserter = get(), seedingGate = get(), clock = get())
     }
+    single<AllocationTargetRepository> { AllocationTargetRepositoryImpl(appDatabase = get(), seedingGate = get()) }
     single<PortfolioCollectionRepository> {
         PortfolioCollectionRepositoryImpl(appDatabase = get(), seedingGate = get())
     }

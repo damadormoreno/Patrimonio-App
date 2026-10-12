@@ -105,7 +105,8 @@ data class ConcentrationUi(val name: String, val weightText: String, val warning
 /**
  * The whole portfolio detail screen. [historyStatus] says what the chart area holds (the sections that come from the
  * history are null unless it is [HistoryStatus.AVAILABLE]); [isSyncing] is a download in flight and [syncError] a
- * failed one while cached data is shown.
+ * failed one while cached data is shown. [targetSection] is "Objetivo de reparto" (null when the portfolio is gone)
+ * and [targetsEditor] the sheet that edits it, while it is open.
  */
 data class PortfolioDetailUiState(
     val loaded: Boolean = false,
@@ -121,4 +122,6 @@ data class PortfolioDetailUiState(
     val note: String? = null,
     val isSyncing: Boolean = false,
     val syncError: Boolean = false,
+    val targetSection: TargetSectionUi? = null,
+    val targetsEditor: TargetsEditorUi? = null,
 )

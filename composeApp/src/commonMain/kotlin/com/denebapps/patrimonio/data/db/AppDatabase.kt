@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.RoomDatabaseConstructor
 import com.denebapps.patrimonio.data.db.dao.AccountGroupDao
 import com.denebapps.patrimonio.data.db.dao.AccountTypeDao
+import com.denebapps.patrimonio.data.db.dao.AllocationTargetDao
 import com.denebapps.patrimonio.data.db.dao.AssetDao
 import com.denebapps.patrimonio.data.db.dao.FxHistoryDao
 import com.denebapps.patrimonio.data.db.dao.FxRateDao
@@ -20,6 +21,7 @@ import com.denebapps.patrimonio.data.db.dao.SavingsGoalDao
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
 import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AccountTypeEntity
+import com.denebapps.patrimonio.data.db.entity.AllocationTargetEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.FxHistoryEntity
 import com.denebapps.patrimonio.data.db.entity.FxHistorySyncEntity
@@ -56,15 +58,17 @@ import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
         FxHistoryEntity::class,
         FxHistorySyncEntity::class,
         MovementEntity::class,
+        AllocationTargetEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = true,
     // 5 -> 6 only adds the custom account types table and the accounts' nullable emoji column. 6 -> 7 (drops
     // the subscriptions table) is the hand-written MIGRATION_6_7. 7 -> 8 only adds the portfolio holdings table.
     // 8 -> 9 only adds their nullable broker column. 9 -> 10 only adds the nullable fundamentals columns of the
     // holdings and the four re-downloadable history caches. 10 -> 11 (the portfolios, with a required foreign key on
     // the holdings) is the hand-written MIGRATION_10_11. 11 -> 12 only adds the nullable asset class column of the
-    // holdings. 12 -> 13 only adds the movements table of the positions.
+    // holdings. 12 -> 13 only adds the movements table of the positions. 13 -> 14 only adds the portfolios' tolerance
+    // column (NOT NULL, with its database default) and the allocation targets table.
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -74,6 +78,7 @@ import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
         AutoMigration(from = 9, to = 10),
         AutoMigration(from = 11, to = 12),
         AutoMigration(from = 12, to = 13),
+        AutoMigration(from = 13, to = 14),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
@@ -97,6 +102,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun portfolioHoldingDao(): PortfolioHoldingDao
 
     abstract fun movementDao(): MovementDao
+
+    abstract fun allocationTargetDao(): AllocationTargetDao
 
     abstract fun instrumentPriceDao(): InstrumentPriceDao
 
