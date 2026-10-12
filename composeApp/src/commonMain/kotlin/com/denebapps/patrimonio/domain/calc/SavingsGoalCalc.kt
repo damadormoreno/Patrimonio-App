@@ -6,6 +6,7 @@ import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.model.SavingsGoalAllocationEvent
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
@@ -71,23 +72,31 @@ val SavingsGoal.tracksLinkedBalance: Boolean
 
 /**
  * The balance a goal that [tracksLinkedBalance] shows as its progress, in the goal's currency: the sum
- * of its linked assets, or of the linked group's members, converted at [rates] (same-currency amounts
- * need no rates). Null when the goal does not track a balance, a linked asset or the group is not in
- * [assets]/[groups], or a needed conversion has no usable rate. Never negative.
+ * of its linked assets, or of the linked group's members (its accounts plus its [holdings]), converted at
+ * [rates] (same-currency amounts need no rates). A holding with no price yet is worth nothing yet: it adds
+ * zero and never makes the balance unavailable. Null when the goal does not track a balance, a linked asset
+ * or the group is not in [assets]/[groups], or a needed conversion has no usable rate. Never negative.
  */
-fun trackedBalance(goal: SavingsGoal, assets: List<Asset>, groups: List<AccountGroup>, rates: FxRates?): Money? {
+fun trackedBalance(
+    goal: SavingsGoal,
+    assets: List<Asset>,
+    groups: List<AccountGroup>,
+    rates: FxRates?,
+    holdings: List<PortfolioHolding> = emptyList(),
+): Money? {
     if (!goal.tracksLinkedBalance) return null
     val currency = goal.target.currency
-    val members = if (goal.linkedAssetIds.isNotEmpty()) {
+    val amounts = if (goal.linkedAssetIds.isNotEmpty()) {
         val linked = assets.filter { it.id in goal.linkedAssetIds }
         if (linked.size != goal.linkedAssetIds.size) return null
-        linked
+        linked.map { it.amount }
     } else {
         val group = groups.firstOrNull { it.id == goal.linkedGroupId && it.id != AccountGroup.ALL_ACCOUNTS_ID }
-        groupMembers(group ?: return null, assets)
+            ?: return null
+        groupMembers(group, assets).map { it.amount } + groupHoldings(group, holdings).mapNotNull { it.value() }
     }
-    val balance = members.fold(Money.ZERO) { total, asset ->
-        checkedSavingsGoalAdd(total, convertOrNull(asset.amount, currency, rates) ?: return null)
+    val balance = amounts.fold(Money.ZERO) { total, amount ->
+        checkedSavingsGoalAdd(total, convertOrNull(amount, currency, rates) ?: return null)
     }
     return if (balance < Money.ZERO) Money.ZERO else balance
 }

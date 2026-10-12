@@ -15,6 +15,7 @@ import com.denebapps.patrimonio.domain.model.YearMonth
 import com.denebapps.patrimonio.testing.FakeAccountGroupRepository
 import com.denebapps.patrimonio.testing.FakeAssetRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
+import com.denebapps.patrimonio.testing.FakePortfolioRepository
 import com.denebapps.patrimonio.testing.FakeSavingsGoalRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -87,12 +88,14 @@ class SavingsGoalsViewModelTest {
         assets: FakeAssetRepository = FakeAssetRepository(),
         groups: FakeAccountGroupRepository = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts())),
         fx: FakeFxRepository = FakeFxRepository(),
+        portfolio: FakePortfolioRepository = FakePortfolioRepository(),
         initialGoalId: String? = null,
         initialWithdraw: Boolean = false,
     ) = SavingsGoalsViewModel(
         savingsGoalRepository = goals,
         assetRepository = assets,
         accountGroupRepository = groups,
+        portfolioRepository = portfolio,
         fxRepository = fx,
         clock = fixedClock("2026-10-09T10:00:00Z"),
         zoneProvider = { TimeZone.UTC },

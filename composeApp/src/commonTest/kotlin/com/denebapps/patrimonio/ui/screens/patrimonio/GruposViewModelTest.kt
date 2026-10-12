@@ -12,6 +12,7 @@ import com.denebapps.patrimonio.testing.FakeAccountGroupRepository
 import com.denebapps.patrimonio.testing.FakeAccountTypeRepository
 import com.denebapps.patrimonio.testing.FakeAssetRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
+import com.denebapps.patrimonio.testing.FakePortfolioRepository
 import com.denebapps.patrimonio.testing.FakeSavingsGoalRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -75,6 +76,7 @@ class GruposViewModelTest {
         assets: FakeAssetRepository = FakeAssetRepository(),
         accountGroups: FakeAccountGroupRepository = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts())),
         savingsGoals: FakeSavingsGoalRepository = FakeSavingsGoalRepository(),
+        portfolio: FakePortfolioRepository = FakePortfolioRepository(),
         fx: FakeFxRepository = FakeFxRepository(FxRates(emptyMap())),
         idProvider: () -> String = { "generated-group-id" },
         editingGroupId: String? = null,
@@ -83,6 +85,7 @@ class GruposViewModelTest {
         assetRepository = assets,
         accountGroupRepository = accountGroups,
         savingsGoalRepository = savingsGoals,
+        portfolioRepository = portfolio,
         fxRepository = fx,
         accountTypeRepository = accountTypes,
         editingGroupId = editingGroupId,

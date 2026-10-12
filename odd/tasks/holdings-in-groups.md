@@ -57,7 +57,7 @@ fund). Also show the portfolio's products in Patrimonio like the other categorie
 
 - [x] **T1 — Persistence + domain**: table/migration v15, DAO, `AccountGroup.memberHoldingIds`, repository,
   holding delete cascade, backup v15 (+ import order), clear-all (route: delegated writer).
-- [ ] **T2 — Values + usage (pure)**: `groupTotal`, `trackedBalance`, holding usage, delete warning data
+- [x] **T2 — Values + usage (pure)**: `groupTotal`, `trackedBalance`, holding usage, delete warning data
   (route: delegated writer).
 - [ ] **T3 — UI**: group form/list, Patrimonio Cartera rows, product detail usage + delete warning (route:
   delegated writer).
@@ -84,7 +84,13 @@ fund). Also show the portfolio's products in Patrimonio like the other categorie
   after holdings, validated; clear-all order; `BACKED_UP_TABLES`; cloud `RECORD_KEYS` unchanged (members are not
   records, like asset members). RED: unresolved references; GREEN: check.sh (1954 tests), iOS compile; parent
   re-run of migration/group/backup tests green.
+- **T2** (commit below, `feat(groups): count portfolio products in group totals and goals`): `groupHoldings`,
+  `groupTotal(..., holdings)`, `trackedBalance(..., holdings)` (unpriced = 0 and skipped before conversion;
+  missing/unusable rate for a priced foreign holding → null, as for assets), `holdingUsage` (groups + goals via
+  groups, built-in excluded); `GruposViewModel` (observes holdings, `onHoldingToggle`/`selectedHoldingIds`, editing
+  keeps holding members) and `SavingsGoalsViewModel` wired; regression: net worth identical with holdings in groups.
+  RED: compile errors; GREEN: check.sh (1986 tests), iOS compile; parent re-run of the touched suites green.
 
 ## Next step
 
-T2.
+T3.

@@ -18,12 +18,14 @@ import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.CreateSavingsGoal
 import com.denebapps.patrimonio.domain.repository.FxRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.domain.repository.UpdateSavingsGoal
 import com.denebapps.patrimonio.ui.components.amountInputText
@@ -118,6 +120,7 @@ private data class SavingsGoalsData(
     val assets: List<Asset>,
     val groups: List<AccountGroup>,
     val rates: FxRates,
+    val holdings: List<PortfolioHolding> = emptyList(),
 )
 
 /** NewGoal form fields, kept separate from repo-derived [SavingsGoalsData] (design.md Decision 1:
@@ -164,6 +167,7 @@ class SavingsGoalsViewModel(
     private val savingsGoalRepository: SavingsGoalRepository,
     private val assetRepository: AssetRepository,
     accountGroupRepository: AccountGroupRepository,
+    portfolioRepository: PortfolioRepository,
     fxRepository: FxRepository,
     private val clock: Clock,
     private val zoneProvider: () -> TimeZone,
@@ -188,7 +192,8 @@ class SavingsGoalsViewModel(
         assetRepository.observeAll(),
         accountGroupRepository.observeAll(),
         fxRepository.observeRates(),
-    ) { goals, assets, groups, rates -> SavingsGoalsData(goals, assets, groups, rates) }
+        portfolioRepository.observeAll(),
+    ) { goals, assets, groups, rates, holdings -> SavingsGoalsData(goals, assets, groups, rates, holdings) }
 
     private val formsFlow = combine(
         selectedGoalId,
@@ -374,11 +379,11 @@ class SavingsGoalsViewModel(
     }
 
     private fun buildState(data: SavingsGoalsData, forms: Forms): SavingsGoalsUiState {
-        val (goals, assets, groups, rates) = data
+        val (goals, assets, groups, rates, holdings) = data
 
         val targetNames = assets.associate { it.id to it.name } + groups.associate { it.id to it.name }
         val today = clock.todayIn(zoneProvider())
-        val rows = goals.map { goal -> goal.toRowUi(assets, groups, rates, targetNames, today) }
+        val rows = goals.map { goal -> goal.toRowUi(assets, groups, holdings, rates, targetNames, today) }
         val sharedBalanceNotices = goalsSharingLinkedBalance(goals).map { sharing ->
             SharedBalanceNoticeUi(
                 targetLabel = linkedTargetLabel(sharing.targetIds.mapNotNull(targetNames::get).sorted()).orEmpty(),
@@ -437,11 +442,12 @@ class SavingsGoalsViewModel(
 private fun SavingsGoal.toRowUi(
     assets: List<Asset>,
     groups: List<AccountGroup>,
+    holdings: List<PortfolioHolding>,
     rates: FxRates,
     targetNames: Map<String, String>,
     today: LocalDate,
 ): SavingsGoalRowUi {
-    val balance = trackedBalance(this, assets, groups, rates)
+    val balance = trackedBalance(this, assets, groups, rates, holdings)
     val linkedTargetIds = linkedAssetIds + listOfNotNull(linkedGroupId)
     val shown = if (tracksLinkedBalance) balance ?: Money.ZERO else progress
     val balanceUnavailable = tracksLinkedBalance && balance == null

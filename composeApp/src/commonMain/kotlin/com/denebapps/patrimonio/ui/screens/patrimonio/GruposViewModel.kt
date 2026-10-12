@@ -6,17 +6,20 @@ import com.denebapps.patrimonio.domain.calc.accountUsage
 import com.denebapps.patrimonio.domain.calc.groupMembers
 import com.denebapps.patrimonio.domain.calc.groupTotal
 import com.denebapps.patrimonio.domain.calc.toEur
+import com.denebapps.patrimonio.domain.calc.value
 import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.CustomAccountType
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.repository.AccountGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AccountTypeRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.ui.components.TypeLook
 import com.denebapps.patrimonio.ui.components.typeLook
@@ -97,6 +100,7 @@ private data class GruposData(
     val rates: FxRates,
     val goals: List<SavingsGoal> = emptyList(),
     val customTypes: Map<String, CustomAccountType> = emptyMap(),
+    val holdings: List<PortfolioHolding> = emptyList(),
 )
 
 /** NuevoGrupo form fields, kept separate from repo-derived [GruposData] (design.md Decision 1:
@@ -105,6 +109,7 @@ private data class NewGroupForm(
     val title: String = "",
     val showBalance: Boolean = true,
     val selectedAssetIds: Set<String> = emptySet(),
+    val selectedHoldingIds: Set<String> = emptySet(),
     /** False until an edited group's current values are in the form; saving waits for it. */
     val loaded: Boolean = true,
 )
@@ -122,11 +127,15 @@ private data class NewGroupForm(
  * With [editingGroupId] the form edits that group instead: it starts from the group's current name,
  * balance visibility and members, and saving updates it in place (same id, position and linked
  * goals). If the group no longer exists the form just navigates back.
+ *
+ * A group also holds portfolio products: [groupTotal] and the form's selected total count their value (a product
+ * with no price yet counts zero), and [onHoldingToggle] picks them; editing a group keeps the ones it has.
  */
 class GruposViewModel(
     private val assetRepository: AssetRepository,
     private val accountGroupRepository: AccountGroupRepository,
     private val savingsGoalRepository: SavingsGoalRepository,
+    portfolioRepository: PortfolioRepository,
     fxRepository: FxRepository,
     accountTypeRepository: AccountTypeRepository,
     private val editingGroupId: String? = null,
@@ -150,6 +159,8 @@ class GruposViewModel(
         accountTypeRepository.observeAll(),
     ) { assets, accountGroups, rates, goals, types ->
         GruposData(assets, accountGroups, rates, goals, types.associateBy { it.id })
+    }.combine(portfolioRepository.observeAll()) { data, holdings ->
+        data.copy(holdings = holdings)
     }
 
     val state: StateFlow<GruposUiState> = combine(
@@ -178,6 +189,7 @@ class GruposViewModel(
                         title = group.name,
                         showBalance = group.showBalance,
                         selectedAssetIds = group.memberAssetIds.orEmpty(),
+                        selectedHoldingIds = group.memberHoldingIds,
                     )
                 }
             }
@@ -233,6 +245,12 @@ class GruposViewModel(
         newGroupForm.value = newGroupForm.value.copy(showBalance = !newGroupForm.value.showBalance)
     }
 
+    fun onHoldingToggle(holdingId: String) {
+        val current = newGroupForm.value.selectedHoldingIds
+        val updated = if (holdingId in current) current - holdingId else current + holdingId
+        newGroupForm.value = newGroupForm.value.copy(selectedHoldingIds = updated)
+    }
+
     fun onAssetToggle(assetId: String) {
         val current = newGroupForm.value.selectedAssetIds
         val updated = if (assetId in current) current - assetId else current + assetId
@@ -255,6 +273,7 @@ class GruposViewModel(
                 showBalance = form.showBalance,
                 sortOrder = nextSortOrder,
                 memberAssetIds = form.selectedAssetIds,
+                memberHoldingIds = form.selectedHoldingIds,
             )
             if (editingGroupId == null) {
                 accountGroupRepository.insertGroup(group)
@@ -275,6 +294,7 @@ class GruposViewModel(
         pendingDeletion: GroupDeletionConfirmationUi?,
     ): GruposUiState {
         val (assets, accountGroups, rates, goals) = data
+        val holdings = data.holdings
         val customTypes = data.customTypes
 
         val movableIds = accountGroups.map { it.id }.filter { it != AccountGroup.ALL_ACCOUNTS_ID }
@@ -286,7 +306,7 @@ class GruposViewModel(
                 name = group.name,
                 builtin = group.id == AccountGroup.ALL_ACCOUNTS_ID,
                 showBalance = group.showBalance,
-                total = groupTotal(group, assets, rates),
+                total = groupTotal(group, assets, rates, holdings),
                 members = members.map {
                     val type = typeLook(it.group, customTypes)
                     GruposMemberUi(it.id, it.name, it.amount.toEur(rates), it.group, type, it.emoji)
@@ -313,14 +333,17 @@ class GruposViewModel(
         val selectedTotal = assets
             .filter { it.id in form.selectedAssetIds }
             .fold(Money.ZERO) { acc, asset -> acc + asset.amount.toEur(rates) }
+        val selectedHoldingsTotal = holdings
+            .filter { it.id in form.selectedHoldingIds }
+            .fold(Money.ZERO) { acc, holding -> acc + (holding.value()?.toEur(rates) ?: Money.ZERO) }
 
         return GruposUiState(
             groups = groups,
             title = form.title,
             showBalance = form.showBalance,
             assetChecklist = checklist,
-            selectedCount = form.selectedAssetIds.size,
-            selectedTotal = selectedTotal,
+            selectedCount = form.selectedAssetIds.size + form.selectedHoldingIds.size,
+            selectedTotal = selectedTotal + selectedHoldingsTotal,
             canSaveNewGroup = form.canSave(),
             pendingDeletion = pendingDeletion,
             isEditing = editingGroupId != null,
@@ -328,7 +351,8 @@ class GruposViewModel(
     }
 }
 
-private fun NewGroupForm.canSave(): Boolean = loaded && title.isNotBlank() && selectedAssetIds.isNotEmpty()
+private fun NewGroupForm.canSave(): Boolean =
+    loaded && title.isNotBlank() && (selectedAssetIds.isNotEmpty() || selectedHoldingIds.isNotEmpty())
 
 @OptIn(ExperimentalUuidApi::class)
 private fun newAccountGroupId(): String = Uuid.random().toString()
