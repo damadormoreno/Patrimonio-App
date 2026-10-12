@@ -32,6 +32,7 @@ import com.denebapps.patrimonio.ui.components.TabItem
 import com.denebapps.patrimonio.ui.icons.AppIcons
 import com.denebapps.patrimonio.ui.screens.account.AccountScreen
 import com.denebapps.patrimonio.ui.screens.history.NetWorthHistoryScreen
+import com.denebapps.patrimonio.ui.screens.importing.ImportMyInvestorScreen
 import com.denebapps.patrimonio.ui.screens.patrimonio.AddPatrimonioSheet
 import com.denebapps.patrimonio.ui.screens.patrimonio.GruposSheet
 import com.denebapps.patrimonio.ui.screens.patrimonio.NuevoGrupoSheet
@@ -154,6 +155,7 @@ fun MainScaffold() {
             composable<Cartera> {
                 CarteraScreen(
                     onAddHolding = { mainNavController.navigate(AddHolding) },
+                    onImport = { mainNavController.navigate(ImportMyInvestor) },
                     onOpenHolding = { holdingId -> mainNavController.navigate(PositionDetail(holdingId)) },
                     onOpenPortfolio = { portfolioId -> mainNavController.navigate(PortfolioDetail(portfolioId)) },
                 )
@@ -182,6 +184,7 @@ fun MainScaffold() {
                     onOpenPreview = { ref -> mainNavController.navigate(InstrumentPreview.of(ref)) },
                 )
             }
+            composable<ImportMyInvestor> { ImportMyInvestorScreen(onBack = { mainNavController.popBackStack() }) }
             composable<InstrumentPreview> { backStackEntry ->
                 InstrumentPreviewDestination(
                     ref = backStackEntry.toRoute<InstrumentPreview>().ref,

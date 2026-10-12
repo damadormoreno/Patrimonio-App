@@ -4,6 +4,7 @@ import com.denebapps.patrimonio.AppViewModel
 import com.denebapps.patrimonio.domain.time.currentMonthFlow
 import com.denebapps.patrimonio.ui.screens.account.AccountViewModel
 import com.denebapps.patrimonio.ui.screens.history.NetWorthHistoryViewModel
+import com.denebapps.patrimonio.ui.screens.importing.ImportMyInvestorViewModel
 import com.denebapps.patrimonio.ui.screens.lock.LockViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.AddPatrimonioSheetViewModel
 import com.denebapps.patrimonio.ui.screens.patrimonio.GruposViewModel
@@ -114,6 +115,16 @@ val presentationModule = module {
     }
     viewModel { CarteraViewModel(get(), get(), get(), get(), get<() -> TimeZone>()) }
     viewModel { AddHoldingViewModel(get(), get(), get(), get(), get(), get(), get(), get<() -> TimeZone>()) }
+    viewModel {
+        ImportMyInvestorViewModel(
+            quoteSource = get(),
+            portfolioRepository = get(),
+            portfolios = get(),
+            preferences = get(),
+            movementRepository = get(),
+            clock = get(),
+        )
+    }
     viewModel { params -> HoldingDetailViewModel(params.get(), get(), get(), get(), get(), get<() -> TimeZone>()) }
     viewModel { params ->
         MovementFormViewModel(
