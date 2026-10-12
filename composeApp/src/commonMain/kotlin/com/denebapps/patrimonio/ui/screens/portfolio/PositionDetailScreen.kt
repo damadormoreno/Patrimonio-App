@@ -43,8 +43,9 @@ import org.koin.core.parameter.parametersOf
 
 /**
  * Pushed screen (`PositionDetail`) for one portfolio holding: its value, the product's price chart over a range, the
- * return per year, annualized returns, risk and the provider's product data. [onEdit] opens the edit sheet; [onBack]
- * returns to Cartera, also when the holding is deleted while this is open.
+ * return per year, annualized returns, risk and the provider's product data, then (for a position with movements)
+ * the user's own position apart from them. [onEdit] opens the edit sheet; [onBack] returns to Cartera, also when the
+ * holding is deleted while this is open.
  */
 @Composable
 fun PositionDetailScreen(
@@ -82,6 +83,7 @@ fun PositionDetailScreen(
         onBack = onBack,
         onEdit = onEdit,
         onRangeSelect = viewModel::onRangeSelect,
+        onMyPositionRangeSelect = viewModel::onMyPositionRangeSelect,
         onRefresh = viewModel::onRefresh,
         onDismissSyncError = viewModel::onSyncErrorDismiss,
         movements = movements,
@@ -100,6 +102,7 @@ internal fun PositionDetailContent(
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onRangeSelect: (HistoryRange) -> Unit,
+    onMyPositionRangeSelect: (HistoryRange) -> Unit,
     onRefresh: () -> Unit,
     onDismissSyncError: () -> Unit,
     movements: MovementsCallbacks,
@@ -138,6 +141,7 @@ internal fun PositionDetailContent(
                         )
                     }
                     HistorySections(state, onRangeSelect, onRetry = onRefresh)
+                    state.myPosition?.let { MyPositionSection(it, onMyPositionRangeSelect) }
                     MovementsSection(state.movements, movements)
                     state.product?.let {
                         SectionLabel("Datos del producto")

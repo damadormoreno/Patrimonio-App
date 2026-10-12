@@ -14,6 +14,7 @@ import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.testing.FakeFxHistoryRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeInstrumentHistoryRepository
+import com.denebapps.patrimonio.testing.FakeMovementRepository
 import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
 import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
@@ -81,6 +82,7 @@ class PortfolioDetailClassAllocationTest {
                 repository,
             ),
             portfolioRepository = repository,
+            movementRepository = FakeMovementRepository(repository),
             fxRepository = FakeFxRepository(FxRates(emptyMap())),
             fxHistoryRepository = FakeFxHistoryRepository(FxHistory(emptyMap())),
             historyRepository = FakeInstrumentHistoryRepository(),

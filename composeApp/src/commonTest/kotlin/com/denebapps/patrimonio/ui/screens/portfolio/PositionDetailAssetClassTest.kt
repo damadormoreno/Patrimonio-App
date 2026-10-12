@@ -15,6 +15,7 @@ import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.PricePoint
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.Units
+import com.denebapps.patrimonio.testing.FakeFxHistoryRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeInstrumentHistoryRepository
 import com.denebapps.patrimonio.testing.FakeMovementRepository
@@ -113,10 +114,12 @@ class PositionDetailAssetClassTest {
             portfolioRepository = repository,
             portfolios = FakePortfolioCollectionRepository(holdings = repository),
             movementRepository = FakeMovementRepository(repository),
+            fxHistoryRepository = FakeFxHistoryRepository(),
             fxRepository = FakeFxRepository(FxRates(emptyMap())),
             historyRepository = histories,
             clock = clock,
             zoneProvider = { TimeZone.UTC },
+            computationDispatcher = dispatcher,
         )
     }
 

@@ -21,6 +21,7 @@ import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.repository.FundamentalsSyncFailure
 import com.denebapps.patrimonio.domain.repository.FundamentalsSyncResult
 import com.denebapps.patrimonio.domain.repository.HistoryUnavailableException
+import com.denebapps.patrimonio.testing.FakeFxHistoryRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeInstrumentHistoryRepository
 import com.denebapps.patrimonio.testing.FakeMovementRepository
@@ -166,10 +167,12 @@ class PositionDetailViewModelTest {
             portfolioRepository = portfolio,
             portfolios = collection,
             movementRepository = FakeMovementRepository(portfolio),
+            fxHistoryRepository = FakeFxHistoryRepository(),
             fxRepository = FakeFxRepository(rates),
             historyRepository = history,
             clock = clock,
             zoneProvider = { TimeZone.UTC },
+            computationDispatcher = dispatcher,
         )
         return Setup(portfolio, collection, history, vm)
     }

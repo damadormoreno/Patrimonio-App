@@ -58,7 +58,7 @@ show the user's own results (cost, realized/unrealized gains, XIRR) separately f
   writer).
 - [x] **T3 — UI movements**: movements list in the position detail, add/edit/delete sheet, opening-balance flow,
   add-product choice, block manual unit edits, traspaso flow (funds only) (route: delegated writer).
-- [ ] **T4 — UI own returns**: *Mi posición* section and position chart, portfolio detail gains/XIRR, closed
+- [x] **T4 — UI own returns**: *Mi posición* section and position chart, portfolio detail gains/XIRR, closed
   positions (route: delegated writer).
 - [ ] **T5 — Docs** (route: inline): README *Cartera*, roadmap.
 
@@ -109,7 +109,15 @@ show the user's own results (cost, realized/unrealized gains, XIRR) separately f
   units excluded as destinations until they have an opening balance); add product `Lo que tengo ahora | Una compra`;
   edit sheet units read-only with movements; Cartera closed rows `Cerrada` last. RED: 409 compile errors; GREEN
   (parent re-run): check.sh (1549 tests), iOS compile. Manual emulator test deferred to after T4 (all flows).
+- **T4** (commit below, `feat(portfolio): show own returns per position and portfolio`): `OwnReturns.kt`
+  (`positionReturns`, `scopeReturns`, `priceOn` ≤ 7 days, `transferMarketValue`); *Mi posición* above *Movimientos*
+  (aportado/valor/latente/realizada/dividendos/comisiones/XIRR; unknown cost → `—` + `Coste desconocido de N part.`
+  + hint, partial known part labelled; closed: value 0 + realized + lifetime XIRR; open lots with transfer note;
+  "Evolución de mi posición" chart in EUR with its own range); portfolio *Tu rentabilidad* with coverage text;
+  ledger replay off the main thread; invalid history hides the section. Skipped: chart cost line (single-series
+  `LineChart`), Cartera latent line (doesn't fit cleanly). RED: 249 compile errors; GREEN (parent re-run):
+  check.sh (1594 tests), iOS compile. On device: v12 → v13 migration with the real data (3 holdings intact).
 
 ## Next step
 
-T4 — UI own returns.
+T5 docs + full manual test.

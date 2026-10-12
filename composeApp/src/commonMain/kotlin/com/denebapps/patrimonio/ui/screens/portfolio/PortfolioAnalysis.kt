@@ -19,6 +19,7 @@ import com.denebapps.patrimonio.domain.calc.toPricePoints
 import com.denebapps.patrimonio.domain.model.FxHistory
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.HoldingValuation
+import com.denebapps.patrimonio.domain.model.Movement
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.PricePoint
 import com.denebapps.patrimonio.ui.components.charts.heatmapLabels
@@ -45,6 +46,7 @@ internal data class PortfolioInputs(
     val histories: Map<String, List<PricePoint>>,
     val fxHistory: FxHistory,
     val rates: FxRates,
+    val movements: List<Movement>,
 )
 
 /**
@@ -54,6 +56,7 @@ internal data class PortfolioInputs(
  */
 internal data class PortfolioAnalysis(
     val header: PortfolioHeaderUi,
+    val yourReturns: YourReturnsUi?,
     val hasQuoted: Boolean,
     val series: List<PricePoint>,
     val excludedText: String?,
@@ -84,6 +87,7 @@ internal fun analyzePortfolio(inputs: PortfolioInputs, today: LocalDate): Portfo
     val excluded = composition?.excludedHoldingIds.orEmpty().mapNotNull { names[it] }
     return PortfolioAnalysis(
         header = header(holdings, inputs.rates),
+        yourReturns = analyzeYourReturns(YourReturnsInputs(holdings, inputs.movements, eurSeries, inputs.rates), today),
         hasQuoted = holdings.any { it.valuation is HoldingValuation.Quoted },
         series = series,
         excludedText = excludedText(excluded),

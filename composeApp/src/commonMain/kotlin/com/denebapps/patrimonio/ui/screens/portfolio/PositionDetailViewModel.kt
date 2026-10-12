@@ -19,6 +19,7 @@ import com.denebapps.patrimonio.domain.model.PERCENT_SCALE
 import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.PricePoint
+import com.denebapps.patrimonio.domain.repository.FxHistoryRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.InstrumentHistoryRepository
 import com.denebapps.patrimonio.domain.repository.MovementRepository
@@ -28,6 +29,8 @@ import com.denebapps.patrimonio.domain.repository.isQuotedFund
 import com.denebapps.patrimonio.ui.components.charts.ChartPoint
 import com.denebapps.patrimonio.ui.components.formatEur
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -42,11 +45,13 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
 
@@ -158,6 +163,7 @@ data class PositionDetailUiState(
     val syncError: Boolean = false,
     val movements: MovementsUi = MovementsUi(),
     val choice: OpeningChoiceUi? = null,
+    val myPosition: MyPositionUi? = null,
 )
 
 /**
@@ -212,12 +218,23 @@ private data class Placement(
 /** What the repositories say about the position, apart from what the user is doing on the screen. */
 private data class PositionData(val placed: Placement, val points: List<PricePoint>, val rates: FxRates)
 
+/** What the user is doing on the screen: both chart ranges, the download, and the question about the units. */
+private data class Interaction(
+    val range: HistoryRange,
+    val myRange: HistoryRange,
+    val sync: SyncState,
+    val choice: OpeningChoiceStep?,
+)
+
 /**
  * Position detail of the holding [holdingId]: its header, the product's price chart over a selectable range, the
- * return per calendar year, annualized returns, volatility and deepest fall, and the provider's product data. The
- * figures are the PRODUCT's (its price history), not the user's. The history and the fundamentals are brought up to
- * date when the screen opens; [onRefresh] forces them. The cached data is always shown, even when an update fails.
- * [navigateBack] emits once if the holding disappears while the screen is open.
+ * return per calendar year, annualized returns, volatility and deepest fall, and the provider's product data. Those
+ * figures are the PRODUCT's (its price history), not the user's; "Mi posición" ([PositionDetailUiState.myPosition]) is
+ * the user's own: cost, gains, annual return, lots and the value of their units over time, for a position with
+ * movements. The history, the exchange rates and the fundamentals are brought up to date when the screen opens;
+ * [onRefresh] forces them. The cached data is always shown, even when an update fails. [navigateBack] emits once if
+ * the holding disappears while the screen is open. The own returns replay every movement on [computationDispatcher],
+ * off the main thread.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class PositionDetailViewModel(
@@ -226,11 +243,14 @@ class PositionDetailViewModel(
     portfolios: PortfolioCollectionRepository,
     private val movementRepository: MovementRepository,
     fxRepository: FxRepository,
+    private val fxHistoryRepository: FxHistoryRepository,
     private val historyRepository: InstrumentHistoryRepository,
     private val clock: Clock,
     private val zoneProvider: () -> TimeZone,
+    computationDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     private val selectedRange = MutableStateFlow(HistoryRange.ONE_YEAR)
+    private val myPositionRange = MutableStateFlow(HistoryRange.ONE_YEAR)
 
     // Running from the start so the first frame says "updating" and not "no history yet".
     private val sync = MutableStateFlow(SyncState(running = true))
@@ -262,16 +282,27 @@ class PositionDetailViewModel(
         ::Placement,
     )
 
-    private val data = combine(placement, history, fxRepository.observeRates(), ::PositionData)
+    private val rates = fxRepository.observeRates()
 
-    val state: StateFlow<PositionDetailUiState> = combine(
-        data,
-        selectedRange,
-        sync,
-        choiceStep,
-    ) { current, range, syncState, step ->
+    private val data = combine(placement, history, rates, ::PositionData)
+
+    private val interaction = combine(selectedRange, myPositionRange, sync, choiceStep, ::Interaction)
+
+    /** The user's own returns on this position: every movement replayed, off the main thread. */
+    private val ownPosition: Flow<OwnPositionAnalysis?> = combine(
+        portfolioRepository.observeAll(),
+        movementRepository.observeAllMovements(),
+        history,
+        fxHistoryRepository.observe(),
+        rates,
+    ) { holdings, movements, points, fxHistory, currentRates ->
+        holdings.firstOrNull { it.id == holdingId }
+            ?.let { analyzeOwnPosition(OwnPositionInputs(it, movements, points, fxHistory, currentRates), today()) }
+    }.flowOn(computationDispatcher)
+
+    val state: StateFlow<PositionDetailUiState> = combine(data, ownPosition, interaction) { current, own, ui ->
         current.placed.holdings.firstOrNull { it.id == holdingId }
-            ?.let { buildState(it, current, range, syncState, step) }
+            ?.let { buildState(it, current, own, ui) }
             ?: PositionDetailUiState()
     }.stateIn(
         scope = viewModelScope,
@@ -291,6 +322,13 @@ class PositionDetailViewModel(
     /** Shows [range]; ignored if that window has no data to draw. */
     fun onRangeSelect(range: HistoryRange) {
         if (state.value.ranges.firstOrNull { it.range == range }?.enabled == true) selectedRange.value = range
+    }
+
+    /** Shows [range] in the chart of the value of my units; ignored if that window has no data to draw. */
+    fun onMyPositionRangeSelect(range: HistoryRange) {
+        if (state.value.myPosition?.ranges?.firstOrNull { it.range == range }?.enabled == true) {
+            myPositionRange.value = range
+        }
     }
 
     /** Downloads the history and the fundamentals now, whatever their age; ignored while an update is running. */
@@ -382,17 +420,26 @@ class PositionDetailViewModel(
         val ref = (holding.valuation as? HoldingValuation.Quoted)?.ref ?: return false
         return coroutineScope {
             val fundamentals = async { syncFundamentals(force) }
-            val failed = try {
+            // Both are tried: one failing download does not stop the other.
+            val historyFailed = attempt {
                 historyRepository.sync(ref, force)
                 false
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                true
+            }
+            val ratesFailed = attempt {
+                syncRates(holding, force)
+                false
             }
             fundamentals.await()
-            failed
+            historyFailed || ratesFailed
         }
+    }
+
+    /** The exchange rates the value of my units needs, from my first movement; none for a product in euros. */
+    private suspend fun syncRates(holding: PortfolioHolding, force: Boolean) {
+        val currency = (holding.valuation as? HoldingValuation.Quoted)?.currency ?: return
+        if (currency == Currency.EUR) return
+        val from = movementRepository.observeMovements(holdingId).first().firstOrNull()?.date ?: return
+        fxHistoryRepository.sync(setOf(currency), from, force)
     }
 
     /** What is stored stays when this fails, and it does not concern the history warning. */
@@ -412,21 +459,25 @@ class PositionDetailViewModel(
         navigateBackChannel.trySend(Unit)
     }
 
+    private fun today(): LocalDate = clock.todayIn(zoneProvider())
+
     private fun buildState(
         holding: PortfolioHolding,
         current: PositionData,
-        range: HistoryRange,
-        syncState: SyncState,
-        choice: OpeningChoiceStep?,
+        own: OwnPositionAnalysis?,
+        ui: Interaction,
     ): PositionDetailUiState {
-        val (placed, points, rates) = current
+        val (placed, points, currentRates) = current
+        val (range, myRange, syncState, choice) = ui
+        val today = today()
         val movements = movementsUi(holding, placed)
         val base = PositionDetailUiState(
             loaded = true,
-            header = buildHeader(holding, placed, rates),
-            product = productData(holding, rates),
+            header = buildHeader(holding, placed, currentRates),
+            product = productData(holding, currentRates),
             movements = movements,
             choice = choice?.let { openingChoiceUi(holding, it) },
+            myPosition = own?.toUi(myRange, today),
         )
         if (holding.valuation !is HoldingValuation.Quoted) return base.copy(note = MANUAL_NOTE)
         val withSync = base.copy(note = QUOTED_NOTE, isSyncing = syncState.running)
@@ -435,7 +486,6 @@ class PositionDetailViewModel(
                 historyStatus = if (syncState.running) HistoryStatus.LOADING else HistoryStatus.UNAVAILABLE,
             )
         }
-        val today = clock.todayIn(zoneProvider())
         val (ranges, chart) = priceChartUi(points, range, today)
         return withSync.copy(
             historyStatus = HistoryStatus.AVAILABLE,
