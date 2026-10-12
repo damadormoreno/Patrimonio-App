@@ -15,8 +15,14 @@ import com.denebapps.patrimonio.domain.repository.HistoryUnavailableException
 import com.denebapps.patrimonio.domain.repository.QuoteUnavailableException
 import com.denebapps.patrimonio.testing.FakePriceHistorySource
 import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
@@ -246,20 +252,30 @@ class InstrumentHistoryRepositoryTest {
 
     @Test
     fun `syncAll downloads every series with at most four requests in flight`() = runTest {
-        val slow = FakePriceHistorySource(latencyMs = 100)
+        val gate = CompletableDeferred<Unit>()
+        val gated = FakePriceHistorySource(gate)
         val refs = (1..10).map { InstrumentRef(QuoteProvider.MORNINGSTAR, "SEC$it") }
         refs.forEachIndexed { index, ref ->
-            slow.series[ref] = listOf(eur(1, 1L))
+            gated.series[ref] = listOf(eur(1, 1L))
             holdQuoted("h$index", ref)
         }
-        val repository = repository(slow)
+        val repository = repository(gated)
 
-        val result = repository.syncAll(refs, force = false)
+        val sync = async { repository.syncAll(refs, force = false) }
+        // Each download reads Room (on its own threads) before asking the source, so the requests reach the gate in
+        // real time, not in the test's virtual time: wait for the limiter to fill up, then give a fifth one the chance
+        // to slip through before opening the gate.
+        withContext(Dispatchers.Default) {
+            withTimeout(5_000) { while (gated.inFlight < 4) delay(10) }
+            delay(200)
+        }
+        gate.complete(Unit)
+        val result = sync.await()
 
         assertEquals(10, result.synced)
         assertEquals(0, result.upToDate)
         assertEquals(emptyList(), result.failures)
-        assertEquals(4, slow.maxInFlight)
+        assertEquals(4, gated.maxInFlight)
     }
 
     @Test

@@ -12,30 +12,35 @@ import com.denebapps.patrimonio.domain.repository.InstrumentHistoryRepository
 import com.denebapps.patrimonio.domain.repository.PriceHistorySource
 import com.denebapps.patrimonio.domain.repository.QuoteUnavailableException
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.datetime.LocalDate
+import kotlin.concurrent.Volatile
 
 /**
  * Scriptable [PriceHistorySource]: [series] holds the full history of each ref (answered from `from` on, like the real
- * sources), [failures] makes a ref throw, and every call is recorded in [calls]. With a [latencyMs] it also measures
- * how many requests were in flight at once.
+ * sources), [failures] makes a ref throw, and every call is recorded in [calls]. With a [gate], every call waits for
+ * it to complete, so a test can count the requests in flight at once ([inFlight], [maxInFlight]).
  */
-class FakePriceHistorySource(private val latencyMs: Long = 0) : PriceHistorySource {
+class FakePriceHistorySource(private val gate: CompletableDeferred<Unit>? = null) : PriceHistorySource {
     val series = mutableMapOf<InstrumentRef, List<PricePoint>>()
     val failures = mutableMapOf<InstrumentRef, Throwable>()
     val calls = mutableListOf<Pair<InstrumentRef, LocalDate?>>()
+
+    @Volatile
     var maxInFlight = 0
         private set
-    private var inFlight = 0
+
+    @Volatile
+    var inFlight = 0
+        private set
 
     override suspend fun priceHistory(ref: InstrumentRef, from: LocalDate?): List<PricePoint> {
         calls += ref to from
         inFlight++
         maxInFlight = maxOf(maxInFlight, inFlight)
         try {
-            if (latencyMs > 0) delay(latencyMs)
+            gate?.await()
             failures[ref]?.let { throw it }
             val all = series[ref] ?: throw QuoteUnavailableException("No history scripted for $ref")
             return all.filter { from == null || it.date >= from }
