@@ -10,6 +10,7 @@ import com.denebapps.patrimonio.data.db.SeedingGate
 import com.denebapps.patrimonio.data.db.deleteFinancialRows
 import com.denebapps.patrimonio.data.db.ensureDefaultPortfolio
 import com.denebapps.patrimonio.data.db.writeTransaction
+import com.denebapps.patrimonio.domain.calc.computeLedgers
 import com.denebapps.patrimonio.domain.repository.BackupRepository
 import kotlinx.datetime.Clock
 
@@ -18,7 +19,8 @@ import kotlinx.datetime.Clock
  * transaction rather than a reader one: the data set is tiny and it reuses the proven
  * [writeTransaction] path). Import decodes and validates the whole file first, then clears and
  * re-inserts parents before children in a single transaction, preserving ids (savings-goal ids
- * included, so ledgers and links keep pointing at the right goal; portfolios before the holdings in them). Whatever the
+ * included, so ledgers and links keep pointing at the right goal; portfolios before the holdings in them, and those
+ * before their movements, whose units replace the holdings' own). Whatever the
  * file holds, the database ends with at least one portfolio. The current month's net-worth
  * snapshot is recomputed from the imported assets, like after any other asset write.
  */
@@ -46,6 +48,7 @@ class BackupRepositoryImpl(
                 accountTypes = appDatabase.accountTypeDao().list().map { it.toBackup() },
                 portfolios = appDatabase.portfolioDao().list().map { it.toBackup() },
                 portfolioHoldings = appDatabase.portfolioHoldingDao().list().map { it.toBackup() },
+                movements = appDatabase.movementDao().list().map { it.toBackup() },
             )
         }
         return BackupCodec.encode(document)
@@ -70,7 +73,16 @@ class BackupRepositoryImpl(
             document.savingsGoalAllocationEvents.forEach { goals.insertAllocationEvent(it.toEntity()) }
             document.savingsGoalLinkEvents.forEach { goals.insertLinkEvent(it.toEntity()) }
             document.portfolios.forEach { appDatabase.portfolioDao().insert(it.toEntity()) }
-            document.portfolioHoldings.forEach { appDatabase.portfolioHoldingDao().insert(it.toEntity()) }
+            // A holding with movements gets its units from them (the file's value is redundant); others keep theirs.
+            val derivedUnits = computeLedgers(document.movements.map { movementToDomain(it.toEntity()) })
+                .mapValues { (_, ledger) -> ledger.unitsHeld.scaled }
+            document.portfolioHoldings.forEach { holding ->
+                val entity = holding.toEntity()
+                val units = derivedUnits[holding.id]
+                val stored = if (units == null) entity else entity.copy(unitsScaled = units)
+                appDatabase.portfolioHoldingDao().insert(stored)
+            }
+            document.movements.forEach { appDatabase.movementDao().insert(it.toEntity()) }
             // A file without portfolios (and so without holdings) still leaves the database with its "Mi cartera".
             appDatabase.ensureDefaultPortfolio()
             snapshotUpserter.refreshCurrentMonth()

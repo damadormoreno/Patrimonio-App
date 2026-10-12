@@ -16,6 +16,7 @@ import com.denebapps.patrimonio.data.repository.DataMaintenanceRepositoryImpl
 import com.denebapps.patrimonio.data.repository.InstrumentHistoryRepositoryImpl
 import com.denebapps.patrimonio.data.repository.InstrumentPreviewLoaderImpl
 import com.denebapps.patrimonio.data.repository.LiabilityRepositoryImpl
+import com.denebapps.patrimonio.data.repository.MovementRepositoryImpl
 import com.denebapps.patrimonio.data.repository.NetWorthRepositoryImpl
 import com.denebapps.patrimonio.data.repository.NetWorthSnapshotUpserter
 import com.denebapps.patrimonio.data.repository.PortfolioCollectionRepositoryImpl
@@ -31,6 +32,7 @@ import com.denebapps.patrimonio.domain.repository.DataMaintenanceRepository
 import com.denebapps.patrimonio.domain.repository.InstrumentHistoryRepository
 import com.denebapps.patrimonio.domain.repository.InstrumentPreviewLoader
 import com.denebapps.patrimonio.domain.repository.LiabilityRepository
+import com.denebapps.patrimonio.domain.repository.MovementRepository
 import com.denebapps.patrimonio.domain.repository.NetWorthRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
@@ -96,6 +98,9 @@ val dataModule = module {
             clock = get(),
             fundamentalsSource = get(),
         )
+    }
+    single<MovementRepository> {
+        MovementRepositoryImpl(appDatabase = get(), snapshotUpserter = get(), seedingGate = get(), clock = get())
     }
     single<PortfolioCollectionRepository> {
         PortfolioCollectionRepositoryImpl(appDatabase = get(), seedingGate = get())

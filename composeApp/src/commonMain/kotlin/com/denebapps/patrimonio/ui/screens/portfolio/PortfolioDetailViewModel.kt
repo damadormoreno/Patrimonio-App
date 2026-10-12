@@ -11,6 +11,7 @@ import com.denebapps.patrimonio.domain.model.PricePoint
 import com.denebapps.patrimonio.domain.repository.FxHistoryRepository
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.InstrumentHistoryRepository
+import com.denebapps.patrimonio.domain.repository.MovementRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import kotlinx.coroutines.CancellationException
@@ -50,13 +51,15 @@ private data class PortfolioSyncState(val running: Boolean, val failed: Boolean 
  * currency), its average cost and risk, and its largest holding. The figures of the products are those of their price
  * history with TODAY's composition, not the user's gains. The histories, the fundamentals and the exchange rates they
  * need are brought up to date when the screen opens; [onRefresh] forces them. Cached data is always shown, even when
- * an update fails. The calculation runs on [computationDispatcher], off the main thread.
+ * an update fails. "Tu rentabilidad" is the user's own: it comes from their movements, for the products of the scope
+ * that have any. The calculation runs on [computationDispatcher], off the main thread.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class PortfolioDetailViewModel(
     private val portfolioId: String?,
     portfolios: PortfolioCollectionRepository,
     private val portfolioRepository: PortfolioRepository,
+    movementRepository: MovementRepository,
     fxRepository: FxRepository,
     private val fxHistoryRepository: FxHistoryRepository,
     private val historyRepository: InstrumentHistoryRepository,
@@ -96,6 +99,7 @@ class PortfolioDetailViewModel(
         histories,
         fxHistoryRepository.observe(),
         fxRepository.observeRates(),
+        movementRepository.observeAllMovements(),
         ::PortfolioInputs,
     )
         .map { analyzePortfolio(it, today()) }
@@ -204,6 +208,7 @@ class PortfolioDetailViewModel(
         return PortfolioDetailUiState(
             loaded = true,
             header = analysis.header,
+            yourReturns = analysis.yourReturns,
             historyStatus = status,
             evolution = if (available) evolutionOf(analysis, range) else null,
             correlation = analysis.correlation.takeIf { available },
@@ -232,7 +237,7 @@ class PortfolioDetailViewModel(
 }
 
 /** Runs [download] and tells whether it failed: it answered `true`, or it threw (but never when cancelled). */
-private suspend fun attempt(download: suspend () -> Boolean): Boolean = try {
+internal suspend fun attempt(download: suspend () -> Boolean): Boolean = try {
     download()
 } catch (cancelled: CancellationException) {
     throw cancelled

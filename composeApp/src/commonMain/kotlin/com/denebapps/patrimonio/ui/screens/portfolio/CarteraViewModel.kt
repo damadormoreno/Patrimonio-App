@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.denebapps.patrimonio.domain.calc.portfolioTotalEur
 import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.FxRates
+import com.denebapps.patrimonio.domain.model.HoldingValuation
 import com.denebapps.patrimonio.domain.model.InvalidPortfolioNameException
 import com.denebapps.patrimonio.domain.model.MAX_PORTFOLIO_NAME_LENGTH
 import com.denebapps.patrimonio.domain.model.Money
@@ -19,6 +20,7 @@ import com.denebapps.patrimonio.domain.repository.PortfolioNotEmptyException
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.PriceRefreshResult
+import com.denebapps.patrimonio.ui.components.formatEur
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -39,7 +41,8 @@ private const val LAST_PORTFOLIO_TEXT = "Necesitas al menos una cartera."
  * One line of the Cartera list: texts ready to show. [valueEurText] is only set for a holding not in euros, [broker]
  * for one that has a bank or broker, and [portfolioName] while the list mixes several portfolios (so it says which one
  * each holding is in). [assetClass] and [assetClassText] are the holding's class and its name; both `null` for one that
- * has none, which the list leaves unlabelled instead of repeating "Sin clasificar" on every such row.
+ * has none, which the list leaves unlabelled instead of repeating "Sin clasificar" on every such row. A position that
+ * sold everything is [isClosed]: it reads "Cerrada" and is worth zero.
  */
 data class HoldingRowUi(
     val id: String,
@@ -52,6 +55,7 @@ data class HoldingRowUi(
     val portfolioName: String? = null,
     val assetClass: AssetClass? = null,
     val assetClassText: String? = null,
+    val isClosed: Boolean = false,
 )
 
 /**
@@ -302,7 +306,8 @@ class CarteraViewModel(
         val namesById = data.portfolios.associate { it.id to it.name }.takeIf { several && selected == null }
         val managed = selected ?: data.portfolios.singleOrNull()
         return CarteraUiState(
-            rows = holdings.map { it.toRow(data.rates, namesById?.get(it.portfolioId)) },
+            // Closed positions go after the open ones, each group keeping its order.
+            rows = holdings.map { it.toRow(data.rates, namesById?.get(it.portfolioId)) }.sortedBy { it.isClosed },
             total = portfolioTotalEur(holdings, data.rates),
             countLabel = countLabel(holdings.size),
             isRefreshing = refreshState.running,
@@ -355,18 +360,20 @@ class CarteraViewModel(
     }
 
     private fun PortfolioHolding.toRow(rates: FxRates, portfolioName: String?): HoldingRowUi {
-        val (valueText, valueEurText) = holdingValueTexts(this, rates)
+        val closed = (valuation as? HoldingValuation.Quoted)?.isClosed == true
+        val (valueText, valueEurText) = if (closed) formatEur(Money.ZERO) to null else holdingValueTexts(this, rates)
         return HoldingRowUi(
             id = id,
             name = name,
             typeLabel = instrumentTypeLabel(type),
             broker = broker,
-            detail = holdingDetailLine(this, zoneProvider()),
+            detail = if (closed) CLOSED_TEXT else holdingDetailLine(this, zoneProvider()),
             valueText = valueText,
             valueEurText = valueEurText,
             portfolioName = portfolioName,
             assetClass = effectiveAssetClass(),
             assetClassText = effectiveAssetClass()?.let(::assetClassLabel),
+            isClosed = closed,
         )
     }
 }
@@ -396,6 +403,7 @@ private fun portfolioErrorMessage(failure: Exception): String = when (failure) {
     else -> "No se pudo guardar el cambio."
 }
 
+private const val CLOSED_TEXT = "Cerrada"
 private const val REFRESH_FAILED = "No se pudieron actualizar los precios"
 
 internal fun countLabel(count: Int): String = when (count) {

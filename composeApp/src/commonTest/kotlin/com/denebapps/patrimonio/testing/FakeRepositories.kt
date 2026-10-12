@@ -26,9 +26,11 @@ import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEvent
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
 import com.denebapps.patrimonio.domain.model.Units
+import com.denebapps.patrimonio.domain.model.UnitsBalance
 import com.denebapps.patrimonio.domain.model.YearMonth
 import com.denebapps.patrimonio.domain.model.normalizeBroker
 import com.denebapps.patrimonio.domain.model.normalizePortfolioName
+import com.denebapps.patrimonio.domain.model.toBalance
 import com.denebapps.patrimonio.domain.repository.AccountGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
@@ -38,6 +40,8 @@ import com.denebapps.patrimonio.domain.repository.DataMaintenanceRepository
 import com.denebapps.patrimonio.domain.repository.DuplicatePortfolioNameException
 import com.denebapps.patrimonio.domain.repository.FundamentalsSyncResult
 import com.denebapps.patrimonio.domain.repository.FxRepository
+import com.denebapps.patrimonio.domain.repository.HoldingHasMovementsException
+import com.denebapps.patrimonio.domain.repository.HoldingHasTransfersException
 import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalDeltaException
 import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalNameException
 import com.denebapps.patrimonio.domain.repository.InvalidSavingsGoalTargetException
@@ -507,6 +511,15 @@ class FakePortfolioRepository(
     val fundamentalsCalls = mutableListOf<Pair<String?, Boolean>>()
     var fundamentalsResult = FundamentalsSyncResult(updated = 0, upToDate = 0, failures = emptyList())
 
+    /** The holdings that have movements, kept up to date by [FakeMovementRepository]: their units are not editable. */
+    internal var holdingsWithMovements: Set<String> = emptySet()
+
+    /** The holdings with a transfer to or from another holding, kept up to date by [FakeMovementRepository]. */
+    internal var holdingsWithTransfers: Set<String> = emptySet()
+
+    /** Told when a holding is deleted, so [FakeMovementRepository] can drop its movements as the database cascades. */
+    internal var onHoldingDeleted: (String) -> Unit = {}
+
     /** When set, [refreshPrices] suspends until it is completed, to observe a refresh in flight. */
     var refreshGate: CompletableDeferred<Unit>? = null
 
@@ -521,7 +534,8 @@ class FakePortfolioRepository(
         val holding = find(id)
         val valuation = holding.valuation as? HoldingValuation.Quoted
             ?: error("Holding '$id' is not a quoted holding")
-        replace(holding.copy(valuation = valuation.copy(units = units)))
+        if (id in holdingsWithMovements) throw HoldingHasMovementsException(id)
+        replace(holding.copy(valuation = valuation.copy(units = units.toBalance())))
     }
 
     override suspend fun updateManualValue(id: String, value: CurrencyAmount) {
@@ -541,7 +555,9 @@ class FakePortfolioRepository(
 
     override suspend fun delete(id: String) {
         find(id)
+        if (id in holdingsWithTransfers) throw HoldingHasTransfersException(id)
         backing.value = backing.value.filterNot { it.id == id }
+        onHoldingDeleted(id)
     }
 
     override suspend fun refreshPrices(force: Boolean): PriceRefreshResult {
@@ -558,6 +574,13 @@ class FakePortfolioRepository(
 
     fun emit(holdings: List<PortfolioHolding>) {
         backing.value = holdings
+    }
+
+    /** Sets the units a quoted holding has, as the movements decide; used by [FakeMovementRepository]. */
+    internal fun materializeUnits(id: String, units: UnitsBalance) {
+        val holding = find(id)
+        val valuation = holding.valuation as? HoldingValuation.Quoted ?: error("Holding '$id' is not quoted")
+        replace(holding.copy(valuation = valuation.copy(units = units)))
     }
 
     /** How many holdings are in [portfolioId]; used by [FakePortfolioCollectionRepository]. */

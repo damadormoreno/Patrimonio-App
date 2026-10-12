@@ -5,6 +5,7 @@ import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AccountTypeEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.LiabilityEntity
+import com.denebapps.patrimonio.data.db.entity.MovementEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
 import com.denebapps.patrimonio.data.db.entity.PortfolioEntity
 import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
@@ -129,4 +130,36 @@ internal fun PortfolioHoldingBackup.toEntity() = PortfolioHoldingEntity(
     category,
     managementCompany,
     assetClass = assetClass,
+)
+
+internal fun MovementEntity.toBackup() = MovementBackup(
+    id,
+    holdingId,
+    type,
+    epochDay,
+    unitsScaled,
+    amountMinor,
+    currency,
+    feeMinor,
+    amountEurMinor,
+    feeEurMinor,
+    transferId,
+    note,
+    sequence,
+)
+
+internal fun MovementBackup.toEntity() = MovementEntity(
+    id,
+    holdingId,
+    type,
+    epochDay,
+    unitsScaled,
+    amountMinor,
+    currency,
+    feeMinor,
+    amountEurMinor,
+    feeEurMinor,
+    transferId,
+    note,
+    sequence,
 )

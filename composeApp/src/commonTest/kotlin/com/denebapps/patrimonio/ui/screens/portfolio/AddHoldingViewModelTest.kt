@@ -17,7 +17,10 @@ import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.Quote
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.Units
+import com.denebapps.patrimonio.domain.model.UnitsBalance
 import com.denebapps.patrimonio.domain.repository.QuoteUnavailableException
+import com.denebapps.patrimonio.testing.FakeFxHistoryRepository
+import com.denebapps.patrimonio.testing.FakeMovementRepository
 import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
 import com.denebapps.patrimonio.testing.FakePreferencesRepository
@@ -35,6 +38,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -104,7 +108,10 @@ class AddHoldingViewModelTest {
         portfolioRepository = repository,
         portfolios = portfolios,
         preferences = preferences,
+        movementRepository = FakeMovementRepository(repository),
+        fxHistoryRepository = FakeFxHistoryRepository(),
         clock = clock,
+        zoneProvider = { TimeZone.UTC },
         idProvider = { "new-id" },
     )
 
@@ -478,7 +485,10 @@ class AddHoldingViewModelTest {
             portfolioRepository = repository,
             portfolios = firstByOrder,
             preferences = preferences,
+            movementRepository = FakeMovementRepository(repository),
+            fxHistoryRepository = FakeFxHistoryRepository(),
             clock = clock,
+            zoneProvider = { TimeZone.UTC },
             idProvider = { "new-id" },
         )
         pickFund(vm)
@@ -587,7 +597,10 @@ class AddHoldingViewModelTest {
             portfolioRepository = repository,
             portfolios = single,
             preferences = preferences,
+            movementRepository = FakeMovementRepository(repository),
+            fxHistoryRepository = FakeFxHistoryRepository(),
             clock = clock,
+            zoneProvider = { TimeZone.UTC },
             idProvider = { "new-id" },
         )
         pickFund(vm)
@@ -612,7 +625,7 @@ class AddHoldingViewModelTest {
         advanceUntilIdle()
 
         val valuation = repository.current.single().valuation as HoldingValuation.Quoted
-        assertEquals(Units(4_000_000), valuation.units)
+        assertEquals(UnitsBalance(4_000_000), valuation.units)
     }
 
     @Test

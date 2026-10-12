@@ -2,6 +2,7 @@ package com.denebapps.patrimonio.domain.calc
 
 import com.denebapps.patrimonio.domain.model.UNITS_SCALE
 import com.denebapps.patrimonio.domain.model.Units
+import com.denebapps.patrimonio.domain.model.UnitsBalance
 
 /** Decimal places a quantity of units keeps: the digits of `UNITS_SCALE`. */
 private const val UNITS_DECIMALS = 6
@@ -37,11 +38,17 @@ fun parseUnitsEs(text: String): Units? {
  */
 fun formatUnits(units: Units): String = formatScaled6(units.scaled, MIN_DISPLAY_DECIMALS, grouped = true)
 
+/** Display text of the units a position holds, which may be none: like [formatUnits], `"0,00"` for zero. */
+fun formatUnits(units: UnitsBalance): String = formatScaled6(units.scaled, MIN_DISPLAY_DECIMALS, grouped = true)
+
 /**
  * Editable text of a quantity, the inverse of [parseUnitsEs]: no thousands separators and no forced decimals
  * (`"1234,5"`, `"12"`).
  */
 fun unitsInputText(units: Units): String = formatScaled6(units.scaled, minDecimals = 0, grouped = false)
+
+/** Editable text of the units a position holds, `"0"` for none. */
+fun unitsInputText(units: UnitsBalance): String = formatScaled6(units.scaled, minDecimals = 0, grouped = false)
 
 /**
  * Renders a non-negative [scaled] value carrying six decimals (units and prices share that scale) in es-ES style,

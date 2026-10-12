@@ -10,6 +10,7 @@ import com.denebapps.patrimonio.data.db.entity.FxHistoryEntity
 import com.denebapps.patrimonio.data.db.entity.InstrumentPriceEntity
 import com.denebapps.patrimonio.data.db.entity.InstrumentPriceSyncEntity
 import com.denebapps.patrimonio.data.db.entity.LiabilityEntity
+import com.denebapps.patrimonio.data.db.entity.MovementEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
 import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
@@ -90,6 +91,17 @@ class DataMaintenanceRepositoryImplTest {
                 null, null, null, null, 100_000, 1L,
             ),
         )
+        db.portfolioHoldingDao().insert(
+            PortfolioHoldingEntity(
+                "holding-3", TEST_PORTFOLIO_ID, "Fondo", "FUND", null, null, "QUOTED", "MORNINGSTAR", "0P00012PP6",
+                "EUR", 1_000_000, null, null, null, null, null,
+            ),
+        )
+        db.movementDao().insert(
+            MovementEntity(
+                "movement-1", "holding-3", "BUY", 20_000, 1_000_000, 10_000, "EUR", 0, 10_000, 0, null, null, 1,
+            ),
+        )
         val price = InstrumentPriceEntity("MORNINGSTAR", "0P00012PP6", 20_000L, 5L, "EUR")
         db.instrumentPriceDao().upsertAll(listOf(price))
         db.instrumentPriceDao().upsertSync(InstrumentPriceSyncEntity("MORNINGSTAR", "0P00012PP6", 1L))
@@ -104,6 +116,7 @@ class DataMaintenanceRepositoryImplTest {
         assertTrue(db.savingsGoalDao().listAllLinkedAssets().isEmpty(), "goal accounts not cleared")
         assertTrue(db.netWorthDao().observeAll().first().isEmpty(), "net-worth snapshots not cleared")
         assertTrue(db.portfolioHoldingDao().list().isEmpty(), "portfolio holdings not cleared")
+        assertTrue(db.movementDao().list().isEmpty(), "movements not cleared")
         assertEquals(listOf("Mi cartera"), db.portfolioDao().list().map { it.name }, "portfolios not reset")
         assertEquals(0, db.instrumentPriceDao().count(), "price history not cleared")
         assertNull(db.instrumentPriceDao().findSync("MORNINGSTAR", "0P00012PP6"), "price sync state not cleared")

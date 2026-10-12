@@ -45,8 +45,10 @@ import com.denebapps.patrimonio.ui.screens.portfolio.AddHoldingViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.CarteraScreen
 import com.denebapps.patrimonio.ui.screens.portfolio.HoldingDetailSheet
 import com.denebapps.patrimonio.ui.screens.portfolio.InstrumentPreviewScreen
+import com.denebapps.patrimonio.ui.screens.portfolio.MovementFormSheet
 import com.denebapps.patrimonio.ui.screens.portfolio.PortfolioDetailScreen
 import com.denebapps.patrimonio.ui.screens.portfolio.PositionDetailScreen
+import com.denebapps.patrimonio.ui.screens.portfolio.TransferFormSheet
 import com.denebapps.patrimonio.ui.screens.savings.GoalAllocateSheet
 import com.denebapps.patrimonio.ui.screens.savings.NewGoalSheet
 import com.denebapps.patrimonio.ui.screens.settings.SettingsScreen
@@ -194,6 +196,32 @@ fun MainScaffold() {
                     holdingId = holdingId,
                     onBack = { mainNavController.popBackStack() },
                     onEdit = { mainNavController.navigate(HoldingDetail(holdingId)) },
+                    onOpenMovement = { movementId, openingBalance ->
+                        mainNavController.navigate(MovementForm(holdingId, movementId, openingBalance))
+                    },
+                    onOpenTransfer = { transferId -> mainNavController.navigate(TransferForm(holdingId, transferId)) },
+                )
+            }
+            composable<MovementForm> { backStackEntry ->
+                val route = backStackEntry.toRoute<MovementForm>()
+                MovementFormSheet(
+                    holdingId = route.holdingId,
+                    movementId = route.movementId,
+                    openingBalance = route.openingBalance,
+                    onNavigateBack = { mainNavController.popBackStack() },
+                    // The transfer takes the place of this sheet, so that closing it returns to the position.
+                    onOpenTransfer = {
+                        mainNavController.popBackStack()
+                        mainNavController.navigate(TransferForm(route.holdingId))
+                    },
+                )
+            }
+            composable<TransferForm> { backStackEntry ->
+                val route = backStackEntry.toRoute<TransferForm>()
+                TransferFormSheet(
+                    holdingId = route.holdingId,
+                    transferId = route.transferId,
+                    onNavigateBack = { mainNavController.popBackStack() },
                 )
             }
             composable<PortfolioDetail> { backStackEntry ->

@@ -118,7 +118,7 @@ class BackupCodecTest {
         val json = BackupCodec.encode(BackupDocument(exportedAt = "2026-10-06T10:00:00Z"))
 
         assertTrue(""""format": "patrimonio-backup"""" in json, json)
-        assertTrue(""""version": 12""" in json, json)
+        assertTrue(""""version": 13""" in json, json)
         assertTrue(""""portfolioHoldings"""" in json, json)
         assertTrue(""""portfolios"""" in json, json)
         assertFalse("subscriptions" in json, json)
@@ -240,10 +240,10 @@ class BackupCodecTest {
     @Test
     fun `newer format version is rejected with an update hint`() {
         val error = assertFailsWith<InvalidBackupException> {
-            BackupCodec.decode("""{"format":"patrimonio-backup","version":13,"exportedAt":"x"}""")
+            BackupCodec.decode("""{"format":"patrimonio-backup","version":14,"exportedAt":"x"}""")
         }
 
-        assertTrue("v13" in error.message.orEmpty())
+        assertTrue("v14" in error.message.orEmpty())
     }
 
     @Test
@@ -452,12 +452,11 @@ class BackupCodecTest {
     }
 
     @Test
-    fun `a quoted holding needs a known provider a code and positive units`() {
+    fun `a quoted holding needs a known provider a code and units that are not negative`() {
         assertTrue("proveedor" in holdingReason(pricedFund.copy(provider = "BING")))
         assertTrue("proveedor" in holdingReason(pricedFund.copy(provider = null)))
         assertTrue("código" in holdingReason(pricedFund.copy(providerCode = " ")))
         assertTrue("código" in holdingReason(pricedFund.copy(providerCode = null)))
-        assertTrue("unidades" in holdingReason(pricedFund.copy(unitsScaled = 0)))
         assertTrue("unidades" in holdingReason(pricedFund.copy(unitsScaled = -1)))
         assertTrue("unidades" in holdingReason(pricedFund.copy(unitsScaled = null)))
     }

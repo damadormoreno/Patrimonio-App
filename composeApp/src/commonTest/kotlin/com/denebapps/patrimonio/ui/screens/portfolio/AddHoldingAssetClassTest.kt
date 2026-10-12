@@ -11,6 +11,8 @@ import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.Quote
 import com.denebapps.patrimonio.domain.model.QuoteProvider
+import com.denebapps.patrimonio.testing.FakeFxHistoryRepository
+import com.denebapps.patrimonio.testing.FakeMovementRepository
 import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
 import com.denebapps.patrimonio.testing.FakePreferencesRepository
@@ -27,6 +29,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -90,7 +93,10 @@ class AddHoldingAssetClassTest {
         portfolioRepository = repository,
         portfolios = portfolios,
         preferences = FakePreferencesRepository(),
+        movementRepository = FakeMovementRepository(repository),
+        fxHistoryRepository = FakeFxHistoryRepository(),
         clock = fixedClock("2026-10-11T10:00:00Z"),
+        zoneProvider = { TimeZone.UTC },
         idProvider = { "new-id" },
     )
 

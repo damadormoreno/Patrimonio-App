@@ -91,19 +91,47 @@ producto puede llevar, opcionalmente, el banco o bróker que lo gestiona (*Banco
   participaciones de hoy a precios pasados) con sus rentabilidades y riesgo, **matriz de correlación**
   de las rentabilidades semanales en EUR (últimos 3 años), reparto por tipo, banco y divisa, TER y
   riesgo medios ponderados y aviso de concentración si un producto supera el 40 %.
-- Son rentabilidades **del producto**, no de tus compras: cuando lleguen los movimientos, el histórico
-  de tu posición será otro distinto y el del producto se mantiene.
+- Son rentabilidades **del producto**, no de tus compras; las tuyas van aparte en *Mi posición*.
 - **Histórico**: precios diarios de Morningstar y Yahoo y tipos de cambio históricos de Frankfurter
   (para valorar en EUR productos en otra divisa). Se guardan en el dispositivo como caché, se
   descargan solo los días nuevos y no van en las copias de seguridad (se vuelven a descargar).
-- Fuera de esta fase: movimientos (compras, ventas, traspasos), coste y plusvalías propias, XIRR/TWR
-  e importación desde brókeres.
+
+### Movimientos
+
+Cada producto puede llevar sus **movimientos**: compra, venta, saldo inicial, dividendo, comisión y
+traspaso. Un producto **sin movimientos** funciona como antes (participaciones a mano, sin rentabilidad
+propia); **con movimientos**, las participaciones salen de ellos y no se editan a mano.
+
+- **Saldo inicial**: al añadir el primer movimiento a un producto que ya tiene participaciones se ofrece
+  partir de ellas, con una fecha y un coste **opcional**. Sin coste, ese tramo es *coste desconocido*
+  (nunca cero): se consume el primero y sus plusvalías salen como *—*. También se pueden meter las
+  compras una a una. Un producto nuevo se añade con *Lo que tengo ahora* (sin movimientos) o con *Una
+  compra*.
+- **Coste FIFO**: cada venta consume los lotes más antiguos. La comisión es un campo aparte: en una
+  compra suma al coste y en una venta resta del importe. Los dividendos son ingresos y no tocan el coste.
+  No se puede vender ni traspasar más de lo que se tiene en esa fecha.
+- **Traspasos solo entre fondos** (los ETF, acciones y criptos tributan: son venta + compra). Las
+  participaciones salen de un fondo y entran en otro, de cualquier cartera o bróker, con sus **fechas y
+  costes de compra originales** y sin plusvalía realizada. El destino puede ser un fondo que ya tengas
+  (con movimientos) u *Otro fondo…* buscado en el momento.
+- **Divisas**: cada movimiento guarda el importe en la divisa del producto y su equivalente en EUR;
+  coste y plusvalías se calculan en EUR. Se puede escribir cualquiera de los dos y el otro se calcula con
+  el tipo de ese día; si se escriben los dos (lo que cobró de verdad el bróker), se respetan y se muestra
+  el tipo resultante.
+- **Mi posición** (en el detalle del producto, aparte de su histórico): aportado, valor actual,
+  plusvalía latente y realizada, dividendos, comisiones, rentabilidad anual (**XIRR**), lotes abiertos y
+  la evolución del valor de tu posición. Los mismos datos, por cartera o para *Todas*, en *Tu
+  rentabilidad* del detalle de la cartera; los traspasos entre productos incluidos se compensan y los
+  productos sin movimientos o con coste desconocido quedan fuera, con una nota.
+- Una posición que llega a cero participaciones queda como *Cerrada* al final de la lista.
+- Fuera de esta fase: importación desde brókeres, TWR y recalcular los cierres mensuales pasados (solo se
+  actualiza el mes en curso).
 
 ## Copias de seguridad
 
 Ajustes → Datos → *Exportar copia* / *Importar copia* (selector nativo vía
 [FileKit](https://github.com/vinceglb/FileKit)). El archivo es JSON legible
-(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 12}`:
+(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 13}`:
 
 - Incluye activos, pasivos, grupos y miembros, histórico mensual y metas con sus aportaciones y
   vínculos (una meta se vincula a una cuenta **o** a un grupo), tipos de cuenta propios y los
@@ -114,7 +142,8 @@ Ajustes → Datos → *Exportar copia* / *Importar copia* (selector nativo vía
   las anteriores a la 8 se importan sin cartera y las anteriores a la 9, sin banco o bróker,
   las anteriores a la 10, sin datos de Morningstar (se rellenan solos), y las anteriores a la 11
   meten todos los productos en una única cartera *Mi cartera*. Desde la 12 guardan la clase de activo
-  elegida a mano.
+  elegida a mano y desde la 13, los movimientos (al importar, las participaciones de los productos con
+  movimientos se recalculan a partir de ellos).
 - Importar **reemplaza** todos los datos en una sola transacción. El archivo se valida entero antes
   (divisas, tipos, ids únicos, referencias, reglas del ledger de metas), así que uno inválido no
   toca nada.
@@ -128,9 +157,10 @@ dispositivo.
 
 1. ~~**Backup**~~: export/import JSON desde Ajustes (ver *Copias de seguridad*).
 2. ~~**Cartera** (fase 1)~~: sustituye a Suscripciones, que se eliminaron junto con los avisos de
-   renovación (ver *Cartera*); incluye el detalle de cada producto y de la cartera. Fase 2:
-   movimientos (compras, ventas, comisiones, dividendos y traspasos), coste FIFO, rentabilidad propia
-   (XIRR/TWR, separada de la del producto) e importación.
+   renovación (ver *Cartera*); incluye el detalle de cada producto y de la cartera. ~~Fase 2~~:
+   movimientos (compras, ventas, saldo inicial, comisiones, dividendos y traspasos entre fondos), coste
+   FIFO y rentabilidad propia (XIRR, separada de la del producto). Fase 3: importación desde brókeres;
+   más adelante, TWR.
 3. **Login + sync** (opcional): Google / Apple / email junto con sincronización. Activos, pasivos,
    grupos y metas ya tienen id `String` (UUID); la migración 3 → 4 (`MIGRATION_3_4`)
    dio un UUID nuevo a las metas existentes. Las aportaciones y cambios de vínculo de cada meta

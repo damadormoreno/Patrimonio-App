@@ -13,8 +13,10 @@ import com.denebapps.patrimonio.ui.screens.portfolio.AddHoldingViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.CarteraViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.HoldingDetailViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.InstrumentPreviewViewModel
+import com.denebapps.patrimonio.ui.screens.portfolio.MovementFormViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.PortfolioDetailViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.PositionDetailViewModel
+import com.denebapps.patrimonio.ui.screens.portfolio.TransferFormViewModel
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
 import com.denebapps.patrimonio.ui.screens.settings.AccountTypesViewModel
 import com.denebapps.patrimonio.ui.screens.settings.BackupViewModel
@@ -36,6 +38,8 @@ import org.koin.dsl.module
  * it with empty params, while `GoalAllocateSheet` passes `parametersOf(goalId, withdraw)`. [HoldingDetailViewModel]
  * takes the `HoldingDetail.holdingId` nav arg as `parametersOf(holdingId)`, and so does [PositionDetailViewModel] with
  * `PositionDetail.holdingId`; [InstrumentPreviewViewModel] takes the `InstrumentCandidate` it previews.
+ * [MovementFormViewModel] takes `parametersOf(holdingId, movementId, openingBalance)` and [TransferFormViewModel]
+ * `parametersOf(holdingId, transferId)`, both ids after the first being null for a new movement or transfer.
  */
 val presentationModule = module {
     viewModel { AppViewModel(get(), get(), get()) }
@@ -109,13 +113,40 @@ val presentationModule = module {
         )
     }
     viewModel { CarteraViewModel(get(), get(), get(), get(), get<() -> TimeZone>()) }
-    viewModel { AddHoldingViewModel(get(), get(), get(), get(), get()) }
-    viewModel { params -> HoldingDetailViewModel(params.get(), get(), get(), get(), get<() -> TimeZone>()) }
+    viewModel { AddHoldingViewModel(get(), get(), get(), get(), get(), get(), get(), get<() -> TimeZone>()) }
+    viewModel { params -> HoldingDetailViewModel(params.get(), get(), get(), get(), get(), get<() -> TimeZone>()) }
+    viewModel { params ->
+        MovementFormViewModel(
+            holdingId = params[0],
+            // By position: the movement is null for a new one.
+            movementId = params[1],
+            openingBalance = params[2],
+            portfolioRepository = get(),
+            movementRepository = get(),
+            fxHistoryRepository = get(),
+            clock = get(),
+            zoneProvider = get<() -> TimeZone>(),
+        )
+    }
+    viewModel { params ->
+        TransferFormViewModel(
+            holdingId = params[0],
+            // By position: the transfer is null for a new one.
+            transferId = params[1],
+            portfolioRepository = get(),
+            portfolios = get(),
+            movementRepository = get(),
+            quoteSource = get(),
+            clock = get(),
+            zoneProvider = get<() -> TimeZone>(),
+        )
+    }
     viewModel { params ->
         PortfolioDetailViewModel(
             portfolioId = params.getOrNull(),
             portfolios = get(),
             portfolioRepository = get(),
+            movementRepository = get(),
             fxRepository = get(),
             fxHistoryRepository = get(),
             historyRepository = get(),
@@ -139,7 +170,9 @@ val presentationModule = module {
             holdingId = params.get(),
             portfolioRepository = get(),
             portfolios = get(),
+            movementRepository = get(),
             fxRepository = get(),
+            fxHistoryRepository = get(),
             historyRepository = get(),
             clock = get(),
             zoneProvider = get<() -> TimeZone>(),

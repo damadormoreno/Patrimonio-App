@@ -18,6 +18,7 @@ import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.PricePoint
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.Units
+import com.denebapps.patrimonio.domain.model.UnitsBalance
 import com.denebapps.patrimonio.domain.repository.FundamentalsSyncFailure
 import com.denebapps.patrimonio.domain.repository.FundamentalsSyncResult
 import com.denebapps.patrimonio.domain.repository.HistorySyncFailure
@@ -26,6 +27,7 @@ import com.denebapps.patrimonio.domain.repository.HistoryUnavailableException
 import com.denebapps.patrimonio.testing.FakeFxHistoryRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
 import com.denebapps.patrimonio.testing.FakeInstrumentHistoryRepository
+import com.denebapps.patrimonio.testing.FakeMovementRepository
 import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
 import com.denebapps.patrimonio.testing.FxSyncCall
@@ -234,6 +236,7 @@ class PortfolioDetailViewModelTest {
             portfolioId = portfolioId,
             portfolios = collection,
             portfolioRepository = portfolio,
+            movementRepository = FakeMovementRepository(portfolio),
             fxRepository = FakeFxRepository(rates),
             fxHistoryRepository = fx,
             historyRepository = history,
@@ -872,7 +875,8 @@ class PortfolioDetailViewModelTest {
         val s = setup(holdings = listOf(fund, etf, stock, art))
         val job = open(s)
 
-        val doubled = fund.copy(valuation = (fund.valuation as HoldingValuation.Quoted).copy(units = Units(20_000_000)))
+        val doubled =
+            fund.copy(valuation = (fund.valuation as HoldingValuation.Quoted).copy(units = UnitsBalance(20_000_000)))
         s.portfolio.emit(listOf(doubled, etf, stock, art))
         advanceUntilIdle()
 

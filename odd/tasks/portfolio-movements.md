@@ -1,0 +1,146 @@
+# Portfolio phase 2: movements, cost basis and own returns
+
+**Locator:** `odd/tasks/portfolio-movements.md` · Engram topic `odd/portfolio-movements/tasks`
+**Branch:** `feat/portfolio-movements` (from `main` @ `383351c`)
+**Delivery strategy:** `single-pr` (user preference)
+**RDD:** off (global) → parent verification after each writer.
+
+## Objective
+
+Record buys, sells, fund transfers ("traspasos"), dividends and fees per position, derive the units from them, and
+show the user's own results (cost, realized/unrealized gains, XIRR) separately from the product's history.
+
+## Decisions (user, 2026-10-11/12)
+
+1. **Two kinds of position.** *Without movements* (as today): units edited by hand; no own returns ("sin datos de
+   compra"). *With movements*: units derived from the movements; manual unit edits are blocked (add a movement).
+   - Adding the first movement to a position that already has units offers an **opening balance** ("saldo
+     inicial"): units, date and total cost — the cost is OPTIONAL. Unknown cost → that tranche shows "coste
+     desconocido"; FIFO consumes it first, so realized gains on those units show "—" until the cost is filled in.
+     The user may instead enter the real purchase history, or replace the opening balance later.
+   - New products: the add form offers *Lo que tengo ahora* (as today, no movements) or *Una compra* (date, units,
+     amount paid, fee) which creates a position with movements.
+2. **Traspasos** only between **funds** (origin and destination `InstrumentType.FUND`): a linked record (out + in)
+   that carries the FIFO lots with their **original acquisition dates and cost**, no realized gain; may cross
+   portfolios and brokers. ETFs, stocks and crypto are sell + buy (they are taxed).
+3. **Fees**: a separate field on the movement; a buy's fee adds to its cost, a sell's fee reduces the proceeds.
+4. **Dividends**: an income movement; does not change cost. Accumulating funds need nothing; reinvesting =
+   dividend + buy.
+5. **Currencies**: the movement keeps its amount in the holding currency plus its EUR equivalent at that day's FX
+   (editable); cost basis and gains are in EUR.
+6. **Validation**: selling or transferring more units than held on that date is an error.
+7. **Own returns**: realized and unrealized gains (€ and %) and XIRR, per position, per portfolio and for Todas;
+   positions without movements (or with unknown cost) are excluded with a note. TWR: later.
+8. **Screens**: per position, a movements list and a *Mi posición* section (cost vs value, gains, XIRR, FIFO lots,
+   value-of-my-position chart) separate from the product history; portfolio detail adds own gains and XIRR.
+9. **Out of scope**: broker imports (phase 3), rebuilding past monthly net-worth snapshots (only the current month
+   is refreshed, as today), TWR.
+
+## Design notes
+
+- Units stay materialized on the holding (`unitsScaled`), recomputed from the movements in the same transaction
+  as every movement write, so `value()`, totals, snapshots and analytics keep a single code path. A position with
+  movements may reach 0 units (closed) — it stays listed as "Cerrada" and contributes 0.
+- Same-day ordering: buy < opening < transfer-in < fee < dividend < transfer-out < sell, then entry sequence
+  (rumbo's order extended).
+- Per-position XIRR treats transfers at market value on their date (price history; cost as fallback); at
+  portfolio/Todas level transfers between included positions cancel out.
+- Product history (`instrument_prices` cache) is untouched; the position history is units-by-date × price.
+- Persistence: `movements` table, Room v12 → v13, backup v13 (older files import positions without movements),
+  `BACKED_UP_TABLES`, cloud `RECORD_KEYS` (movements are user records), clear-all.
+
+## Tasks
+
+- [x] **T1 — Domain + pure calc**: movement model, ordering, FIFO lots with carried cost/dates, transfers, units by
+  date, realized/unrealized gains, XIRR, validation (route: delegated writer).
+- [x] **T2 — Persistence**: `movements` table, Room v13 + migration test, repository (add/edit/delete, transfers
+  atomic across holdings, materialized units, oversell validation), backup v13, clear-all/cloud (route: delegated
+  writer).
+- [x] **T3 — UI movements**: movements list in the position detail, add/edit/delete sheet, opening-balance flow,
+  add-product choice, block manual unit edits, traspaso flow (funds only) (route: delegated writer).
+- [x] **T4 — UI own returns**: *Mi posición* section and position chart, portfolio detail gains/XIRR, closed
+  positions (route: delegated writer).
+- [x] **T5 — Docs** (route: inline): README *Cartera*, roadmap.
+- [x] **T6 — Two-way currency amounts** (user, 2026-10-12, after PR #37 opened): in a non-EUR holding the user may
+  type the amount in EUR and get the holding-currency amount from that day's rate (today only USD → EUR works);
+  typing both keeps both (the broker's real charge) and shows the implied rate. Movement form and add-product
+  *Una compra* (route: delegated writer; 2+ non-trivial files).
+
+## Acceptance criteria
+
+- Existing positions keep working untouched after the upgrade; nothing changes in net worth.
+- A position with movements derives its units; manual edits are blocked; oversell is rejected.
+- A fund-to-fund traspaso moves lots with their dates and cost and realizes no gain; non-funds can't use it.
+- Gains and XIRR match hand-computed examples; unknown cost is shown as such, never as zero.
+- Backups round-trip movements; older backups import without them.
+
+## Checks
+
+- `scripts/check.sh` (ktlint, unit tests, R8 preview build, schema committed)
+- `./gradlew :composeApp:compileKotlinIosArm64 -Pkotlin.native.enableKlibsCrossCompilation=true`
+- Manual on the Android emulator: opening balance, buys/sells, traspaso between two funds, gains/XIRR, backup.
+
+## Progress / evidence
+
+- **T1** (commit below, `feat(portfolio): model movements with FIFO cost and own returns`): `Movement` (per-type
+  invariants), `MovementType` order = same-day order, `Lot(acquiredOn, units, costEur?)`, `UnitsBalance` (≥ 0, for
+  closed positions; `Units` unchanged); `computeLedgers` (FIFO, exact proportional cost via `mulDivHalfEven`,
+  unknown cost kept apart in `GainBreakdown`, oversell → `InsufficientUnitsException`, transfers carry lots with
+  dates/cost and rescale units by cumulative boundaries, no realized gain); `xirr` (bisection, ACT/365, null
+  without both signs or same-day only); `positionCashFlows`/`combineCashFlows` (transfers cancel inside a scope);
+  `valueSeries`. Tests: 67 new (hand-computed fixtures; XIRR cross-checks 10 %, 10 %, 21 %).
+  RED: 276 compile errors for ledger/XIRR/flows (model tests written after the model). Parent mutation check:
+  FIFO → LIFO makes 8 tests fail. GREEN (parent re-run): check.sh (1381 tests), iOS compile.
+  Notes for T2: `sequence` global across the app; both transfer legs must go to `computeLedgers` together; fund-only
+  eligibility checked in T2/T3; `HoldingValuation.Quoted.units` can't hold 0 → persist closed positions explicitly.
+- **T2** (commit below, `feat(portfolio): persist movements and derive units from them`): `Quoted.units` is now
+  `UnitsBalance` (companion `invoke(Units)` keeps call sites; `isClosed`; `value()` = 0 when closed; closed skipped
+  by `constantCompositionSeries`); `movements` table (FK cascade, global sequence), Room v13 `AutoMigration(12, 13)`
+  (`13.json`); `MovementRepository` (drafts, transfers fund-only, delete leg → both, opening balance, holding with
+  purchase); every write: rebuild set → `computeLedgers` → write → materialize units → refresh snapshot, in one
+  transaction; `updateUnits` blocked (`HoldingHasMovementsException`), holding delete blocked by cross-holding
+  transfers; EUR auto-fill, non-EUR requires `amountEur`; backup v13 (movements validated by replay; holding
+  units recomputed from movements on import); clear-all, `BACKED_UP_TABLES`, cloud `RECORD_KEYS`.
+  RED: 338 compile errors; GREEN (parent re-run): check.sh (1452 tests), iOS compile.
+  Notes for T3: the first movement replaces hand-typed units (offer the opening balance with current units);
+  deleting the last movement leaves 0 units (confirm); no atomic transfer edit yet (T3 adds `updateTransfer`).
+- **T3** (commit below, `feat(portfolio): add, edit and transfer movements`): `MovementsSection` in the position
+  detail (newest first, transfer counterpart names, unknown cost); `MovementFormSheet` (type dropdown, `FormDateField`,
+  gross amount + implied price, fee, EUR prefill from `FxHistoryRepository.rateOn` with override, typed errors,
+  delete with last-movement/transfer warnings) via pure `resolveMovementEntry`; opening-balance dialog (keep units,
+  optional cost) or buys one by one; `TransferFormSheet` (existing funds any portfolio, or `Otro fondo…` via search
+  → atomic `addTransferToNewHolding`; `Todo`; `updateTransfer` edits both legs atomically; funds with hand-typed
+  units excluded as destinations until they have an opening balance); add product `Lo que tengo ahora | Una compra`;
+  edit sheet units read-only with movements; Cartera closed rows `Cerrada` last. RED: 409 compile errors; GREEN
+  (parent re-run): check.sh (1549 tests), iOS compile. Manual emulator test deferred to after T4 (all flows).
+- **T4** (commit below, `feat(portfolio): show own returns per position and portfolio`): `OwnReturns.kt`
+  (`positionReturns`, `scopeReturns`, `priceOn` ≤ 7 days, `transferMarketValue`); *Mi posición* above *Movimientos*
+  (aportado/valor/latente/realizada/dividendos/comisiones/XIRR; unknown cost → `—` + `Coste desconocido de N part.`
+  + hint, partial known part labelled; closed: value 0 + realized + lifetime XIRR; open lots with transfer note;
+  "Evolución de mi posición" chart in EUR with its own range); portfolio *Tu rentabilidad* with coverage text;
+  ledger replay off the main thread; invalid history hides the section. Skipped: chart cost line (single-series
+  `LineChart`), Cartera latent line (doesn't fit cleanly). RED: 249 compile errors; GREEN (parent re-run):
+  check.sh (1594 tests), iOS compile. On device: v12 → v13 migration with the real data (3 holdings intact).
+- **Manual test** (emulator, real data backed up first to `pre-movimientos.json`): opening balance 200 part. /
+  10.000 € → latent +2.952,20 €, XIRR +29,52 %; oversell (1000 part.) rejected inline; sell 50 part. for 3.300 € →
+  realized +800,00 €, aportado 7.500 €, XIRR +30,14 % (hand-checked); partial traspaso 100 → 400 part. to a new
+  fund via *Otro fondo…* → lot keeps 12/10/2025 and 5.000 € cost, realized 0, source keeps realized 800 and XIRR;
+  portfolio *Tu rentabilidad*: aportado 7.500 €, valor 14.998,45 €, XIRR +82,98 %, coverage "2 de 3"; backup v13
+  exported with 4 movements (transfer legs linked), restore of `pre-movimientos.json` → 3 holdings / 0 movements,
+  re-import → 4 holdings / 4 movements with recomputed units, final restore identical to the first one.
+- **Fix found in the manual test** (commit below, `fix(portfolio): end the position chart on the latest movement`):
+  the position chart header showed the pre-sale value when the sale was newer than the last quote; `valueSeries`
+  now ends on the last movement's date at the last price. RED: 1 failing test; GREEN: check.sh (1596 tests).
+- **T5** (commit below, `docs: document portfolio movements`): README *Cartera → Movimientos*, backup v13, roadmap.
+- **T6** (commit below, `feat(portfolio): enter movement amounts in euros or in the quote currency`): shared pure
+  `CurrencyAmountInput.kt` (`TypedAmounts`, `resolveCurrencyAmounts`; EUR → holding via exact `mulDivHalfEven`
+  inverse of `toEur`, half-even); each field typed or derived, both typed kept with the implied rate
+  ("1 USD = 0,8924 €"); a cleared field stays blank (re-deriving into the text breaks typing) and shows the
+  derived value as a muted placeholder; date change re-derives; editing loads both as typed; movement form and
+  *Una compra*. RED: 76 + 16 compile errors; GREEN (parent re-run): check.sh (1639 tests), iOS compile.
+  Emulator (Apple, *Una compra*, cancelled): 860 € → 963,72 $ at 0,8924; both typed 965 $ / 860 € → 0,8912;
+  cleared USD shows 963,72 placeholder; units edit re-derives.
+
+## Next step
+
+Done; push to PR #37.

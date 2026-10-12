@@ -26,6 +26,7 @@ interface PortfolioRepository {
      *
      * @throws PortfolioHoldingNotFoundException when there is no such holding.
      * @throws IllegalStateException when the holding is a manual one.
+     * @throws HoldingHasMovementsException when the holding has movements: its units come from them.
      */
     suspend fun updateUnits(id: String, units: Units)
 
@@ -54,9 +55,11 @@ interface PortfolioRepository {
      */
     suspend fun updateAssetClass(id: String, assetClass: AssetClass?)
 
-    /** Deletes a holding.
+    /**
+     * Deletes a holding and its movements.
      *
      * @throws PortfolioHoldingNotFoundException when there is no such holding.
+     * @throws HoldingHasTransfersException when it has a transfer to or from another holding.
      */
     suspend fun delete(id: String)
 

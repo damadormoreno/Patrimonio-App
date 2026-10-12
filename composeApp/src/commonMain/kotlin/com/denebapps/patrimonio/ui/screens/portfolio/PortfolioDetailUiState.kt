@@ -110,6 +110,7 @@ data class ConcentrationUi(val name: String, val weightText: String, val warning
 data class PortfolioDetailUiState(
     val loaded: Boolean = false,
     val header: PortfolioHeaderUi = PortfolioHeaderUi(),
+    val yourReturns: YourReturnsUi? = null,
     val historyStatus: HistoryStatus = HistoryStatus.NOT_APPLICABLE,
     val evolution: EvolutionUi? = null,
     val correlation: CorrelationSectionUi? = null,

@@ -43,8 +43,9 @@ import org.koin.core.parameter.parametersOf
 
 /**
  * Pushed screen (`PositionDetail`) for one portfolio holding: its value, the product's price chart over a range, the
- * return per year, annualized returns, risk and the provider's product data. [onEdit] opens the edit sheet; [onBack]
- * returns to Cartera, also when the holding is deleted while this is open.
+ * return per year, annualized returns, risk and the provider's product data, then (for a position with movements)
+ * the user's own position apart from them. [onEdit] opens the edit sheet; [onBack] returns to Cartera, also when the
+ * holding is deleted while this is open.
  */
 @Composable
 fun PositionDetailScreen(
@@ -52,12 +53,29 @@ fun PositionDetailScreen(
     modifier: Modifier = Modifier,
     onBack: () -> Unit = {},
     onEdit: () -> Unit = {},
+    onOpenMovement: (movementId: String?, openingBalance: Boolean) -> Unit = { _, _ -> },
+    onOpenTransfer: (transferId: String?) -> Unit = {},
     viewModel: PositionDetailViewModel = koinViewModel(parameters = { parametersOf(holdingId) }),
 ) {
     val state by viewModel.state.collectAsState()
+    val movements = remember(viewModel) {
+        MovementsCallbacks(
+            onAdd = viewModel::onAddMovement,
+            onTransfer = viewModel::onTransfer,
+            onOpen = viewModel::onOpenMovement,
+        )
+    }
 
     LaunchedEffect(Unit) {
         viewModel.navigateBack.collect { onBack() }
+    }
+    LaunchedEffect(Unit) {
+        viewModel.navigate.collect { target ->
+            when (target) {
+                is PositionNavigation.MovementForm -> onOpenMovement(target.movementId, target.openingBalance)
+                is PositionNavigation.Transfer -> onOpenTransfer(target.transferId)
+            }
+        }
     }
 
     PositionDetailContent(
@@ -65,8 +83,14 @@ fun PositionDetailScreen(
         onBack = onBack,
         onEdit = onEdit,
         onRangeSelect = viewModel::onRangeSelect,
+        onMyPositionRangeSelect = viewModel::onMyPositionRangeSelect,
         onRefresh = viewModel::onRefresh,
         onDismissSyncError = viewModel::onSyncErrorDismiss,
+        movements = movements,
+        onOpeningBalance = viewModel::onChooseOpeningBalance,
+        onOneByOne = viewModel::onChooseOneByOne,
+        onConfirmOneByOne = viewModel::onConfirmOneByOne,
+        onDismissChoice = viewModel::onDismissChoice,
         modifier = modifier,
     )
 }
@@ -78,12 +102,27 @@ internal fun PositionDetailContent(
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onRangeSelect: (HistoryRange) -> Unit,
+    onMyPositionRangeSelect: (HistoryRange) -> Unit,
     onRefresh: () -> Unit,
     onDismissSyncError: () -> Unit,
+    movements: MovementsCallbacks,
+    onOpeningBalance: () -> Unit,
+    onOneByOne: () -> Unit,
+    onConfirmOneByOne: () -> Unit,
+    onDismissChoice: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAppColors.current
 
+    state.choice?.let {
+        OpeningChoiceDialog(
+            choice = it,
+            onOpeningBalance = onOpeningBalance,
+            onOneByOne = onOneByOne,
+            onConfirmOneByOne = onConfirmOneByOne,
+            onDismiss = onDismissChoice,
+        )
+    }
     Column(modifier.fillMaxSize().background(colors.bg)) {
         TopBar(onBack = onBack, onEdit = onEdit, canEdit = state.loaded)
         PullToRefreshBox(
@@ -102,6 +141,8 @@ internal fun PositionDetailContent(
                         )
                     }
                     HistorySections(state, onRangeSelect, onRetry = onRefresh)
+                    state.myPosition?.let { MyPositionSection(it, onMyPositionRangeSelect) }
+                    MovementsSection(state.movements, movements)
                     state.product?.let {
                         SectionLabel("Datos del producto")
                         ProductDataCard(it)

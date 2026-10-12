@@ -25,6 +25,7 @@ internal fun Module.bindDatabaseDependents() {
     single { get<AppDatabase>().savingsGoalDao() }
     single { get<AppDatabase>().portfolioDao() }
     single { get<AppDatabase>().portfolioHoldingDao() }
+    single { get<AppDatabase>().movementDao() }
     single { get<AppDatabase>().instrumentPriceDao() }
     single { get<AppDatabase>().fxHistoryDao() }
     single { DatabaseInitializer(get(), get()) }

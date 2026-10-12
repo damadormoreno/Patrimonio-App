@@ -148,9 +148,12 @@ fun constantCompositionSeries(
     for (holding in holdings) {
         val quoted = holding.valuation as? HoldingValuation.Quoted
         val series = eurSeriesById[holding.id]
-        if (quoted != null && !series.isNullOrEmpty()) {
+        // A closed position is worth nothing on every date: it is neither summed nor reported as left out.
+        if (quoted?.isClosed == true) continue
+        val units = quoted?.units?.toUnits()
+        if (units != null && !series.isNullOrEmpty()) {
             require(series.all { it.price.currency == Currency.EUR }) { "series of ${holding.id} must be in EUR" }
-            included += Triple(holding.id, quoted.units, series)
+            included += Triple(holding.id, units, series)
         } else {
             excluded += holding.id
         }

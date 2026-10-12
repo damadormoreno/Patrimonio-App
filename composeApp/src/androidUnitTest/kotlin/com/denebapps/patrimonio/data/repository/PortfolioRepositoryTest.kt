@@ -22,6 +22,7 @@ import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.Quote
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.Units
+import com.denebapps.patrimonio.domain.model.UnitsBalance
 import com.denebapps.patrimonio.domain.repository.FundamentalsSource
 import com.denebapps.patrimonio.domain.repository.PortfolioHoldingNotFoundException
 import com.denebapps.patrimonio.domain.repository.PortfolioNotFoundException
@@ -232,7 +233,7 @@ class PortfolioRepositoryTest {
         repository.updateUnits("p1", Units(8_100_001))
 
         val stored = repository.observeAll().first().single()
-        assertEquals(Units(8_100_001), stored.quotedValuation().units)
+        assertEquals(UnitsBalance(8_100_001), stored.quotedValuation().units)
         assertEquals(original.quotedValuation().lastQuote, stored.quotedValuation().lastQuote)
         db.close()
     }
@@ -538,7 +539,7 @@ class PortfolioRepositoryTest {
 
         val byId = repository.observeAll().first().associateBy { it.id }
         assertEquals("Openbank", byId.getValue("p1").broker)
-        assertEquals(Units(4_000_000), byId.getValue("p1").quotedValuation().units)
+        assertEquals(UnitsBalance(4_000_000), byId.getValue("p1").quotedValuation().units)
         assertEquals(10_000_000L, byId.getValue("p1").quotedValuation().lastQuote?.price?.scaled)
         assertEquals("MyInvestor", byId.getValue("m1").broker)
         db.close()

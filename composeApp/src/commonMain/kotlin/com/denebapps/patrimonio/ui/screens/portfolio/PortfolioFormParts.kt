@@ -114,15 +114,60 @@ internal fun UnitsField(text: String, onTextChange: (String) -> Unit, suffix: St
     }
 }
 
-/** Big right-aligned amount field in a fixed [currency] (the one a quote came in), unlike `FormAmountField`. */
+/**
+ * The units of a position that has movements: drawn like [UnitsField] but muted and not editable, because they come
+ * from the movements; [note] says so under it.
+ */
+@Composable
+internal fun LockedUnitsField(text: String, suffix: String, note: String?, modifier: Modifier = Modifier) {
+    val colors = LocalAppColors.current
+    Column(modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth().fieldBox(),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = text,
+                color = colors.muted,
+                fontSize = 32.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.End,
+                modifier = Modifier.weight(1f),
+            )
+            Text(text = suffix, color = colors.muted2, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+        }
+        note?.let {
+            Text(
+                text = it,
+                color = colors.muted,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+    }
+}
+
+/**
+ * Big right-aligned amount field in a fixed [currency] (the one a quote came in), unlike `FormAmountField`. While
+ * [text] is empty, [placeholder] (when given) shows muted in its place, e.g. the value the field would follow.
+ */
 @Composable
 internal fun FixedCurrencyAmountField(
     text: String,
     currency: Currency,
     onTextChange: (String) -> Unit,
     modifier: Modifier = Modifier,
+    placeholder: String? = null,
 ) {
     val colors = LocalAppColors.current
+    val valueStyle = TextStyle(
+        color = colors.ink,
+        fontSize = 32.sp,
+        fontWeight = FontWeight.SemiBold,
+        textAlign = TextAlign.End,
+    )
     Row(
         modifier = modifier.fillMaxWidth().fieldBox(),
         verticalAlignment = Alignment.Bottom,
@@ -134,13 +179,16 @@ internal fun FixedCurrencyAmountField(
             onValueChange = { onTextChange(filterAmountInput(it)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            textStyle = TextStyle(
-                color = colors.ink,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.End,
-            ),
+            textStyle = valueStyle,
             cursorBrush = SolidColor(colors.ink),
+            decorationBox = { field ->
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                    if (text.isEmpty() && placeholder != null) {
+                        Text(text = placeholder, style = valueStyle.copy(color = colors.muted2))
+                    }
+                    field()
+                }
+            },
             modifier = Modifier.weight(1f),
         )
         Text(text = currency.code, color = colors.muted2, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
@@ -230,6 +278,43 @@ internal fun AssetClassPicker(
             PickerItem(label = assetClassLabel(assetClass), selected = choice.explicit == assetClass) {
                 dismiss()
                 onSelect(assetClass)
+            }
+        }
+    }
+}
+
+/**
+ * A labelled picker of one of [options] (a value and its label): the field shows the label of [selected] or
+ * [placeholder] while there is none. The optional [extra] is one more entry at the end that runs an action instead of
+ * choosing a value ("Otro fondo…").
+ */
+@Composable
+internal fun <T> OptionPicker(
+    title: String,
+    options: List<Pair<T, String>>,
+    selected: T?,
+    placeholder: String,
+    clickLabel: String,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    extra: Pair<String, () -> Unit>? = null,
+) {
+    PickerField(
+        title = title,
+        valueText = options.firstOrNull { it.first == selected }?.second ?: placeholder,
+        clickLabel = clickLabel,
+        modifier = modifier,
+    ) { dismiss ->
+        options.forEach { (value, label) ->
+            PickerItem(label = label, selected = value == selected) {
+                dismiss()
+                onSelect(value)
+            }
+        }
+        extra?.let { (label, action) ->
+            PickerItem(label = label, selected = false) {
+                dismiss()
+                action()
             }
         }
     }

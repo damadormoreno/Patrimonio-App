@@ -99,6 +99,7 @@ private fun LoadedSections(
     val available = state.historyStatus == HistoryStatus.AVAILABLE
 
     PortfolioHeader(state.header)
+    state.yourReturns?.let { YourReturnsSection(it) }
     if (available && state.isSyncing) SyncingRow(Modifier.padding(top = 14.dp))
     if (available && state.syncError) {
         RefreshNotice(

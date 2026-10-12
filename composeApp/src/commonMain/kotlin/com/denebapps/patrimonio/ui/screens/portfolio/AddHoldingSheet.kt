@@ -36,6 +36,7 @@ import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.ui.components.FormAmountField
+import com.denebapps.patrimonio.ui.components.FormDateField
 import com.denebapps.patrimonio.ui.components.FormSectionLabel
 import com.denebapps.patrimonio.ui.components.FormSheetGrabber
 import com.denebapps.patrimonio.ui.components.FormSheetTopBar
@@ -45,15 +46,22 @@ import com.denebapps.patrimonio.ui.components.Pill
 import com.denebapps.patrimonio.ui.components.PrimaryButton
 import com.denebapps.patrimonio.ui.components.SearchField
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
+import kotlinx.datetime.LocalDate
 import org.koin.compose.viewmodel.koinViewModel
 
 /** What the add form can do, so [AddHoldingContent] can be shown without a ViewModel. */
 internal class AddHoldingCallbacks(
     val onQueryChange: (String) -> Unit,
     val onOpenPreview: (InstrumentRef) -> Unit,
+    val onEntryKindChange: (EntryKind) -> Unit,
     val onEntryModeChange: (EntryMode) -> Unit,
     val onUnitsChange: (String) -> Unit,
     val onAmountChange: (String) -> Unit,
+    val onPurchaseDateChange: (LocalDate) -> Unit,
+    val onPurchaseUnitsChange: (String) -> Unit,
+    val onPurchaseAmountChange: (String) -> Unit,
+    val onPurchaseFeeChange: (String) -> Unit,
+    val onPurchaseEurChange: (String) -> Unit,
     val onStartManual: () -> Unit,
     val onAddManuallyFromPicked: () -> Unit,
     val onBackToSearch: () -> Unit,
@@ -84,9 +92,15 @@ fun AddHoldingSheet(
         AddHoldingCallbacks(
             onQueryChange = viewModel::onQueryChange,
             onOpenPreview = viewModel::onOpenPreview,
+            onEntryKindChange = viewModel::onEntryKindChange,
             onEntryModeChange = viewModel::onEntryModeChange,
             onUnitsChange = viewModel::onUnitsChange,
             onAmountChange = viewModel::onAmountChange,
+            onPurchaseDateChange = viewModel::onPurchaseDateChange,
+            onPurchaseUnitsChange = viewModel::onPurchaseUnitsChange,
+            onPurchaseAmountChange = viewModel::onPurchaseAmountChange,
+            onPurchaseFeeChange = viewModel::onPurchaseFeeChange,
+            onPurchaseEurChange = viewModel::onPurchaseEurChange,
             onStartManual = viewModel::onStartManual,
             onAddManuallyFromPicked = viewModel::onAddManuallyFromPicked,
             onBackToSearch = viewModel::onBackToSearch,
@@ -211,6 +225,37 @@ private fun EntryStep(state: AddHoldingUiState, callbacks: AddHoldingCallbacks) 
         modifier = Modifier.padding(top = 10.dp, bottom = 18.dp),
     )
     SegmentedToggle(
+        options = listOf(EntryKind.CURRENT to "Lo que tengo ahora", EntryKind.PURCHASE to "Una compra"),
+        selected = state.entryKind,
+        onSelect = callbacks.onEntryKindChange,
+    )
+    Spacer(Modifier.height(18.dp))
+    when (state.entryKind) {
+        EntryKind.CURRENT -> CurrentEntry(state, quote, callbacks)
+        EntryKind.PURCHASE -> PurchaseEntry(state, quote, callbacks)
+    }
+    Spacer(Modifier.height(20.dp))
+    AssetClassPicker(choice = state.assetClass, onSelect = callbacks.onAssetClassChange)
+    Spacer(Modifier.height(20.dp))
+    BrokerField(text = state.broker, onTextChange = callbacks.onBrokerChange)
+    Spacer(Modifier.height(20.dp))
+    AddToPortfolio(state, callbacks)
+    state.saveError?.let {
+        Text(
+            text = it,
+            color = LocalAppColors.current.expense,
+            fontSize = 13.sp,
+            lineHeight = 18.sp,
+            modifier = Modifier.padding(bottom = 12.dp),
+        )
+    }
+    BackToSearchLink(callbacks, text = "Elegir otro producto")
+}
+
+/** What is held now: the units, or what the position is worth, with the amount it comes to. */
+@Composable
+private fun CurrentEntry(state: AddHoldingUiState, quote: QuoteUi, callbacks: AddHoldingCallbacks) {
+    SegmentedToggle(
         options = listOf(EntryMode.UNITS to "Participaciones", EntryMode.AMOUNT to "Importe actual"),
         selected = state.entryMode,
         onSelect = callbacks.onEntryModeChange,
@@ -231,13 +276,49 @@ private fun EntryStep(state: AddHoldingUiState, callbacks: AddHoldingCallbacks) 
         }
     }
     PreviewLine(state.preview)
+}
+
+/**
+ * One purchase: its date, units, the amount paid (with the price it implies), the fee and the euro equivalent (with the
+ * rate the two amounts imply).
+ */
+@Composable
+private fun PurchaseEntry(state: AddHoldingUiState, quote: QuoteUi, callbacks: AddHoldingCallbacks) {
+    val purchase = state.purchase
+    FormSectionLabel("Fecha")
+    FormDateField(date = purchase.date, onDateChange = callbacks.onPurchaseDateChange)
     Spacer(Modifier.height(20.dp))
-    AssetClassPicker(choice = state.assetClass, onSelect = callbacks.onAssetClassChange)
+    FormSectionLabel("Participaciones")
+    UnitsField(text = purchase.unitsText, onTextChange = callbacks.onPurchaseUnitsChange, suffix = "part.")
     Spacer(Modifier.height(20.dp))
-    BrokerField(text = state.broker, onTextChange = callbacks.onBrokerChange)
+    FormSectionLabel("Importe pagado")
+    FixedCurrencyAmountField(
+        text = purchase.amountText,
+        currency = quote.currency,
+        onTextChange = callbacks.onPurchaseAmountChange,
+        placeholder = purchase.amountPlaceholder,
+    )
+    PreviewLine(purchase.impliedPriceText)
+    PreviewLine(purchase.amountHint)
     Spacer(Modifier.height(20.dp))
-    AddToPortfolio(state, callbacks)
-    BackToSearchLink(callbacks, text = "Elegir otro producto")
+    FormSectionLabel("Comisión (opcional)")
+    FixedCurrencyAmountField(
+        text = purchase.feeText,
+        currency = quote.currency,
+        onTextChange = callbacks.onPurchaseFeeChange,
+    )
+    if (purchase.showEur) {
+        Spacer(Modifier.height(20.dp))
+        FormSectionLabel("Equivalente en EUR")
+        FixedCurrencyAmountField(
+            text = purchase.eurText,
+            currency = Currency.EUR,
+            onTextChange = callbacks.onPurchaseEurChange,
+            placeholder = purchase.eurPlaceholder,
+        )
+        PreviewLine(purchase.impliedRateText)
+        PreviewLine(purchase.eurHint)
+    }
 }
 
 @Composable
@@ -298,7 +379,7 @@ private fun CenteredLink(text: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun StatusText(text: String, color: Color = LocalAppColors.current.muted) {
+internal fun StatusText(text: String, color: Color = LocalAppColors.current.muted) {
     Text(
         text = text,
         color = color,
@@ -309,7 +390,7 @@ private fun StatusText(text: String, color: Color = LocalAppColors.current.muted
 }
 
 @Composable
-private fun LoadingRow(text: String) {
+internal fun LoadingRow(text: String) {
     Row(
         modifier = Modifier.padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -326,7 +407,7 @@ private fun LoadingRow(text: String) {
 
 /** The product being added: its name and what identifies it, with its type. */
 @Composable
-private fun PickedSummary(picked: CandidateUi?) {
+internal fun PickedSummary(picked: CandidateUi?) {
     val colors = LocalAppColors.current
     if (picked == null) return
     Row(
@@ -351,7 +432,7 @@ private fun PickedSummary(picked: CandidateUi?) {
 }
 
 @Composable
-private fun CandidateRow(candidate: CandidateUi, showDivider: Boolean, onClick: () -> Unit) {
+internal fun CandidateRow(candidate: CandidateUi, showDivider: Boolean, onClick: () -> Unit) {
     val colors = LocalAppColors.current
     val lineColor = colors.line2
     Row(

@@ -21,10 +21,13 @@ import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.QuoteProvider
 import com.denebapps.patrimonio.domain.model.Units
+import com.denebapps.patrimonio.domain.model.UnitsBalance
 import com.denebapps.patrimonio.domain.model.normalizeBroker
 import com.denebapps.patrimonio.domain.repository.FundamentalsSource
 import com.denebapps.patrimonio.domain.repository.FundamentalsSyncFailure
 import com.denebapps.patrimonio.domain.repository.FundamentalsSyncResult
+import com.denebapps.patrimonio.domain.repository.HoldingHasMovementsException
+import com.denebapps.patrimonio.domain.repository.HoldingHasTransfersException
 import com.denebapps.patrimonio.domain.repository.PortfolioHoldingNotFoundException
 import com.denebapps.patrimonio.domain.repository.PortfolioNotFoundException
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
@@ -79,7 +82,7 @@ class PortfolioRepositoryImpl(
             if (appDatabase.portfolioDao().find(holding.portfolioId) == null) {
                 throw PortfolioNotFoundException(holding.portfolioId)
             }
-            dao.insert(toEntity(holding, clock.now().toEpochMilliseconds()))
+            dao.insert(portfolioHoldingToEntity(holding, clock.now().toEpochMilliseconds()))
             snapshotUpserter.refreshCurrentMonth()
         }
     }
@@ -89,6 +92,7 @@ class PortfolioRepositoryImpl(
         appDatabase.writeTransaction {
             val row = dao.find(id) ?: throw PortfolioHoldingNotFoundException(id)
             check(row.kind == HoldingKind.QUOTED.name) { "Holding '$id' is a manual holding and has no units" }
+            if (appDatabase.movementDao().countForHolding(id) > 0) throw HoldingHasMovementsException(id)
             dao.updateUnits(id, units.scaled)
             snapshotUpserter.refreshCurrentMonth()
         }
@@ -122,6 +126,10 @@ class PortfolioRepositoryImpl(
     override suspend fun delete(id: String) {
         seedingGate.await()
         appDatabase.writeTransaction {
+            // Its own movements go with it (cascade); a transfer would leave the other holding with a dangling leg.
+            if (appDatabase.movementDao().countTransferLegsWithOtherHoldings(id) > 0) {
+                throw HoldingHasTransfersException(id)
+            }
             if (dao.delete(id) == 0) throw PortfolioHoldingNotFoundException(id)
             // The cached price history of a product nobody holds any more is useless.
             appDatabase.instrumentPriceDao().pruneUnreferenced()
@@ -247,7 +255,7 @@ private fun isStale(row: PortfolioHoldingEntity, now: Long): Boolean {
 }
 
 /** [nowMs] stamps the fundamentals of a holding that arrives with them, so they are not asked again right away. */
-private fun toEntity(holding: PortfolioHolding, nowMs: Long): PortfolioHoldingEntity = when (
+internal fun portfolioHoldingToEntity(holding: PortfolioHolding, nowMs: Long): PortfolioHoldingEntity = when (
     val valuation = holding.valuation
 ) {
     is HoldingValuation.Quoted -> PortfolioHoldingEntity(
@@ -308,7 +316,7 @@ internal fun portfolioHoldingToDomain(row: PortfolioHoldingEntity): PortfolioHol
         HoldingKind.QUOTED -> HoldingValuation.Quoted(
             ref = instrumentRef(row),
             currency = currency,
-            units = Units(checkNotNull(row.unitsScaled) { "quoted holding '${row.id}' has no units" }),
+            units = UnitsBalance(checkNotNull(row.unitsScaled) { "quoted holding '${row.id}' has no units" }),
             lastQuote = row.priceScaled?.let { priceScaled ->
                 LastQuote(
                     price = Price(priceScaled, currency),

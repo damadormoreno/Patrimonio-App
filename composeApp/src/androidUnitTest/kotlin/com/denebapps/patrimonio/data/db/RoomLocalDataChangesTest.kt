@@ -4,6 +4,7 @@ import com.denebapps.patrimonio.data.db.entity.FxHistoryEntity
 import com.denebapps.patrimonio.data.db.entity.FxHistorySyncEntity
 import com.denebapps.patrimonio.data.db.entity.InstrumentPriceEntity
 import com.denebapps.patrimonio.data.db.entity.InstrumentPriceSyncEntity
+import com.denebapps.patrimonio.data.db.entity.MovementEntity
 import com.denebapps.patrimonio.data.db.entity.PortfolioEntity
 import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
 import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
@@ -45,6 +46,30 @@ class RoomLocalDataChangesTest {
                 "h", TEST_PORTFOLIO_ID, "Cuadro", "OTHER", null, null, "MANUAL", null, null, "EUR",
                 null, null, null, null, 250_000, 1L,
             ),
+        )
+        signals.awaitAtLeast(2)
+
+        collector.cancel()
+        db.close()
+    }
+
+    @Test
+    fun `a movement being recorded signals a backup change`() = runBlocking {
+        val db = buildInMemoryTestDatabase()
+        db.insertTestPortfolio()
+        db.portfolioHoldingDao().insert(
+            PortfolioHoldingEntity(
+                "h", TEST_PORTFOLIO_ID, "Fondo", "FUND", null, null, "QUOTED", "MORNINGSTAR", "code", "EUR",
+                0, null, null, null, null, null,
+            ),
+        )
+        val signals = AtomicInteger()
+        val collector =
+            launch(Dispatchers.Default) { RoomLocalDataChanges(db).observe().collect { signals.incrementAndGet() } }
+        signals.awaitAtLeast(1)
+
+        db.movementDao().insert(
+            MovementEntity("m", "h", "BUY", 20_000, 1_000_000, 10_000, "EUR", 0, 10_000, 0, null, null, 1),
         )
         signals.awaitAtLeast(2)
 
