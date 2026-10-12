@@ -49,7 +49,7 @@ import kotlin.uuid.Uuid
  * hand-edited or corrupted file is rejected with a readable reason instead of failing half-way
  * through an import or crashing a later read.
  *
- * Writes [VERSION] (14). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
+ * Writes [VERSION] (15). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
  * group-link fields, which default to null, v1–v3 files have numeric goal ids, which
  * [upgradeLegacyGoalIds] replaces before decoding, v1–v4 files link a goal to one `linkedAssetId`,
  * which [upgradeSingleLinkedAsset] turns into a list, v1–v5 files have no custom account types nor
@@ -60,11 +60,11 @@ import kotlin.uuid.Uuid
  * [upgradeToSinglePortfolio] answers with one new "Mi cartera" that holds every holding, and v1–v11 holdings have no
  * asset class, which defaults to null (the class is inferred when read), and v1–v12 files have no movements, which
  * default to empty, and v1–v13 files have no allocation targets, which default to empty, nor portfolio rebalance
- * tolerances, which default to 500.
+ * tolerances, which default to 500, and v1–v14 files have no holding members of groups, which default to empty.
  */
 object BackupCodec {
     const val FORMAT = "patrimonio-backup"
-    const val VERSION = 14
+    const val VERSION = 15
 
     private val json = Json {
         prettyPrint = true
@@ -288,6 +288,17 @@ private fun BackupDocument.validate() {
     portfolioHoldings.forEach { validateHolding(it, portfolioIds) }
     validateMovements(movements, portfolioHoldings)
     validateAllocationTargets(allocationTargets, portfolios)
+
+    val holdingIds = portfolioHoldings.map { it.id }.toSet()
+    requireUnique("valor de cartera en un grupo", accountGroupHoldingMembers.map { "${it.groupId}/${it.holdingId}" })
+    accountGroupHoldingMembers.forEach { member ->
+        if (member.groupId !in groupIds) {
+            invalid("Un valor de cartera apunta a un grupo que no existe: ${member.groupId}.")
+        }
+        if (member.holdingId !in holdingIds) {
+            invalid("Un grupo incluye un valor de cartera que no existe: ${member.holdingId}.")
+        }
+    }
 }
 
 /**

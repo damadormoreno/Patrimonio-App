@@ -2,6 +2,8 @@ package com.denebapps.patrimonio.data.repository
 
 import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.buildInMemoryTestDatabase
+import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
+import com.denebapps.patrimonio.data.db.entity.AccountGroupHoldingMemberEntity
 import com.denebapps.patrimonio.data.db.entity.InstrumentPriceEntity
 import com.denebapps.patrimonio.data.db.entity.InstrumentPriceSyncEntity
 import com.denebapps.patrimonio.data.db.entity.NetWorthSnapshotEntity
@@ -287,6 +289,23 @@ class PortfolioRepositoryTest {
 
         assertEquals(listOf("m1"), repository.observeAll().first().map { it.id })
         assertFailsWith<PortfolioHoldingNotFoundException> { repository.delete("p1") }
+        db.close()
+    }
+
+    @Test
+    fun `deleting a holding removes it from the groups and keeps the groups and their other members`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val repository = repositoryFor(db)
+        repository.add(quoted("p1"))
+        repository.add(manual("m1"))
+        db.accountGroupDao().insertGroup(AccountGroupEntity("g1", "Casa", true, 0))
+        db.accountGroupDao().insertHoldingMember(AccountGroupHoldingMemberEntity("g1", "p1"))
+        db.accountGroupDao().insertHoldingMember(AccountGroupHoldingMemberEntity("g1", "m1"))
+
+        repository.delete("p1")
+
+        assertEquals(listOf(AccountGroupHoldingMemberEntity("g1", "m1")), db.accountGroupDao().listHoldingMembers())
+        assertEquals(listOf("g1"), db.accountGroupDao().listGroups().map { it.id })
         db.close()
     }
 

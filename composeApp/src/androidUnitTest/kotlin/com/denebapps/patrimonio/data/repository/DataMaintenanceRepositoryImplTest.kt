@@ -4,6 +4,7 @@ import com.denebapps.patrimonio.data.datastore.PreferencesRepositoryImpl
 import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.buildInMemoryTestDatabase
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
+import com.denebapps.patrimonio.data.db.entity.AccountGroupHoldingMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AllocationTargetEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
@@ -98,6 +99,8 @@ class DataMaintenanceRepositoryImplTest {
                 "EUR", 1_000_000, null, null, null, null, null,
             ),
         )
+        db.accountGroupDao().insertHoldingMember(AccountGroupHoldingMemberEntity("group-1", "holding-1"))
+        db.accountGroupDao().insertHoldingMember(AccountGroupHoldingMemberEntity("group-1", "holding-3"))
         db.movementDao().insert(
             MovementEntity(
                 "movement-1", "holding-3", "BUY", 20_000, 1_000_000, 10_000, "EUR", 0, 10_000, 0, null, null, 1,
@@ -124,6 +127,7 @@ class DataMaintenanceRepositoryImplTest {
         assertTrue(db.savingsGoalDao().observeAll().first().isEmpty(), "savings goals not cleared")
         assertTrue(db.savingsGoalDao().listAllLinkedAssets().isEmpty(), "goal accounts not cleared")
         assertTrue(db.netWorthDao().observeAll().first().isEmpty(), "net-worth snapshots not cleared")
+        assertTrue(db.accountGroupDao().listHoldingMembers().isEmpty(), "group holding members not cleared")
         assertTrue(db.portfolioHoldingDao().list().isEmpty(), "portfolio holdings not cleared")
         assertTrue(db.movementDao().list().isEmpty(), "movements not cleared")
         assertTrue(db.allocationTargetDao().list().isEmpty(), "allocation targets not cleared")

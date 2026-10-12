@@ -64,7 +64,7 @@ class BackupAllocationTargetsImportTest {
         source.close()
 
         val document = BackupCodec.decode(json)
-        assertEquals(14, document.version)
+        assertEquals(BackupCodec.VERSION, document.version)
         assertEquals(3, document.allocationTargets.size)
         assertEquals(listOf(250, 900), document.portfolios.map { it.rebalanceToleranceBp })
 

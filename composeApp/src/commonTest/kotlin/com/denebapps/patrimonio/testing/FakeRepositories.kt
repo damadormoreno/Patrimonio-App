@@ -6,6 +6,7 @@ import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalProgress
 import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalSubtract
 import com.denebapps.patrimonio.domain.calc.savingsGoalCancellationDelta
 import com.denebapps.patrimonio.domain.model.AccountGroup
+import com.denebapps.patrimonio.domain.model.AccountGroupRef
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
@@ -246,15 +247,22 @@ class FakeAccountGroupRepository(initial: List<AccountGroup> = emptyList()) : Ac
         backing.value = backing.value + group
     }
 
-    override suspend fun setMembers(groupId: String, assetIds: Set<String>) {
-        backing.value = backing.value.map { if (it.id == groupId) it.copy(memberAssetIds = assetIds) else it }
+    override suspend fun setMembers(groupId: String, assetIds: Set<String>, holdingIds: Set<String>) {
+        backing.value = backing.value.map {
+            if (it.id == groupId) it.copy(memberAssetIds = assetIds, memberHoldingIds = holdingIds) else it
+        }
     }
 
     override suspend fun updateGroup(group: AccountGroup) {
         if (backing.value.none { it.id == group.id }) throw AccountGroupNotFoundException(group.id)
         backing.value = backing.value.map {
             if (it.id == group.id) {
-                it.copy(name = group.name, showBalance = group.showBalance, memberAssetIds = group.memberAssetIds)
+                it.copy(
+                    name = group.name,
+                    showBalance = group.showBalance,
+                    memberAssetIds = group.memberAssetIds,
+                    memberHoldingIds = group.memberHoldingIds,
+                )
             } else {
                 it
             }
@@ -272,6 +280,9 @@ class FakeAccountGroupRepository(initial: List<AccountGroup> = emptyList()) : Ac
     override suspend fun deleteGroup(id: String) {
         backing.value = backing.value.filterNot { it.id == id }
     }
+
+    override suspend fun groupsContainingHolding(holdingId: String): List<AccountGroupRef> =
+        backing.value.filter { holdingId in it.memberHoldingIds }.map { AccountGroupRef(it.id, it.name) }
 
     fun emit(groups: List<AccountGroup>) {
         backing.value = groups

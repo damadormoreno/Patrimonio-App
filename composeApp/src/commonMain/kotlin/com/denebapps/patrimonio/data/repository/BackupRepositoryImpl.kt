@@ -21,7 +21,8 @@ import kotlinx.datetime.Clock
  * re-inserts parents before children in a single transaction, preserving ids (savings-goal ids
  * included, so ledgers and links keep pointing at the right goal; portfolios, with their allocation targets, before the
  * holdings in them, and those
- * before their movements, whose units replace the holdings' own). Whatever the
+ * before their movements, whose units replace the holdings' own; the holdings' memberships of the groups go last,
+ * once both exist). Whatever the
  * file holds, the database ends with at least one portfolio. The current month's net-worth
  * snapshot is recomputed from the imported assets, like after any other asset write.
  */
@@ -51,6 +52,7 @@ class BackupRepositoryImpl(
                 portfolioHoldings = appDatabase.portfolioHoldingDao().list().map { it.toBackup() },
                 movements = appDatabase.movementDao().list().map { it.toBackup() },
                 allocationTargets = appDatabase.allocationTargetDao().list().map { it.toBackup() },
+                accountGroupHoldingMembers = appDatabase.accountGroupDao().listHoldingMembers().map { it.toBackup() },
             )
         }
         return BackupCodec.encode(document)
@@ -86,6 +88,10 @@ class BackupRepositoryImpl(
                 appDatabase.portfolioHoldingDao().insert(stored)
             }
             document.movements.forEach { appDatabase.movementDao().insert(it.toEntity()) }
+            // The groups hold holdings too: their memberships can only go in once the holdings exist.
+            document.accountGroupHoldingMembers.forEach {
+                appDatabase.accountGroupDao().insertHoldingMember(it.toEntity())
+            }
             // A file without portfolios (and so without holdings) still leaves the database with its "Mi cartera".
             appDatabase.ensureDefaultPortfolio()
             snapshotUpserter.refreshCurrentMonth()

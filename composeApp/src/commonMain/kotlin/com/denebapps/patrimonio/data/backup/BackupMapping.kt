@@ -1,6 +1,7 @@
 package com.denebapps.patrimonio.data.backup
 
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
+import com.denebapps.patrimonio.data.db.entity.AccountGroupHoldingMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AccountTypeEntity
 import com.denebapps.patrimonio.data.db.entity.AllocationTargetEntity
@@ -37,6 +38,10 @@ internal fun AccountGroupBackup.toEntity() = AccountGroupEntity(id, name, showBa
 internal fun AccountGroupMemberEntity.toBackup() = AccountGroupMemberBackup(groupId, assetId)
 
 internal fun AccountGroupMemberBackup.toEntity() = AccountGroupMemberEntity(groupId, assetId)
+
+internal fun AccountGroupHoldingMemberEntity.toBackup() = AccountGroupHoldingMemberBackup(groupId, holdingId)
+
+internal fun AccountGroupHoldingMemberBackup.toEntity() = AccountGroupHoldingMemberEntity(groupId, holdingId)
 
 internal fun NetWorthSnapshotEntity.toBackup() = NetWorthSnapshotBackup(yearMonth, assetsMinor, liabsMinor)
 

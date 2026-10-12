@@ -18,6 +18,7 @@ class RoomLocalDataChanges(private val database: AppDatabase) : LocalDataChanges
             "liabilities",
             "account_groups",
             "account_group_members",
+            "account_group_holding_members",
             "net_worth_snapshots",
             "savings_goals",
             "savings_goal_assets",

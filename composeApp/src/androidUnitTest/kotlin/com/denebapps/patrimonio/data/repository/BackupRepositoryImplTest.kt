@@ -1,9 +1,11 @@
 package com.denebapps.patrimonio.data.repository
 
+import com.denebapps.patrimonio.data.backup.AccountGroupHoldingMemberBackup
 import com.denebapps.patrimonio.data.backup.BackupCodec
 import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.buildInMemoryTestDatabase
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
+import com.denebapps.patrimonio.data.db.entity.AccountGroupHoldingMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.LiabilityEntity
@@ -45,6 +47,7 @@ private data class TablesState(
     val liabilities: List<LiabilityEntity>,
     val groups: List<AccountGroupEntity>,
     val members: List<AccountGroupMemberEntity>,
+    val holdingMembers: List<AccountGroupHoldingMemberEntity>,
     val snapshots: List<NetWorthSnapshotEntity>,
     val goals: List<SavingsGoalEntity>,
     val allocations: List<SavingsGoalAllocationEventEntity>,
@@ -75,6 +78,7 @@ class BackupRepositoryImplTest {
         liabilities = liabilityDao().list(),
         groups = accountGroupDao().listGroups(),
         members = accountGroupDao().listMembers(),
+        holdingMembers = accountGroupDao().listHoldingMembers(),
         snapshots = netWorthDao().list(),
         goals = savingsGoalDao().listAllGoals(),
         allocations = savingsGoalDao().listAllAllocationEvents(),
@@ -135,6 +139,8 @@ class BackupRepositoryImplTest {
                 null, null, null, null, 250_000, 7,
             ),
         )
+        db.accountGroupDao().insertHoldingMember(AccountGroupHoldingMemberEntity("g1", "p1"))
+        db.accountGroupDao().insertHoldingMember(AccountGroupHoldingMemberEntity("g1", "p3"))
         upserterFor(db).refreshCurrentMonth()
     }
 
@@ -174,6 +180,87 @@ class BackupRepositoryImplTest {
         )
         assertEquals("g1", document.savingsGoals.last().linkedGroupId)
         assertEquals(listOf("a1", "a2"), document.savingsGoals.first().linkedAssetIds)
+        assertEquals(
+            listOf(AccountGroupHoldingMemberBackup("g1", "p1"), AccountGroupHoldingMemberBackup("g1", "p3")),
+            document.accountGroupHoldingMembers,
+        )
+        db.close()
+    }
+
+    @Test
+    fun `the holding members of the groups come back after the holdings they point at`() = runTest {
+        val source = buildInMemoryTestDatabase()
+        testSeedingGate(source).await()
+        populate(source)
+        val json = repositoryFor(source).exportJson()
+        source.close()
+        val target = buildInMemoryTestDatabase()
+
+        repositoryFor(target).importJson(json)
+
+        assertEquals(
+            listOf(AccountGroupHoldingMemberEntity("g1", "p1"), AccountGroupHoldingMemberEntity("g1", "p3")),
+            target.accountGroupDao().listHoldingMembers(),
+        )
+        assertEquals(listOf(AccountGroupMemberEntity("g1", "a1")), target.accountGroupDao().listMembers())
+        target.close()
+    }
+
+    @Test
+    fun `a version 14 backup replaces the memberships and leaves the groups without holdings`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        testSeedingGate(db).await()
+        populate(db)
+        assertEquals(2, db.accountGroupDao().listHoldingMembers().size)
+        val v14 = """
+            {
+              "format": "patrimonio-backup",
+              "version": 14,
+              "exportedAt": "2026-01-01T00:00:00Z",
+              "assets": [{"id": "a1", "group": "BANK", "name": "Cuenta", "amountMinor": 150000, "currency": "EUR"}],
+              "accountGroups": [{"id": "g1", "name": "Casa", "showBalance": true, "sortOrder": 0}],
+              "accountGroupMembers": [{"groupId": "g1", "assetId": "a1"}],
+              "portfolios": [{"id": "pf-1", "name": "Mi cartera", "sortOrder": 0}],
+              "portfolioHoldings": [
+                {"id": "h1", "portfolioId": "pf-1", "name": "Cuadro", "type": "OTHER", "kind": "MANUAL",
+                 "currency": "EUR", "valueMinor": 250000, "valuedAtEpochMs": 7}
+              ]
+            }
+        """.trimIndent()
+
+        repositoryFor(db).importJson(v14)
+
+        assertEquals(listOf("g1"), db.accountGroupDao().listGroups().map { it.id })
+        assertEquals(listOf(AccountGroupMemberEntity("g1", "a1")), db.accountGroupDao().listMembers())
+        assertTrue(db.accountGroupDao().listHoldingMembers().isEmpty())
+        assertEquals(listOf("h1"), db.portfolioHoldingDao().list().map { it.id })
+        db.close()
+    }
+
+    @Test
+    fun `a backup with a holding member of an unknown group or holding is refused and changes nothing`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        testSeedingGate(db).await()
+        populate(db)
+        val before = db.tables()
+        val repository = repositoryFor(db)
+        val exported = BackupCodec.decode(repository.exportJson())
+
+        fun withHoldingMembers(vararg members: AccountGroupHoldingMemberBackup) =
+            BackupCodec.encode(exported.copy(accountGroupHoldingMembers = members.toList()))
+
+        val unknownGroup = withHoldingMembers(AccountGroupHoldingMemberBackup("nope", "p1"))
+        val unknownHolding = withHoldingMembers(AccountGroupHoldingMemberBackup("g1", "nope"))
+        val duplicate = withHoldingMembers(
+            AccountGroupHoldingMemberBackup("g1", "p1"),
+            AccountGroupHoldingMemberBackup("g1", "p1"),
+        )
+
+        assertFailsWith<InvalidBackupException> { repository.importJson(unknownGroup) }
+        assertFailsWith<InvalidBackupException> { repository.importJson(unknownHolding) }
+        assertFailsWith<InvalidBackupException> { repository.importJson(duplicate) }
+
+        assertEquals(before, db.tables())
         db.close()
     }
 

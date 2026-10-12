@@ -16,7 +16,7 @@ internal suspend fun AppDatabase.clearFinancialTables() {
  *
  * 1. Savings-goal ledgers, link history and linked accounts, then goals (the linked accounts reference
  *    assets; goals reference groups).
- * 2. Group members, then groups (members reference both groups and assets).
+ * 2. Group members, the holdings' memberships, then groups (memberships reference groups, and assets or holdings).
  * 3. Net-worth snapshots, assets, liabilities (no outbound FKs once the above are gone), and the
  *    custom account types they used.
  * 4. Movements, the allocation targets, then portfolio holdings (movements follow their holding), then the
@@ -32,6 +32,7 @@ internal suspend fun AppDatabase.deleteFinancialRows() {
     savingsGoalDao().deleteAllLinkedAssets()
     savingsGoalDao().deleteAllGoals()
     accountGroupDao().deleteAllMembers()
+    accountGroupDao().deleteAllHoldingMembers()
     accountGroupDao().deleteAllGroups()
     netWorthDao().deleteAll()
     assetDao().deleteAll()

@@ -8,6 +8,7 @@ import androidx.sqlite.driver.AndroidSQLiteDriver
 import androidx.sqlite.execSQL
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
@@ -750,6 +751,67 @@ class AppDatabaseMigrationTest {
         } finally {
             db.close()
         }
+    }
+
+    @Test
+    fun `migration 14 to 15 keeps groups and members and adds an empty holding members table`() {
+        helper.createDatabase(14).use { connection -> connection.seedVersion14GroupsAndHoldings() }
+
+        helper.runMigrationsAndValidate(15, emptyList()).use { connection ->
+            assertEquals(2L, connection.count("account_groups"))
+            assertEquals(1L, connection.count("account_group_members"))
+            assertEquals(2L, connection.count("portfolio_holdings"))
+            assertTrue(connection.tableExists("account_group_holding_members"))
+            assertEquals(0L, connection.count("account_group_holding_members"))
+            assertTrue(connection.indexExists("index_account_group_holding_members_holdingId"))
+
+            connection.execSQL("PRAGMA foreign_keys = ON")
+            val insert = "INSERT INTO account_group_holding_members (groupId, holdingId) VALUES ('%s', '%s')"
+            connection.execSQL(insert.format("g1", "p1"))
+            connection.execSQL(insert.format("g2", "p1"))
+            connection.execSQL(insert.format("g1", "p2"))
+            assertEquals(3L, connection.count("account_group_holding_members"))
+            assertFails { connection.execSQL(insert.format("g1", "p1")) }
+            assertFails { connection.execSQL(insert.format("g1", "ghost")) }
+            assertFails { connection.execSQL(insert.format("ghost", "p1")) }
+
+            connection.execSQL("DELETE FROM portfolio_holdings WHERE id = 'p2'")
+            assertEquals(2L, connection.count("account_group_holding_members"), "memberships go with the holding")
+            connection.execSQL("DELETE FROM account_groups WHERE id = 'g2'")
+            assertEquals(1L, connection.count("account_group_holding_members"), "memberships go with the group")
+            assertEquals(1L, connection.count("account_group_members"), "the account members are untouched")
+        }
+    }
+
+    @Test
+    fun `a version 14 database opens through the app with its groups intact and no holding members`() = runBlocking {
+        helper.createDatabase(14).use { connection -> connection.seedVersion14GroupsAndHoldings() }
+
+        val db = Room.databaseBuilder<AppDatabase>(context = context, name = databaseFile.absolutePath)
+            .setDriver(AndroidSQLiteDriver())
+            .configureAppDatabase()
+            .build()
+        try {
+            assertEquals(listOf("g1", "g2"), db.accountGroupDao().listGroups().map { it.id })
+            assertEquals(listOf("a1"), db.accountGroupDao().listMembers().map { it.assetId })
+            assertTrue(db.accountGroupDao().listHoldingMembers().isEmpty())
+            val groups = db.accountGroupDao().observeAll().first().associateBy { it.group.id }
+            assertTrue(groups.getValue("g1").holdingMembers.isEmpty())
+        } finally {
+            db.close()
+        }
+    }
+
+    /** Version 14 data: an account, two groups (one with the account as member) and two holdings. */
+    private fun SQLiteConnection.seedVersion14GroupsAndHoldings() {
+        seedVersion11Holdings()
+        listOf(
+            "INSERT INTO assets (id, `group`, name, subtitle, amountMinor, currency) " +
+                "VALUES ('a1', 'BANK', 'Cuenta', NULL, 150000, 'EUR')",
+            "INSERT INTO account_groups (id, name, showBalance, sortOrder) VALUES ('g1', 'Casa', 1, 0)",
+            "INSERT INTO account_groups (id, name, showBalance, sortOrder) VALUES ('g2', 'Viaje', 1, 1)",
+            "INSERT INTO account_group_members (groupId, assetId) VALUES ('g1', 'a1')",
+        ).forEach(::execSQL)
     }
 
     /** Version 11 data: one portfolio with a quoted holding with broker and fundamentals, and a manual one. */

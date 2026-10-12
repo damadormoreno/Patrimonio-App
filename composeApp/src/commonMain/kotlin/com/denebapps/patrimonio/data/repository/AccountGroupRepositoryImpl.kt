@@ -6,13 +6,16 @@ import com.denebapps.patrimonio.data.db.dao.AccountGroupDao
 import com.denebapps.patrimonio.data.db.dao.AccountGroupWithMembers
 import com.denebapps.patrimonio.data.db.dao.SavingsGoalDataSource
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
+import com.denebapps.patrimonio.data.db.entity.AccountGroupHoldingMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 import com.denebapps.patrimonio.data.db.writeTransaction
 import com.denebapps.patrimonio.domain.model.AccountGroup
+import com.denebapps.patrimonio.domain.model.AccountGroupRef
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
 import com.denebapps.patrimonio.domain.repository.AccountGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioHoldingNotFoundException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
@@ -37,23 +40,22 @@ class AccountGroupRepositoryImpl(
 
     override suspend fun insertGroup(group: AccountGroup) {
         seedingGate.await()
-        accountGroupDao.insertGroup(
-            AccountGroupEntity(
-                id = group.id,
-                name = group.name,
-                showBalance = group.showBalance,
-                sortOrder = group.sortOrder,
-            ),
-        )
-        group.memberAssetIds?.forEach { assetId ->
-            accountGroupDao.insertMember(AccountGroupMemberEntity(group.id, assetId))
+        appDatabase.writeTransaction {
+            accountGroupDao.insertGroup(
+                AccountGroupEntity(
+                    id = group.id,
+                    name = group.name,
+                    showBalance = group.showBalance,
+                    sortOrder = group.sortOrder,
+                ),
+            )
+            replaceMembers(group.id, group.memberAssetIds.orEmpty(), group.memberHoldingIds)
         }
     }
 
-    override suspend fun setMembers(groupId: String, assetIds: Set<String>) {
+    override suspend fun setMembers(groupId: String, assetIds: Set<String>, holdingIds: Set<String>) {
         seedingGate.await()
-        accountGroupDao.deleteMembers(groupId)
-        assetIds.forEach { assetId -> accountGroupDao.insertMember(AccountGroupMemberEntity(groupId, assetId)) }
+        appDatabase.writeTransaction { replaceMembers(groupId, assetIds, holdingIds) }
     }
 
     override suspend fun updateGroup(group: AccountGroup) {
@@ -63,10 +65,23 @@ class AccountGroupRepositoryImpl(
             if (accountGroupDao.updateGroup(group.id, group.name, group.showBalance) == 0) {
                 throw AccountGroupNotFoundException(group.id)
             }
-            accountGroupDao.deleteMembers(group.id)
-            group.memberAssetIds.orEmpty().forEach { assetId ->
-                accountGroupDao.insertMember(AccountGroupMemberEntity(group.id, assetId))
-            }
+            replaceMembers(group.id, group.memberAssetIds.orEmpty(), group.memberHoldingIds)
+        }
+    }
+
+    /** Sets both member kinds of the group; call it inside a transaction. A holding that does not exist is reported
+     *  before anything is written (an unknown account fails on its foreign key), and either way the transaction rolls
+     *  back, so a group never ends up with half of its members. */
+    private suspend fun replaceMembers(groupId: String, assetIds: Set<String>, holdingIds: Set<String>) {
+        val holdings = appDatabase.portfolioHoldingDao()
+        holdingIds.forEach { holdingId ->
+            if (holdings.find(holdingId) == null) throw PortfolioHoldingNotFoundException(holdingId)
+        }
+        accountGroupDao.deleteMembers(groupId)
+        accountGroupDao.deleteHoldingMembers(groupId)
+        assetIds.forEach { assetId -> accountGroupDao.insertMember(AccountGroupMemberEntity(groupId, assetId)) }
+        holdingIds.forEach { holdingId ->
+            accountGroupDao.insertHoldingMember(AccountGroupHoldingMemberEntity(groupId, holdingId))
         }
     }
 
@@ -77,8 +92,9 @@ class AccountGroupRepositoryImpl(
         }
     }
 
-    /** `account_group_members` rows are removed via the CASCADE FK automatically — no explicit
-     *  [AccountGroupDao.deleteMembers] call needed here (spec: `account-groups-crud`). Goals linked to
+    /** `account_group_members` and `account_group_holding_members` rows are removed via the CASCADE FKs
+     *  automatically — no explicit [AccountGroupDao.deleteMembers] call needed here (spec:
+     *  `account-groups-crud`); the holdings themselves stay. Goals linked to
      *  the group are unlinked first, each leaving a `GROUP_DELETED` link event, in the same
      *  transaction (mirrors the asset-deletion flow in [AssetRepositoryImpl]). */
     override suspend fun deleteGroup(id: String) {
@@ -107,6 +123,11 @@ class AccountGroupRepositoryImpl(
             accountGroupDao.deleteGroup(id)
         }
     }
+
+    override suspend fun groupsContainingHolding(holdingId: String): List<AccountGroupRef> {
+        seedingGate.await()
+        return accountGroupDao.listGroupsContainingHolding(holdingId).map { AccountGroupRef(it.id, it.name) }
+    }
 }
 
 private fun toDomain(row: AccountGroupWithMembers): AccountGroup = AccountGroup(
@@ -115,4 +136,5 @@ private fun toDomain(row: AccountGroupWithMembers): AccountGroup = AccountGroup(
     showBalance = row.group.showBalance,
     sortOrder = row.group.sortOrder,
     memberAssetIds = row.members.map { it.assetId }.toSet(),
+    memberHoldingIds = row.holdingMembers.map { it.holdingId }.toSet(),
 )
