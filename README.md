@@ -62,6 +62,10 @@ producto puede llevar, opcionalmente, el banco o bróker que lo gestiona (*Banco
   eliminar una con productos se pide a qué otra moverlos, y la última no se puede borrar. Al añadir un
   producto se elige su cartera y desde su ficha se puede mover a otra.
 
+- **Filtros**: *Filtrar* (junto a las carteras) por clase de activo, bróker y tipo. Varias opciones de un
+  mismo filtro suman y filtros distintos se combinan; la lista y el total siguen el filtro («Filtrado · N de M
+  productos») y se recuerda el último. No afectan al patrimonio neto ni al detalle de la cartera.
+
 - **Precios**: Morningstar (`lt.morningstar.com`: búsqueda por ISIN y valor liquidativo en EUR,
   sobre todo fondos) y Yahoo Finance (búsqueda y cierres diarios de ETF y acciones), con la misma
   lógica que [rumbo](https://github.com/danidm98/rumbo) (MIT). Están detrás del puerto

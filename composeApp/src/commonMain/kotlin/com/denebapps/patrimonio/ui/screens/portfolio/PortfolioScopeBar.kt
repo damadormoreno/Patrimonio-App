@@ -45,10 +45,16 @@ internal class PortfolioScopeActions(
 /**
  * The scope of the Cartera tab under its header. With several portfolios, a row of chips (`Todas`, each portfolio, and
  * `+ Nueva`) that scrolls sideways; with one, just a discreet `Nueva cartera` link. Either way a `Gestionar` menu
- * renames or deletes the portfolio in scope ([CarteraUiState.managedPortfolioId]) while there is one.
+ * renames or deletes the portfolio in scope ([CarteraUiState.managedPortfolioId]) while there is one. At the end of the
+ * row, before `Gestionar`, `Filtrar` ([onFilter]) opens the filters of the list while the scope has products.
  */
 @Composable
-internal fun PortfolioScopeBar(state: CarteraUiState, actions: PortfolioScopeActions, modifier: Modifier = Modifier) {
+internal fun PortfolioScopeBar(
+    state: CarteraUiState,
+    actions: PortfolioScopeActions,
+    onFilter: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -77,6 +83,9 @@ internal fun PortfolioScopeBar(state: CarteraUiState, actions: PortfolioScopeAct
             Spacer(Modifier.weight(1f))
             LinkButton(text = "Nueva cartera", onClick = actions.onNew)
         }
+        if (state.filter.hasOptions) {
+            FilterButton(activeCount = state.filter.active.size, onClick = onFilter)
+        }
         state.managedPortfolioId?.let { id ->
             ManageMenu(portfolioId = id, deleteBlockedReason = state.deleteBlockedReason, actions = actions)
         }
@@ -84,7 +93,7 @@ internal fun PortfolioScopeBar(state: CarteraUiState, actions: PortfolioScopeAct
 }
 
 @Composable
-private fun ScopeChip(text: String, selected: Boolean, onClick: () -> Unit, subtle: Boolean = false) {
+internal fun ScopeChip(text: String, selected: Boolean, onClick: () -> Unit, subtle: Boolean = false) {
     val colors = LocalAppColors.current
     val shape = RoundedCornerShape(LocalAppShapes.current.full)
     Text(

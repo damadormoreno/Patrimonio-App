@@ -35,6 +35,7 @@ import com.denebapps.patrimonio.domain.repository.AccountGroupNotFoundException
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.BackupRepository
+import com.denebapps.patrimonio.domain.repository.CarteraFilterSelection
 import com.denebapps.patrimonio.domain.repository.CreateSavingsGoal
 import com.denebapps.patrimonio.domain.repository.DataMaintenanceRepository
 import com.denebapps.patrimonio.domain.repository.DuplicatePortfolioNameException
@@ -78,11 +79,13 @@ class FakePreferencesRepository(
     firstName: String = "",
     lastName: String = "",
     selectedPortfolioId: String? = null,
+    carteraFilter: CarteraFilterSelection = CarteraFilterSelection(),
 ) : PreferencesRepository {
     private val themeModeBacking = MutableStateFlow(themeMode)
     private val firstNameBacking = MutableStateFlow(firstName)
     private val lastNameBacking = MutableStateFlow(lastName)
     private val selectedPortfolioBacking = MutableStateFlow(selectedPortfolioId)
+    private val carteraFilterBacking = MutableStateFlow(carteraFilter)
 
     override fun observeThemeMode(): StateFlow<ThemeMode> = themeModeBacking
 
@@ -106,6 +109,12 @@ class FakePreferencesRepository(
 
     override suspend fun setSelectedPortfolioId(id: String?) {
         selectedPortfolioBacking.value = id
+    }
+
+    override fun observeCarteraFilter(): StateFlow<CarteraFilterSelection> = carteraFilterBacking
+
+    override suspend fun setCarteraFilter(filter: CarteraFilterSelection) {
+        carteraFilterBacking.value = filter
     }
 }
 

@@ -26,7 +26,9 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,7 +63,10 @@ import org.koin.compose.viewmodel.koinViewModel
  * refresh (header button or pull down). Under the header, a selector switches between the portfolios and manages them.
  * [onAddHolding] opens the add form (the FAB does too, see `MainScaffold`); [onImport] the import of MyInvestor files
  * (header button); [onOpenHolding] opens one holding's detail and [onOpenPortfolio] (the total) the detail of the
- * selected portfolio, `null` for all of them.
+ * selected portfolio, `null` for all of them (the detail and the net worth are never filtered).
+ *
+ * `Filtrar` in the scope bar opens the filters (class, broker, type). While some are active, the total and the list
+ * show only what passes them, a line says how many of the scope's products that is and a chip per filter removes it.
  */
 @Composable
 fun CarteraScreen(
@@ -89,10 +94,18 @@ fun CarteraScreen(
             onDismiss = viewModel::onDialogDismiss,
         )
     }
+    val filterActions = remember(viewModel) {
+        CarteraFilterActions(
+            onToggle = viewModel::onToggleFilter,
+            onRemove = viewModel::onRemoveFilter,
+            onClear = viewModel::onClearFilters,
+        )
+    }
     CarteraContent(
         state = state,
         scopeActions = scopeActions,
         dialogActions = dialogActions,
+        filterActions = filterActions,
         onRefresh = viewModel::onRefresh,
         onDismissMessage = viewModel::onMessageDismiss,
         onAddHolding = onAddHolding,
@@ -109,6 +122,7 @@ internal fun CarteraContent(
     state: CarteraUiState,
     scopeActions: PortfolioScopeActions,
     dialogActions: PortfolioDialogActions,
+    filterActions: CarteraFilterActions,
     onRefresh: () -> Unit,
     onDismissMessage: () -> Unit,
     onAddHolding: () -> Unit,
@@ -118,6 +132,7 @@ internal fun CarteraContent(
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAppColors.current
+    var filterOpen by remember { mutableStateOf(false) }
 
     Column(modifier.fillMaxSize().background(colors.bg)) {
         ScreenHeader(
@@ -136,7 +151,7 @@ internal fun CarteraContent(
                 }
             },
         )
-        PortfolioScopeBar(state = state, actions = scopeActions)
+        PortfolioScopeBar(state = state, actions = scopeActions, onFilter = { filterOpen = true })
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = onRefresh,
@@ -149,6 +164,14 @@ internal fun CarteraContent(
                     total = state.total,
                     onClick = { onOpenPortfolio(state.selectedPortfolioId) }.takeUnless { state.isEmpty },
                 )
+                state.filterSummary?.let { FilterSummaryLine(text = it, modifier = Modifier.padding(top = 10.dp)) }
+                if (state.filter.active.isNotEmpty()) {
+                    ActiveFilterChips(
+                        active = state.filter.active,
+                        onRemove = filterActions.onRemove,
+                        modifier = Modifier.padding(top = 10.dp),
+                    )
+                }
                 state.refreshMessage?.let { message ->
                     RefreshNotice(
                         message = message,
@@ -169,6 +192,8 @@ internal fun CarteraContent(
                         modifier = Modifier.padding(top = 14.dp),
                     )
                     PrimaryButton(text = "Añadir producto", onClick = onAddHolding, icon = AppIcons.plus)
+                } else if (state.noMatches) {
+                    NoMatchesState(onClear = filterActions.onClear, modifier = Modifier.padding(top = 14.dp))
                 } else {
                     HoldingsCard(
                         rows = state.rows,
@@ -181,6 +206,9 @@ internal fun CarteraContent(
         }
     }
     state.dialog?.let { PortfolioDialog(dialog = it, actions = dialogActions) }
+    if (filterOpen && state.filter.hasOptions) {
+        CarteraFilterSheet(filter = state.filter, actions = filterActions, onDismiss = { filterOpen = false })
+    }
 }
 
 /** Text button in the header: "Actualizar", or a spinner while the prices are being fetched. */
