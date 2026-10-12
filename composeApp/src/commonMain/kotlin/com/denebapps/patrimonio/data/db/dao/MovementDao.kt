@@ -22,6 +22,9 @@ interface MovementDao {
     @Query("SELECT * FROM movements ORDER BY epochDay, sequence, id")
     suspend fun list(): List<MovementEntity>
 
+    @Query("SELECT * FROM movements WHERE holdingId = :holdingId ORDER BY epochDay, sequence, id")
+    suspend fun listByHolding(holdingId: String): List<MovementEntity>
+
     @Query("SELECT * FROM movements WHERE id = :id")
     suspend fun find(id: String): MovementEntity?
 
@@ -34,6 +37,13 @@ interface MovementDao {
 
     @Query("SELECT COUNT(*) FROM movements WHERE holdingId = :holdingId")
     suspend fun countForHolding(holdingId: String): Int
+
+    /** How many movements of [holdingId] are transfer legs, whatever the state of the other leg. */
+    @Query(
+        "SELECT COUNT(*) FROM movements WHERE holdingId = :holdingId AND " +
+            "(type IN ('TRANSFER_OUT', 'TRANSFER_IN') OR transferId IS NOT NULL)",
+    )
+    suspend fun countTransferLegs(holdingId: String): Int
 
     /** How many movements of [holdingId] are legs of a transfer whose other leg is on another holding. */
     @Query(

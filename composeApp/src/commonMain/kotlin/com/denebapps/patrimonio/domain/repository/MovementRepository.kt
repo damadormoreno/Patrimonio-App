@@ -148,7 +148,52 @@ interface MovementRepository {
      * @see addMovement for the other errors.
      */
     suspend fun addHoldingWithPurchase(holding: PortfolioHolding, buy: MovementDraft): Movement
+
+    /**
+     * Like [addHoldingWithPurchase] with several purchases, e.g. the lots of an import: stores the new quoted [holding]
+     * and all of [buys] in one step, so that when any of them is refused no holding is created. The units in the
+     * holding are replaced by those of the purchases. The result is in the order of [buys].
+     *
+     * @throws InvalidMovementException when the holding is not quoted, [buys] is empty or one is not a
+     *   [MovementType.BUY].
+     * @throws PortfolioNotFoundException when the holding's portfolio does not exist.
+     * @see addMovement for the other errors.
+     */
+    suspend fun addHoldingWithPurchases(holding: PortfolioHolding, buys: List<MovementDraft>): List<Movement>
+
+    /**
+     * Replaces the whole history of [holdingId] with [drafts], in one step: all its movements (whatever their type)
+     * are deleted and [drafts] recorded in their place, the holding's units become those of the new history (also for
+     * a holding whose units were typed by hand and had no movements), and the net-worth snapshot is refreshed. The new
+     * movements get new ids and entry orders; replacing with the same drafts again leaves the same content. The
+     * result is in the order of [drafts].
+     *
+     * An empty [drafts] is refused: replacing is for an import, which always brings at least one movement; to clear a
+     * history delete its movements. Drafts follow the rules of [addMovement], and may be of any type but transfers.
+     *
+     * @throws PortfolioHoldingNotFoundException when there is no such holding.
+     * @throws HoldingHasTransfersException when the holding has a transfer leg: a transfer links it to another holding
+     *   and would be left dangling; nothing is written.
+     * @throws InvalidMovementException when the holding is not quoted, [drafts] is empty or a draft is incomplete,
+     *   in another currency than the holding's or a transfer leg.
+     * @throws MissingEurEquivalentException when the holding is not in EUR and a draft lacks its EUR amounts.
+     * @throws com.denebapps.patrimonio.domain.calc.MovementValidationException when the new history is impossible.
+     */
+    suspend fun replaceHoldingMovements(holdingId: String, drafts: List<MovementDraft>): List<Movement>
+
+    /**
+     * What a replacement of the history of [holdingId] would throw away, for showing before it is done.
+     *
+     * @throws PortfolioHoldingNotFoundException when there is no such holding.
+     */
+    suspend fun movementsSummary(holdingId: String): HoldingMovementsSummary
 }
+
+/**
+ * The history of one holding in numbers: how many [movementCount] movements it has and whether any is a transfer leg
+ * ([hasTransfers]), which makes [MovementRepository.replaceHoldingMovements] refuse it.
+ */
+data class HoldingMovementsSummary(val movementCount: Int, val hasTransfers: Boolean)
 
 /**
  * What the user typed for a movement, before it has an id, an entry order or its EUR equivalent. [amount] is in the

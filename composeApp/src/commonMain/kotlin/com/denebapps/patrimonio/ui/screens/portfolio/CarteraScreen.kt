@@ -59,14 +59,16 @@ import org.koin.compose.viewmodel.koinViewModel
 /**
  * Cartera tab: the total of the selected portfolio (or of all), its holdings valued at their latest price, and a price
  * refresh (header button or pull down). Under the header, a selector switches between the portfolios and manages them.
- * [onAddHolding] opens the add form (the FAB does too, see `MainScaffold`); [onOpenHolding] opens one holding's detail
- * and [onOpenPortfolio] (the total) the detail of the selected portfolio, `null` for all of them.
+ * [onAddHolding] opens the add form (the FAB does too, see `MainScaffold`); [onImport] the import of MyInvestor files
+ * (header button); [onOpenHolding] opens one holding's detail and [onOpenPortfolio] (the total) the detail of the
+ * selected portfolio, `null` for all of them.
  */
 @Composable
 fun CarteraScreen(
     modifier: Modifier = Modifier,
     viewModel: CarteraViewModel = koinViewModel(),
     onAddHolding: () -> Unit = {},
+    onImport: () -> Unit = {},
     onOpenHolding: (String) -> Unit = {},
     onOpenPortfolio: (String?) -> Unit = {},
 ) {
@@ -94,6 +96,7 @@ fun CarteraScreen(
         onRefresh = viewModel::onRefresh,
         onDismissMessage = viewModel::onMessageDismiss,
         onAddHolding = onAddHolding,
+        onImport = onImport,
         onOpenHolding = onOpenHolding,
         onOpenPortfolio = onOpenPortfolio,
         modifier = modifier,
@@ -109,6 +112,7 @@ internal fun CarteraContent(
     onRefresh: () -> Unit,
     onDismissMessage: () -> Unit,
     onAddHolding: () -> Unit,
+    onImport: () -> Unit,
     onOpenHolding: (String) -> Unit,
     onOpenPortfolio: (String?) -> Unit,
     modifier: Modifier = Modifier,
@@ -119,7 +123,18 @@ internal fun CarteraContent(
         ScreenHeader(
             title = "Cartera",
             eyebrow = state.scopeLabel?.let { "$it · ${state.countLabel}" } ?: state.countLabel,
-            right = { RefreshButton(refreshing = state.isRefreshing, onClick = onRefresh) },
+            right = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    // Hidden while the prices refresh: with "Actualizando…" both would not fit a narrow phone.
+                    if (!state.isRefreshing) {
+                        HeaderTextButton(text = "Importar", onClickLabel = "Importar de MyInvestor", onClick = onImport)
+                    }
+                    RefreshButton(refreshing = state.isRefreshing, onClick = onRefresh)
+                }
+            },
         )
         PortfolioScopeBar(state = state, actions = scopeActions)
         PullToRefreshBox(
@@ -171,6 +186,24 @@ internal fun CarteraContent(
 /** Text button in the header: "Actualizar", or a spinner while the prices are being fetched. */
 @Composable
 private fun RefreshButton(refreshing: Boolean, onClick: () -> Unit) {
+    HeaderTextButton(
+        text = if (refreshing) "Actualizando…" else "Actualizar",
+        onClickLabel = "Actualizar precios",
+        onClick = onClick,
+        enabled = !refreshing,
+        loading = refreshing,
+    )
+}
+
+/** The pill-shaped text button of the Cartera header ("Importar", "Actualizar"); [loading] adds a spinner. */
+@Composable
+private fun HeaderTextButton(
+    text: String,
+    onClickLabel: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    loading: Boolean = false,
+) {
     val colors = LocalAppColors.current
     val shape = RoundedCornerShape(LocalAppShapes.current.full)
     Row(
@@ -180,23 +213,18 @@ private fun RefreshButton(refreshing: Boolean, onClick: () -> Unit) {
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-                enabled = !refreshing,
-                onClickLabel = "Actualizar precios",
+                enabled = enabled,
+                onClickLabel = onClickLabel,
                 onClick = onClick,
             )
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (refreshing) {
+        if (loading) {
             CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = colors.ink2)
         }
-        Text(
-            text = if (refreshing) "Actualizando…" else "Actualizar",
-            color = colors.ink2,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
+        Text(text = text, color = colors.ink2, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

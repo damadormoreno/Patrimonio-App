@@ -616,4 +616,4 @@ internal fun InstrumentCandidate.toUi() = CandidateUi(
 )
 
 @OptIn(ExperimentalUuidApi::class)
-private fun newHoldingId(): String = Uuid.random().toString()
+internal fun newHoldingId(): String = Uuid.random().toString()

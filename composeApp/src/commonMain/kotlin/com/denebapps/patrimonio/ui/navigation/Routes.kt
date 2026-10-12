@@ -120,3 +120,7 @@ data class PortfolioDetail(val portfolioId: String? = null)
 /** Edit sheet of one portfolio holding: its value, units to edit, and delete; opened from [PositionDetail]. */
 @Serializable
 data class HoldingDetail(val holdingId: String)
+
+/** Import of the open lots of MyInvestor funds from their "Plusvalías y minusvalías" CSV files, pushed from Cartera. */
+@Serializable
+object ImportMyInvestor

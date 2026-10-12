@@ -15,6 +15,7 @@ import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.model.UnitsBalance
 import com.denebapps.patrimonio.domain.repository.HoldingHasMovementsException
 import com.denebapps.patrimonio.domain.repository.HoldingHasTransfersException
+import com.denebapps.patrimonio.domain.repository.HoldingMovementsSummary
 import com.denebapps.patrimonio.domain.repository.InvalidMovementException
 import com.denebapps.patrimonio.domain.repository.MissingEurEquivalentException
 import com.denebapps.patrimonio.domain.repository.MovementDraft
@@ -206,5 +207,50 @@ class FakeMovementRepositoryTest {
         assertEquals(UnitsBalance(40 * UNITS_SCALE), unitsOf(holdings, "b"))
         assertEquals(UnitsBalance(6 * UNITS_SCALE), unitsOf(holdings, "a"))
         assertEquals(2, movements.current.count { it.transferId == transferId })
+    }
+
+    @Test
+    fun `replacing a history swaps every movement, derives the units and refuses transfers and empty lists`() =
+        runTest {
+            val holdings = FakePortfolioRepository(listOf(fund("a"), fund("b")))
+            val movements = FakeMovementRepository(holdings)
+            movements.addMovement("a", buy(1, 10, 100_000))
+            movements.addMovement("b", buy(1, 2, 20_000))
+
+            movements.replaceHoldingMovements("a", listOf(buy(2, 3, 30_000), buy(3, 4, 40_000)))
+
+            assertEquals(UnitsBalance(7 * UNITS_SCALE), unitsOf(holdings, "a"))
+            assertEquals(listOf(units(3), units(4)), movements.observeMovements("a").first().map { it.units })
+            assertEquals(1, movements.observeMovements("b").first().size)
+            assertEquals(HoldingMovementsSummary(2, hasTransfers = false), movements.movementsSummary("a"))
+            assertFailsWith<InvalidMovementException> { movements.replaceHoldingMovements("a", emptyList()) }
+
+            val day = LocalDate(2026, 2, 1)
+            movements.addTransfer("a", "b", day, day, units(1), units(1))
+            assertEquals(HoldingMovementsSummary(3, hasTransfers = true), movements.movementsSummary("a"))
+            assertFailsWith<HoldingHasTransfersException> {
+                movements.replaceHoldingMovements("a", listOf(buy(2, 3, 30_000)))
+            }
+            assertEquals(5, movements.current.size)
+        }
+
+    @Test
+    fun `a holding is created with several purchases or not at all`() = runTest {
+        val holdings = FakePortfolioRepository(emptyList())
+        val movements = FakeMovementRepository(holdings)
+
+        assertFailsWith<InvalidMovementException> { movements.addHoldingWithPurchases(fund("a"), emptyList()) }
+        assertFailsWith<InvalidMovementException> {
+            movements.addHoldingWithPurchases(
+                fund("a"),
+                listOf(buy(1, 1, 100), buy(2, 1, 100).copy(type = MovementType.SELL)),
+            )
+        }
+        assertTrue(holdings.current.isEmpty())
+
+        movements.addHoldingWithPurchases(fund("a"), listOf(buy(1, 6, 60_000), buy(2, 4, 40_000)))
+
+        assertEquals(UnitsBalance(10 * UNITS_SCALE), unitsOf(holdings, "a"))
+        assertEquals(2, movements.current.size)
     }
 }

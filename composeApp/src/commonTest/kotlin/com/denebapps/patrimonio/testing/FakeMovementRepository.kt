@@ -1,6 +1,7 @@
 package com.denebapps.patrimonio.testing
 
 import com.denebapps.patrimonio.domain.calc.computeLedgers
+import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.HoldingValuation
 import com.denebapps.patrimonio.domain.model.Money
@@ -10,6 +11,8 @@ import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.model.UnitsBalance
 import com.denebapps.patrimonio.domain.model.inProcessingOrder
+import com.denebapps.patrimonio.domain.repository.HoldingHasTransfersException
+import com.denebapps.patrimonio.domain.repository.HoldingMovementsSummary
 import com.denebapps.patrimonio.domain.repository.InvalidMovementException
 import com.denebapps.patrimonio.domain.repository.MovementDraft
 import com.denebapps.patrimonio.domain.repository.MovementNotFoundException
@@ -17,7 +20,9 @@ import com.denebapps.patrimonio.domain.repository.MovementRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioHoldingNotFoundException
 import com.denebapps.patrimonio.domain.repository.buildMovement
 import com.denebapps.patrimonio.domain.repository.isQuotedFund
+import com.denebapps.patrimonio.domain.repository.noMovementsError
 import com.denebapps.patrimonio.domain.repository.normalizeMovementNote
+import com.denebapps.patrimonio.domain.repository.notPurchasesOnNewHoldingError
 import com.denebapps.patrimonio.domain.repository.notQuotedMovementError
 import com.denebapps.patrimonio.domain.repository.requireTransferBetweenFunds
 import kotlinx.coroutines.flow.Flow
@@ -175,18 +180,45 @@ class FakeMovementRepository(
         MovementDraft(MovementType.OPENING_BALANCE, date, units, cost, amountEur = costEur, note = note),
     )
 
-    override suspend fun addHoldingWithPurchase(holding: PortfolioHolding, buy: MovementDraft): Movement {
-        if (holding.valuation !is HoldingValuation.Quoted) throw notQuotedMovementError()
-        if (buy.type != MovementType.BUY) {
-            throw InvalidMovementException("La primera operación de un producto nuevo debe ser una compra.")
-        }
+    override suspend fun addHoldingWithPurchase(holding: PortfolioHolding, buy: MovementDraft): Movement =
+        addHoldingWithPurchases(holding, listOf(buy)).single()
+
+    override suspend fun addHoldingWithPurchases(holding: PortfolioHolding, buys: List<MovementDraft>): List<Movement> {
+        val valuation = holding.valuation as? HoldingValuation.Quoted ?: throw notQuotedMovementError()
+        if (buys.isEmpty()) throw noMovementsError()
+        if (buys.any { it.type != MovementType.BUY }) throw notPurchasesOnNewHoldingError()
         // Built before the holding exists in the fake, so a refused purchase leaves nothing behind.
-        val valuation = holding.valuation as HoldingValuation.Quoted
-        val movement = buildMovement(buy, newId(), holding.id, valuation.currency, nextSequence())
-        computeLedgers(backing.value + movement)
+        val movements = build(buys, holding.id, valuation.currency)
+        computeLedgers(backing.value + movements)
         holdings.add(holding.copy(valuation = valuation.copy(units = UnitsBalance.ZERO)))
-        apply(added = listOf(movement))
-        return movement
+        apply(added = movements)
+        return movements
+    }
+
+    override suspend fun replaceHoldingMovements(holdingId: String, drafts: List<MovementDraft>): List<Movement> {
+        val holding = quotedHolding(holdingId)
+        val existing = backing.value.filter { it.holdingId == holdingId }
+        if (existing.any { it.transferId != null || it.type in TRANSFER_TYPES }) {
+            throw HoldingHasTransfersException(holdingId)
+        }
+        if (drafts.isEmpty()) throw noMovementsError()
+        if (drafts.any { it.type in TRANSFER_TYPES }) {
+            throw InvalidMovementException("Los traspasos se crean con los dos productos a la vez.")
+        }
+        val movements = build(drafts, holdingId, currencyOf(holding))
+        apply(added = movements, removed = existing)
+        return movements
+    }
+
+    override suspend fun movementsSummary(holdingId: String): HoldingMovementsSummary {
+        holding(holdingId)
+        val own = backing.value.filter { it.holdingId == holdingId }
+        return HoldingMovementsSummary(own.size, hasTransfers = own.any { it.transferId != null })
+    }
+
+    private fun build(drafts: List<MovementDraft>, holdingId: String, currency: Currency): List<Movement> {
+        val first = nextSequence()
+        return drafts.mapIndexed { index, draft -> buildMovement(draft, newId(), holdingId, currency, first + index) }
     }
 
     private fun transferLegs(
