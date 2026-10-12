@@ -43,9 +43,9 @@ original fiscal date and cost, so cost, latent gain and XIRR are exact without t
   typed errors/warnings (route: delegated writer).
 - [x] **T2 — Persistence**: atomic "replace a holding's movements" (blocked by traspasos) and "create a holding
   from imported movements", reusing the movement-write pipeline (route: delegated writer).
-- [ ] **T3 — UI**: Cartera entry, multi-file pick, preview per file (match/new fund, units field, totals,
+- [x] **T3 — UI**: Cartera entry, multi-file pick, preview per file (match/new fund, units field, totals,
   warnings, replace notice), import, result (route: delegated writer).
-- [ ] **T4 — Docs + manual test** (route: inline): README, emulator with the real CSV.
+- [x] **T4 — Docs + manual test** (route: inline): README, emulator with the real CSV.
 
 ## Acceptance criteria
 
@@ -78,7 +78,19 @@ original fiscal date and cost, so cost, latent gain and XIRR are exact without t
   written), `addHoldingWithPurchases` (generalizes `addHoldingWithPurchase`, all BUY), `movementsSummary`
   (count + has transfers, for the preview); DAO `countTransferLegs`/`listByHolding`; fake in sync. No schema change.
   RED: 42 compile errors; GREEN: check.sh (1702 tests), iOS compile; parent re-run of the repository tests green.
+- **T3** (commit below, `feat(import): import MyInvestor fund lots from Cartera`): `ui/screens/importing/`
+  (`ImportMyInvestorViewModel`, stateless `ImportContent` + FileKit multi-pick wrapper, `ImportMessages` with all
+  Spanish copy); "Importar" next to "Actualizar" in the Cartera header (hidden while refreshing, to fit 360 dp);
+  route wired in `MainScaffold.kt` (outside the listed surfaces: the inner NavHost lives there, 3 lines; accepted).
+  RED: 151 compile errors; GREEN: check.sh (1738 tests), iOS compile.
+- **T4** (commit below, `docs: document the MyInvestor import`): README *Cartera → Importar de MyInvestor*, roadmap.
+  Manual test (emulator, data restored after; identical): two files at once — the real export (new fund via
+  Morningstar, estimate 157,270425 part., broker MyInvestor) and a copy under the Vanguard ISIN (existing fund
+  with hand-typed units: "pasarán a calcularse" notice, units warning with 200 that clears with 72); both
+  imported (19 BUYs each, units exact, Σ cost 3.899,34 €); *Mi posición*: aportado 3.899,34 €, valor 4.658,35 €,
+  latent +759,01 € (= Σ *Resultado fiscal*), XIRR +21,36 %, lots with real dates; re-import → "Sustituye los 19
+  movimientos", still 38 movements.
 
 ## Next step
 
-T3.
+Done; push + PR.

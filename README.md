@@ -124,8 +124,26 @@ propia); **con movimientos**, las participaciones salen de ellos y no se editan 
   rentabilidad* del detalle de la cartera; los traspasos entre productos incluidos se compensan y los
   productos sin movimientos o con coste desconocido quedan fuera, con una nota.
 - Una posición que llega a cero participaciones queda como *Cerrada* al final de la lista.
-- Fuera de esta fase: importación desde brókeres, TWR y recalcular los cierres mensuales pasados (solo se
-  actualiza el mes en curso).
+- Fuera de esta fase: TWR y recalcular los cierres mensuales pasados (solo se actualiza el mes en curso).
+
+### Importar de MyInvestor
+
+*Cartera → Importar*: los lotes abiertos de cada fondo de MyInvestor entran como compras con su **fecha
+fiscal y su coste reales** (los que llegaron por traspaso conservan los originales).
+
+1. En la web de MyInvestor, entra en cada fondo → *Plusvalías y minusvalías* → descarga el CSV. No le
+   cambies el nombre: lleva el ISIN del fondo (el archivo no lo incluye).
+2. Elige uno o varios CSV. Cada uno se asocia a tu fondo por el ISIN; si no lo tienes, se crea buscándolo
+   en Morningstar (con *MyInvestor* como bróker) en la cartera que elijas.
+3. Revisa la vista previa: lotes, invertido y valor de mercado (compáralos con MyInvestor) y las
+   **participaciones actuales**. El archivo no las trae: se toman de la app (o se estiman con el último
+   precio para un fondo nuevo) y conviene copiarlas de MyInvestor; se reparten entre los lotes en proporción
+   a su valor de mercado, cuadrando exactamente. Avisa si no cuadran con el valor del archivo.
+4. *Importar*: **sustituye** los movimientos de ese fondo, así que se puede repetir cada mes sin duplicar
+   nada. Un fondo con traspasos registrados en la app no se puede reimportar.
+
+No se importan los reembolsos (MyInvestor solo da su plusvalía, sin fecha ni participaciones), ni ETF o
+acciones (MyInvestor no exporta sus órdenes), ni fondos en otra divisa que no sea el euro.
 
 ## Copias de seguridad
 
@@ -159,8 +177,8 @@ dispositivo.
 2. ~~**Cartera** (fase 1)~~: sustituye a Suscripciones, que se eliminaron junto con los avisos de
    renovación (ver *Cartera*); incluye el detalle de cada producto y de la cartera. ~~Fase 2~~:
    movimientos (compras, ventas, saldo inicial, comisiones, dividendos y traspasos entre fondos), coste
-   FIFO y rentabilidad propia (XIRR, separada de la del producto). Fase 3: importación desde brókeres;
-   más adelante, TWR.
+   FIFO y rentabilidad propia (XIRR, separada de la del producto). Fase 3: importación desde brókeres
+   (~~MyInvestor, fondos~~; Openbank pendiente de ver qué exporta); más adelante, TWR.
 3. **Login + sync** (opcional): Google / Apple / email junto con sincronización. Activos, pasivos,
    grupos y metas ya tienen id `String` (UUID); la migración 3 → 4 (`MIGRATION_3_4`)
    dio un UUID nuevo a las metas existentes. Las aportaciones y cambios de vínculo de cada meta
