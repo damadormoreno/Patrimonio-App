@@ -60,7 +60,7 @@ show the user's own results (cost, realized/unrealized gains, XIRR) separately f
   add-product choice, block manual unit edits, traspaso flow (funds only) (route: delegated writer).
 - [x] **T4 — UI own returns**: *Mi posición* section and position chart, portfolio detail gains/XIRR, closed
   positions (route: delegated writer).
-- [ ] **T5 — Docs** (route: inline): README *Cartera*, roadmap.
+- [x] **T5 — Docs** (route: inline): README *Cartera*, roadmap.
 
 ## Acceptance criteria
 
@@ -117,7 +117,18 @@ show the user's own results (cost, realized/unrealized gains, XIRR) separately f
   ledger replay off the main thread; invalid history hides the section. Skipped: chart cost line (single-series
   `LineChart`), Cartera latent line (doesn't fit cleanly). RED: 249 compile errors; GREEN (parent re-run):
   check.sh (1594 tests), iOS compile. On device: v12 → v13 migration with the real data (3 holdings intact).
+- **Manual test** (emulator, real data backed up first to `pre-movimientos.json`): opening balance 200 part. /
+  10.000 € → latent +2.952,20 €, XIRR +29,52 %; oversell (1000 part.) rejected inline; sell 50 part. for 3.300 € →
+  realized +800,00 €, aportado 7.500 €, XIRR +30,14 % (hand-checked); partial traspaso 100 → 400 part. to a new
+  fund via *Otro fondo…* → lot keeps 12/10/2025 and 5.000 € cost, realized 0, source keeps realized 800 and XIRR;
+  portfolio *Tu rentabilidad*: aportado 7.500 €, valor 14.998,45 €, XIRR +82,98 %, coverage "2 de 3"; backup v13
+  exported with 4 movements (transfer legs linked), restore of `pre-movimientos.json` → 3 holdings / 0 movements,
+  re-import → 4 holdings / 4 movements with recomputed units, final restore identical to the first one.
+- **Fix found in the manual test** (commit below, `fix(portfolio): end the position chart on the latest movement`):
+  the position chart header showed the pre-sale value when the sale was newer than the last quote; `valueSeries`
+  now ends on the last movement's date at the last price. RED: 1 failing test; GREEN: check.sh (1596 tests).
+- **T5** (commit below, `docs: document portfolio movements`): README *Cartera → Movimientos*, backup v13, roadmap.
 
 ## Next step
 
-T5 docs + full manual test.
+Done; push + PR.
