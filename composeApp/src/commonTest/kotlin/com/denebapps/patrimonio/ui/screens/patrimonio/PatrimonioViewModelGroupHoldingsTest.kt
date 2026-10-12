@@ -82,7 +82,12 @@ class PatrimonioViewModelGroupHoldingsTest {
         assertEquals(without.state.value.netWorth, with.state.value.netWorth)
         assertEquals(without.state.value.totalAssets, with.state.value.totalAssets)
         assertEquals(without.state.value.composition, with.state.value.composition)
-        assertEquals(without.state.value.portfolio, with.state.value.portfolio)
+        // The Cartera card only gains the group icons: same products, same values, same total.
+        assertEquals(without.state.value.portfolio?.total, with.state.value.portfolio?.total)
+        assertEquals(
+            without.state.value.portfolio?.items?.map { it.id to it.valueEur },
+            with.state.value.portfolio?.items?.map { it.id to it.valueEur },
+        )
         withoutJob.cancel()
         withJob.cancel()
     }

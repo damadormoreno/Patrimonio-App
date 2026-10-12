@@ -247,6 +247,9 @@ private fun Header(header: PositionHeaderUi) {
         }
     }
     Text(text = header.classText, color = colors.ink2, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+    header.usageText?.let {
+        Text(text = it, color = colors.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+    }
     header.broker?.let {
         Text(
             text = it,

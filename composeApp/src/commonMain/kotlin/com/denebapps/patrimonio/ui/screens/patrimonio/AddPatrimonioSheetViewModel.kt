@@ -3,6 +3,7 @@ package com.denebapps.patrimonio.ui.screens.patrimonio
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.denebapps.patrimonio.domain.calc.AccountUsage
+import com.denebapps.patrimonio.domain.calc.HoldingUsage
 import com.denebapps.patrimonio.domain.calc.accountUsage
 import com.denebapps.patrimonio.domain.calc.parseAmountToMinor
 import com.denebapps.patrimonio.domain.calc.toEur
@@ -238,7 +239,7 @@ class AddPatrimonioSheetViewModel(
                     goals = savingsGoalRepository.observeAll().first(),
                     groups = accountGroupRepository.observeAll().first(),
                 )[id]
-                deleteWarning.value = usage?.let(::deleteWarningFor)
+                deleteWarning.value = usage?.let { deleteWarningFor(it) }
                 formFields(false, asset.group, asset.name, asset.amount, asset.emoji)
             }
         }
@@ -278,13 +279,18 @@ private fun formFields(isLiability: Boolean, groupId: String, name: String, amou
 private fun newPatrimonioItemId(): String = Uuid.random().toString()
 
 /** "Está en la meta «Colchón» y en el grupo «Ahorro»; se quitará de ellos." */
-internal fun deleteWarningFor(usage: AccountUsage): String? {
+internal fun deleteWarningFor(usage: AccountUsage): String? = deleteWarningFor(usage.goalNames, usage.groupNames)
+
+/** The same sentence for a portfolio product: its groups, and the goals that follow them. */
+internal fun deleteWarningFor(usage: HoldingUsage): String? = deleteWarningFor(usage.goalNames, usage.groupNames)
+
+private fun deleteWarningFor(goalNames: List<String>, groupNames: List<String>): String? {
     val parts = listOfNotNull(
-        usage.goalNames.takeIf { it.isNotEmpty() }?.let { quoted(if (it.size == 1) "la meta" else "las metas", it) },
-        usage.groupNames.takeIf { it.isNotEmpty() }?.let { quoted(if (it.size == 1) "el grupo" else "los grupos", it) },
+        goalNames.takeIf { it.isNotEmpty() }?.let { quoted(if (it.size == 1) "la meta" else "las metas", it) },
+        groupNames.takeIf { it.isNotEmpty() }?.let { quoted(if (it.size == 1) "el grupo" else "los grupos", it) },
     )
     if (parts.isEmpty()) return null
-    val count = usage.goalNames.size + usage.groupNames.size
+    val count = goalNames.size + groupNames.size
     return "Está ${parts.joinToString(" y ")}; se quitará ${if (count == 1) "de él" else "de ellos"}."
 }
 

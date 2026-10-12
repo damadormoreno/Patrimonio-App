@@ -2,6 +2,7 @@ package com.denebapps.patrimonio.ui.screens.portfolio
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.denebapps.patrimonio.domain.calc.HoldingUsage
 import com.denebapps.patrimonio.domain.calc.formatUnits
 import com.denebapps.patrimonio.domain.calc.parseAmountToMinor
 import com.denebapps.patrimonio.domain.calc.parseUnitsEs
@@ -35,6 +36,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -56,7 +58,8 @@ private const val UNITS_FROM_MOVEMENTS_NOTE = "Las participaciones salen de tus 
  * the state of the "Clase de activo" picker: its [AssetClassChoiceUi.explicit] is the class chosen (the stored one
  * until the user picks another, `null` for automatic). A quoted holding with movements has its units read-only
  * ([unitsLocked], with the reason in [unitsNote]): they come from the movements. [error] is why the last delete was
- * refused.
+ * refused. [deleteWarning] names the groups that hold the product and the goals that follow them, for the delete
+ * confirmation (`null` when it is in none).
  */
 data class HoldingDetailUiState(
     val loaded: Boolean = false,
@@ -80,6 +83,7 @@ data class HoldingDetailUiState(
     val unitsLocked: Boolean = false,
     val unitsNote: String? = null,
     val error: String? = null,
+    val deleteWarning: String? = null,
     val canSave: Boolean = false,
 )
 
@@ -107,6 +111,7 @@ class HoldingDetailViewModel(
     fxRepository: FxRepository,
     movementRepository: MovementRepository,
     private val zoneProvider: () -> TimeZone,
+    usageByHolding: Flow<Map<String, HoldingUsage>> = flowOf(emptyMap()),
 ) : ViewModel() {
     private val edits = MutableStateFlow(HoldingEdits())
 
@@ -127,6 +132,8 @@ class HoldingDetailViewModel(
         holdings.firstOrNull { it.id == holdingId }
             ?.let { buildState(it, allPortfolios.toOptions(), rates, holdingId in withMovements, typed) }
             ?: HoldingDetailUiState()
+    }.combine(usageByHolding) { detail, usage ->
+        detail.copy(deleteWarning = holdingDeleteWarning(usage[holdingId]))
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(HOLDING_DETAIL_STOP_TIMEOUT_MS),

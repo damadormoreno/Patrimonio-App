@@ -20,6 +20,7 @@ import com.denebapps.patrimonio.ui.screens.portfolio.PositionDetailViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.PositionLotsViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.PositionMovementsViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.TransferFormViewModel
+import com.denebapps.patrimonio.ui.screens.portfolio.observeHoldingUsage
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
 import com.denebapps.patrimonio.ui.screens.settings.AccountTypesViewModel
 import com.denebapps.patrimonio.ui.screens.settings.BackupViewModel
@@ -100,6 +101,7 @@ val presentationModule = module {
             accountGroupRepository = get(),
             savingsGoalRepository = get(),
             portfolioRepository = get(),
+            portfolios = get(),
             fxRepository = get(),
             accountTypeRepository = get(),
             editingGroupId = params.getOrNull(),
@@ -130,7 +132,17 @@ val presentationModule = module {
             clock = get(),
         )
     }
-    viewModel { params -> HoldingDetailViewModel(params.get(), get(), get(), get(), get(), get<() -> TimeZone>()) }
+    viewModel { params ->
+        HoldingDetailViewModel(
+            holdingId = params.get(),
+            portfolioRepository = get(),
+            portfolios = get(),
+            fxRepository = get(),
+            movementRepository = get(),
+            zoneProvider = get<() -> TimeZone>(),
+            usageByHolding = observeHoldingUsage(get(), get()),
+        )
+    }
     viewModel { params ->
         MovementFormViewModel(
             holdingId = params[0],
@@ -193,6 +205,7 @@ val presentationModule = module {
             historyRepository = get(),
             clock = get(),
             zoneProvider = get<() -> TimeZone>(),
+            usageByHolding = observeHoldingUsage(get(), get()),
         )
     }
     viewModel { params ->

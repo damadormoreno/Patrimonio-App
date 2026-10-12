@@ -3,6 +3,7 @@ package com.denebapps.patrimonio.ui.screens.portfolio
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.denebapps.patrimonio.domain.calc.HistoryRange
+import com.denebapps.patrimonio.domain.calc.HoldingUsage
 import com.denebapps.patrimonio.domain.calc.holdingWeights
 import com.denebapps.patrimonio.domain.calc.mulDivHalfEven
 import com.denebapps.patrimonio.domain.calc.toEur
@@ -129,6 +130,7 @@ data class ProductDataUi(
  * The top of the screen. [identifier] is whatever identifies the product plus its data source (empty for a manual
  * one), [detailText] the units, last price and date (or the manual valuation date), [weightText] how much of the
  * portfolio the position is (null while it has no value). [classText] is its asset class and where it comes from.
+ * [usageText] says which groups hold it and which goals follow them (null when it is in no group).
  */
 data class PositionHeaderUi(
     val name: String = "",
@@ -140,6 +142,7 @@ data class PositionHeaderUi(
     val detailText: String = "",
     val weightText: String? = null,
     val classText: String = "",
+    val usageText: String? = null,
 )
 
 /**
@@ -220,7 +223,12 @@ private data class Placement(
 )
 
 /** What the repositories say about the position, apart from what the user is doing on the screen. */
-private data class PositionData(val placed: Placement, val points: List<PricePoint>, val rates: FxRates)
+private data class PositionData(
+    val placed: Placement,
+    val points: List<PricePoint>,
+    val rates: FxRates,
+    val usage: Map<String, HoldingUsage>,
+)
 
 /** What the user is doing on the screen: both chart ranges, the download, and the question about the units. */
 private data class Interaction(
@@ -252,6 +260,7 @@ class PositionDetailViewModel(
     private val clock: Clock,
     private val zoneProvider: () -> TimeZone,
     computationDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    usageByHolding: Flow<Map<String, HoldingUsage>> = flowOf(emptyMap()),
 ) : ViewModel() {
     private val selectedRange = MutableStateFlow(HistoryRange.ONE_YEAR)
     private val myPositionRange = MutableStateFlow(HistoryRange.ONE_YEAR)
@@ -288,7 +297,7 @@ class PositionDetailViewModel(
 
     private val rates = fxRepository.observeRates()
 
-    private val data = combine(placement, history, rates, ::PositionData)
+    private val data = combine(placement, history, rates, usageByHolding, ::PositionData)
 
     private val interaction = combine(selectedRange, myPositionRange, sync, addPrompt.step, ::Interaction)
 
@@ -450,13 +459,13 @@ class PositionDetailViewModel(
         own: OwnPositionAnalysis?,
         ui: Interaction,
     ): PositionDetailUiState {
-        val (placed, points, currentRates) = current
+        val (placed, points, currentRates, usage) = current
         val (range, myRange, syncState, choice) = ui
         val today = today()
         val movements = movementsUi(holding, placed)
         val base = PositionDetailUiState(
             loaded = true,
-            header = buildHeader(holding, placed, currentRates),
+            header = buildHeader(holding, placed, currentRates).copy(usageText = holdingUsageLine(usage[holding.id])),
             product = productData(holding, currentRates),
             movements = movements,
             choice = choice?.let { openingChoiceUi(holding, it) },

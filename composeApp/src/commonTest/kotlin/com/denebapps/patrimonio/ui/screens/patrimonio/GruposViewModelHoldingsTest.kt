@@ -10,6 +10,7 @@ import com.denebapps.patrimonio.testing.FakeAccountGroupRepository
 import com.denebapps.patrimonio.testing.FakeAccountTypeRepository
 import com.denebapps.patrimonio.testing.FakeAssetRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
+import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
 import com.denebapps.patrimonio.testing.FakeSavingsGoalRepository
 import com.denebapps.patrimonio.testing.manualTestHolding
@@ -61,6 +62,7 @@ class GruposViewModelHoldingsTest {
         accountGroupRepository = accountGroups,
         savingsGoalRepository = FakeSavingsGoalRepository(),
         portfolioRepository = portfolio,
+        portfolios = FakePortfolioCollectionRepository(),
         fxRepository = fx,
         accountTypeRepository = FakeAccountTypeRepository(),
         editingGroupId = editingGroupId,

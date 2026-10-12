@@ -569,7 +569,10 @@ class PatrimonioViewModelTest {
             val job = launch { vm.state.collect {} }
             advanceUntilIdle()
 
-            assertEquals(PortfolioSummaryUi(total = Money(250_000), holdingCount = 2), vm.state.value.portfolio)
+            val portfolio = vm.state.value.portfolio
+            assertEquals(Money(250_000), portfolio?.total)
+            assertEquals(2, portfolio?.holdingCount)
+            assertEquals(listOf("h1", "u1"), portfolio?.items?.map { it.id })
             job.cancel()
         }
 
@@ -582,7 +585,8 @@ class PatrimonioViewModelTest {
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
-        assertEquals(PortfolioSummaryUi(total = Money.ZERO, holdingCount = 1), vm.state.value.portfolio)
+        assertEquals(Money.ZERO, vm.state.value.portfolio?.total)
+        assertEquals(1, vm.state.value.portfolio?.holdingCount)
         assertEquals(listOf("Cuentas bancarias"), vm.state.value.composition.map { it.label })
         job.cancel()
     }

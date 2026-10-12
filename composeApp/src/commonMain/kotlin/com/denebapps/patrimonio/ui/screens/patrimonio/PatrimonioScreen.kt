@@ -57,7 +57,6 @@ import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.ui.components.EmptyState
 import com.denebapps.patrimonio.ui.components.FabContentBottomSpacing
 import com.denebapps.patrimonio.ui.components.HeaderIconBtn
-import com.denebapps.patrimonio.ui.components.PORTFOLIO_LOOK
 import com.denebapps.patrimonio.ui.components.Pill
 import com.denebapps.patrimonio.ui.components.PillTone
 import com.denebapps.patrimonio.ui.components.ScreenHeader
@@ -93,7 +92,8 @@ private const val EUR_MINOR_SCALE = 100L
  * ahorro section is backed by a second, independent [SavingsGoalsViewModel] (design.md Decision 8) —
  * [onNewGoal]/[onGoalTap] are wired by `MainScaffold` to push `NewGoal`/`GoalAllocate(goalId)`. Tapping or
  * long-pressing an account calls [onEditItem] with the active view and the account id. The investment portfolio
- * shows as its own "Cartera" card among the assets; [onOpenCartera] switches to that tab.
+ * shows as its own "Cartera" card among the assets, expanding to a row per product ([onOpenHolding] opens its detail);
+ * [onOpenCartera] switches to the Cartera tab.
  */
 @Composable
 fun PatrimonioScreen(
@@ -108,6 +108,7 @@ fun PatrimonioScreen(
     onNewGoal: () -> Unit = {},
     onGoalTap: (String) -> Unit = {},
     onOpenCartera: () -> Unit = {},
+    onOpenHolding: (String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     val savingsState by savingsGoalsViewModel.state.collectAsState()
@@ -198,7 +199,7 @@ fun PatrimonioScreen(
                         modifier = Modifier.padding(bottom = 12.dp),
                     )
                 }
-                if (state.groups.isEmpty() && state.filterSummary != null) {
+                if (state.groups.isEmpty() && state.portfolio == null && state.filterSummary != null) {
                     Text(
                         text = "Ninguna cuenta coincide con el filtro.",
                         color = colors.muted,
@@ -215,11 +216,11 @@ fun PatrimonioScreen(
                             onEditItem = { itemId -> onEditItem(state.view, itemId) },
                         )
                     }
-                    // The portfolio is not an account, so the account filter does not apply to it: hide it
-                    // while a filter narrows the list rather than show it as if it matched.
+                    // The account filter narrows the products too (by group and goal; a type chip leaves them out),
+                    // and the card is absent when none matches.
                     val portfolio = state.portfolio
-                    if (state.view == PatrimonioView.ACTIVOS && portfolio != null && !state.filter.isActive) {
-                        CarteraSummaryCard(portfolio = portfolio, onClick = onOpenCartera)
+                    if (state.view == PatrimonioView.ACTIVOS && portfolio != null) {
+                        CarteraCard(portfolio = portfolio, onOpenCartera = onOpenCartera, onOpenHolding = onOpenHolding)
                     }
                 }
 
@@ -589,42 +590,6 @@ private fun PatrimonioGroupCard(
     }
 }
 
-/** The investment portfolio as one card among the assets: its total and size; tapping it opens the Cartera tab. */
-@Composable
-private fun CarteraSummaryCard(portfolio: PortfolioSummaryUi, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val colors = LocalAppColors.current
-
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(colors.surface)
-            .border(1.dp, colors.line, RoundedCornerShape(16.dp))
-            .clickable(onClickLabel = "Abrir cartera", onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Box(
-            Modifier.size(32.dp).background(PORTFOLIO_LOOK.toColor(), RoundedCornerShape(9.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(AppIcons.trend, contentDescription = null, tint = colors.surface2, modifier = Modifier.size(16.dp))
-        }
-        Column(Modifier.weight(1f)) {
-            Text("Cartera", color = colors.ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            Text(
-                text = if (portfolio.holdingCount == 1) "1 producto" else "${portfolio.holdingCount} productos",
-                color = colors.muted,
-                fontSize = 11.sp,
-                modifier = Modifier.padding(top = 1.dp),
-            )
-        }
-        Text(text = formatMoneyEs(portfolio.total), color = colors.ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-        Icon(AppIcons.chevronR, contentDescription = null, tint = colors.muted, modifier = Modifier.size(17.dp))
-    }
-}
-
 @Composable
 private fun PatrimonioItemRow(
     item: PatrimonioItemUi,
@@ -715,7 +680,7 @@ private fun PatrimonioItemRow(
 
 /** Marks an account followed by a goal ([AppIcons.spark], the goals icon) or held by a group. */
 @Composable
-private fun UsageIcon(icon: ImageVector, description: String) {
+internal fun UsageIcon(icon: ImageVector, description: String) {
     Icon(icon, contentDescription = description, tint = LocalAppColors.current.muted, modifier = Modifier.size(13.dp))
 }
 
@@ -774,9 +739,8 @@ private fun AccountFilterBar(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val accounts = if (summary.count == 1) "1 cuenta" else "${summary.count} cuentas"
                 Text(
-                    text = "Filtrado: ${formatMoneyEs(summary.total)} · $accounts",
+                    text = "Filtrado: ${formatMoneyEs(summary.total)} · ${filterSummaryCounts(summary)}",
                     color = colors.ink2,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -795,6 +759,17 @@ private fun AccountFilterBar(
             }
         }
     }
+}
+
+/** "2 cuentas", "1 cuenta · 3 productos": what the filter leaves, accounts first. */
+internal fun filterSummaryCounts(summary: FilterSummaryUi): String {
+    val accounts = if (summary.count == 1) "1 cuenta" else "${summary.count} cuentas"
+    val products = when (summary.productCount) {
+        0 -> null
+        1 -> "1 producto"
+        else -> "${summary.productCount} productos"
+    }
+    return listOfNotNull(accounts.takeIf { summary.count > 0 || products == null }, products).joinToString(" · ")
 }
 
 @Composable
