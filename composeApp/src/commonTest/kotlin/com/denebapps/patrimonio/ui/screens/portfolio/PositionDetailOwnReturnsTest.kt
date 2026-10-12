@@ -126,6 +126,21 @@ class PositionDetailOwnReturnsTest {
     }
 
     @Test
+    fun `with more than three open lots the card summarises them instead of listing them`() = runTest(dispatcher) {
+        val purchases = (1..4).map {
+            buy("b$it", date(2026, 3, it), units(1), 10_000L, holding = "own", sequence = it.toLong())
+        }
+        val vm = viewModel(purchases)
+        val job = open(vm)
+
+        val mine = assertNotNull(vm.state.value.myPosition)
+        assertTrue(mine.lots.isEmpty())
+        assertEquals("Lotes abiertos (4)", mine.lotsSummary?.titleText)
+        assertEquals("El más antiguo: 01/03/2026", mine.lotsSummary?.oldestText)
+        job.cancel()
+    }
+
+    @Test
     fun `a position without movements has no card`() = runTest(dispatcher) {
         val vm = viewModel(emptyList())
         val job = open(vm)

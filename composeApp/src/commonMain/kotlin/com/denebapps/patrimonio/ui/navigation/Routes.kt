@@ -96,6 +96,14 @@ data class InstrumentPreview(val provider: String, val code: String) {
 @Serializable
 data class PositionDetail(val holdingId: String)
 
+/** Every movement of one holding, by year (a pushed screen); opened from the summary in [PositionDetail]. */
+@Serializable
+data class PositionMovements(val holdingId: String)
+
+/** Every open lot of one holding (a pushed screen); opened from the summary in [PositionDetail]. */
+@Serializable
+data class PositionLots(val holdingId: String)
+
 /**
  * Movement sheet of one quoted holding: a new movement, or the one [movementId]; [openingBalance] opens the form of
  * the opening balance (the units the position already had) instead of the usual one. Opened from [PositionDetail].

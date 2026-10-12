@@ -27,11 +27,13 @@ internal class MovementsCallbacks(
     val onAdd: () -> Unit,
     val onTransfer: () -> Unit,
     val onOpen: (String) -> Unit,
+    val onSeeAll: () -> Unit,
 )
 
 /**
- * "Movimientos" of the position detail: the list newest first, or the note that the units are edited by hand, with
- * the buttons to add a movement and (for a fund that can) to transfer. Nothing for a manual position.
+ * "Movimientos" of the position detail: the latest movements newest first (and the row that opens all of them), or
+ * the note that the units are edited by hand, with the buttons to add a movement and (for a fund that can) to
+ * transfer. Nothing for a manual position.
  */
 @Composable
 internal fun MovementsSection(movements: MovementsUi, callbacks: MovementsCallbacks) {
@@ -51,10 +53,11 @@ internal fun MovementsSection(movements: MovementsUi, callbacks: MovementsCallba
             movements.rows.forEachIndexed { index, row ->
                 MovementRow(
                     row = row,
-                    showDivider = index != movements.rows.lastIndex,
+                    showDivider = index != movements.rows.lastIndex || movements.seeAllText != null,
                     onClick = { callbacks.onOpen(row.id) },
                 )
             }
+            movements.seeAllText?.let { DrillDownRow(title = it, onClick = callbacks.onSeeAll) }
         }
     }
     Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -66,7 +69,7 @@ internal fun MovementsSection(movements: MovementsUi, callbacks: MovementsCallba
 }
 
 @Composable
-private fun MovementRow(row: MovementRowUi, showDivider: Boolean, onClick: () -> Unit) {
+internal fun MovementRow(row: MovementRowUi, showDivider: Boolean, onClick: () -> Unit) {
     val colors = LocalAppColors.current
     Column(Modifier.fillMaxWidth()) {
         Row(

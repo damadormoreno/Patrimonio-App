@@ -55,6 +55,8 @@ fun PositionDetailScreen(
     onEdit: () -> Unit = {},
     onOpenMovement: (movementId: String?, openingBalance: Boolean) -> Unit = { _, _ -> },
     onOpenTransfer: (transferId: String?) -> Unit = {},
+    onOpenMovements: () -> Unit = {},
+    onOpenLots: () -> Unit = {},
     viewModel: PositionDetailViewModel = koinViewModel(parameters = { parametersOf(holdingId) }),
 ) {
     val state by viewModel.state.collectAsState()
@@ -63,6 +65,7 @@ fun PositionDetailScreen(
             onAdd = viewModel::onAddMovement,
             onTransfer = viewModel::onTransfer,
             onOpen = viewModel::onOpenMovement,
+            onSeeAll = onOpenMovements,
         )
     }
 
@@ -87,6 +90,7 @@ fun PositionDetailScreen(
         onRefresh = viewModel::onRefresh,
         onDismissSyncError = viewModel::onSyncErrorDismiss,
         movements = movements,
+        onOpenLots = onOpenLots,
         onOpeningBalance = viewModel::onChooseOpeningBalance,
         onOneByOne = viewModel::onChooseOneByOne,
         onConfirmOneByOne = viewModel::onConfirmOneByOne,
@@ -106,6 +110,7 @@ internal fun PositionDetailContent(
     onRefresh: () -> Unit,
     onDismissSyncError: () -> Unit,
     movements: MovementsCallbacks,
+    onOpenLots: () -> Unit,
     onOpeningBalance: () -> Unit,
     onOneByOne: () -> Unit,
     onConfirmOneByOne: () -> Unit,
@@ -141,7 +146,7 @@ internal fun PositionDetailContent(
                         )
                     }
                     HistorySections(state, onRangeSelect, onRetry = onRefresh)
-                    state.myPosition?.let { MyPositionSection(it, onMyPositionRangeSelect) }
+                    state.myPosition?.let { MyPositionSection(it, onMyPositionRangeSelect, onOpenLots) }
                     MovementsSection(state.movements, movements)
                     state.product?.let {
                         SectionLabel("Datos del producto")

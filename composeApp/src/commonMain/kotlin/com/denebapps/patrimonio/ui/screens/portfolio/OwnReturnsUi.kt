@@ -5,6 +5,7 @@ import com.denebapps.patrimonio.domain.calc.GainBreakdown
 import com.denebapps.patrimonio.domain.calc.PositionReturns
 import com.denebapps.patrimonio.domain.calc.ScopeReturns
 import com.denebapps.patrimonio.domain.calc.formatUnits
+import com.denebapps.patrimonio.domain.model.Lot
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.Movement
 import com.denebapps.patrimonio.domain.model.MovementType
@@ -49,10 +50,18 @@ data class OwnFigureUi(
 /** An open FIFO lot: the day it was bought, its units and what it cost ("coste desconocido" when not known). */
 data class LotUi(val dateText: String, val unitsText: String, val costText: String)
 
+/** The most open lots the position detail lists; with more, it shows a [LotsSummaryUi] that opens the full list. */
+internal const val MAX_INLINE_LOTS = 3
+
+/** The row that stands for the open lots when there are too many to list: how many ([count]) and the oldest day. */
+data class LotsSummaryUi(val count: Int, val titleText: String, val oldestText: String)
+
 /**
  * "Mi posición": the [figures], the [hint] that says how to complete an unknown cost, the open [lots] (with a
  * [lotsNote] when some came in a transfer) and the chart of the value of my units ([ranges] and [chart], absent
  * without two prices since the first movement). [chartTone] colors the chart: the sign of the unrealized gain.
+ * [lots] are listed only up to [MAX_INLINE_LOTS]; with more it is empty and [lotsSummary] is set instead, and the
+ * lots (with their note) are on their own screen.
  */
 data class MyPositionUi(
     val figures: List<OwnFigureUi>,
@@ -62,7 +71,29 @@ data class MyPositionUi(
     val ranges: List<RangeChipUi> = emptyList(),
     val chart: ChartUi? = null,
     val chartTone: PerformanceTone = PerformanceTone.NEUTRAL,
+    val lotsSummary: LotsSummaryUi? = null,
 )
+
+/** A lot as a row: the day it was bought, its units and its cost. */
+internal fun lotUi(lot: Lot): LotUi = LotUi(
+    dateText = formatShortDate(lot.acquiredOn),
+    unitsText = "${formatUnits(lot.units)} part.",
+    costText = lot.costEur?.let(::formatEur) ?: UNKNOWN_COST_TEXT,
+)
+
+/** The note to show with the lots of a position with these [movements]: some of them came in a transfer. */
+internal fun lotsTransferNote(movements: List<Movement>): String? =
+    LOTS_TRANSFER_NOTE.takeIf { movements.any { it.type == MovementType.TRANSFER_IN } }
+
+/** The summary of more than [MAX_INLINE_LOTS] open [lots]: how many there are and the day of the oldest. */
+private fun lotsSummary(lots: List<Lot>): LotsSummaryUi {
+    val oldest = lots.minOf { it.acquiredOn }
+    return LotsSummaryUi(
+        count = lots.size,
+        titleText = "$LOTS_TITLE (${lots.size})",
+        oldestText = "El más antiguo: ${formatShortDate(oldest)}",
+    )
+}
 
 /** "Tu rentabilidad": the [figures] of a scope and [coverageText], which says how many products they cover. */
 data class YourReturnsUi(val figures: List<OwnFigureUi>, val coverageText: String)
@@ -83,18 +114,14 @@ internal fun myPositionCard(returns: PositionReturns, movements: List<Movement>)
         add(xirrFigure(returns.xirr))
     }
     val costUnknown = !ledger.costBasis.isComplete || !ledger.realized.isComplete
+    val tooManyLots = ledger.lots.size > MAX_INLINE_LOTS
     return MyPositionUi(
         figures = figures,
         hint = UNKNOWN_COST_HINT.takeIf { costUnknown },
-        lots = ledger.lots.map {
-            LotUi(
-                dateText = formatShortDate(it.acquiredOn),
-                unitsText = "${formatUnits(it.units)} part.",
-                costText = it.costEur?.let(::formatEur) ?: UNKNOWN_COST_TEXT,
-            )
-        },
-        lotsNote = LOTS_TRANSFER_NOTE.takeIf { movements.any { it.type == MovementType.TRANSFER_IN } },
+        lots = if (tooManyLots) emptyList() else ledger.lots.map(::lotUi),
+        lotsNote = lotsTransferNote(movements),
         chartTone = returns.unrealized?.totalGainEur?.let(::toneOfMoney) ?: PerformanceTone.NEUTRAL,
+        lotsSummary = if (tooManyLots) lotsSummary(ledger.lots) else null,
     )
 }
 

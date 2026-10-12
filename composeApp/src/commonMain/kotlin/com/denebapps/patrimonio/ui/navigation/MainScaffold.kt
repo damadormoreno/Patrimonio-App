@@ -49,6 +49,8 @@ import com.denebapps.patrimonio.ui.screens.portfolio.InstrumentPreviewScreen
 import com.denebapps.patrimonio.ui.screens.portfolio.MovementFormSheet
 import com.denebapps.patrimonio.ui.screens.portfolio.PortfolioDetailScreen
 import com.denebapps.patrimonio.ui.screens.portfolio.PositionDetailScreen
+import com.denebapps.patrimonio.ui.screens.portfolio.PositionLotsScreen
+import com.denebapps.patrimonio.ui.screens.portfolio.PositionMovementsScreen
 import com.denebapps.patrimonio.ui.screens.portfolio.TransferFormSheet
 import com.denebapps.patrimonio.ui.screens.savings.GoalAllocateSheet
 import com.denebapps.patrimonio.ui.screens.savings.NewGoalSheet
@@ -203,6 +205,25 @@ fun MainScaffold() {
                         mainNavController.navigate(MovementForm(holdingId, movementId, openingBalance))
                     },
                     onOpenTransfer = { transferId -> mainNavController.navigate(TransferForm(holdingId, transferId)) },
+                    onOpenMovements = { mainNavController.navigate(PositionMovements(holdingId)) },
+                    onOpenLots = { mainNavController.navigate(PositionLots(holdingId)) },
+                )
+            }
+            composable<PositionMovements> { backStackEntry ->
+                val holdingId = backStackEntry.toRoute<PositionMovements>().holdingId
+                PositionMovementsScreen(
+                    holdingId = holdingId,
+                    onBack = { mainNavController.popBackStack() },
+                    onOpenMovement = { movementId, openingBalance ->
+                        mainNavController.navigate(MovementForm(holdingId, movementId, openingBalance))
+                    },
+                    onOpenTransfer = { transferId -> mainNavController.navigate(TransferForm(holdingId, transferId)) },
+                )
+            }
+            composable<PositionLots> { backStackEntry ->
+                PositionLotsScreen(
+                    holdingId = backStackEntry.toRoute<PositionLots>().holdingId,
+                    onBack = { mainNavController.popBackStack() },
                 )
             }
             composable<MovementForm> { backStackEntry ->
