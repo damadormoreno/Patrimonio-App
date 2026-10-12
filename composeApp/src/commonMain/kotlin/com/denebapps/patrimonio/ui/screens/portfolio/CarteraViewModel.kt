@@ -12,6 +12,7 @@ import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.PortfolioNameProblem
+import com.denebapps.patrimonio.domain.repository.CarteraFilterSelection
 import com.denebapps.patrimonio.domain.repository.DuplicatePortfolioNameException
 import com.denebapps.patrimonio.domain.repository.FxRepository
 import com.denebapps.patrimonio.domain.repository.LastPortfolioException
@@ -30,6 +31,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.TimeZone
 
 private const val CARTERA_STOP_TIMEOUT_MS = 5_000L
@@ -92,6 +95,10 @@ sealed interface PortfolioDialogUi {
  * [managedPortfolioId] is the portfolio the rename and delete actions apply to: the selected one, or the only one;
  * `null` while all are shown. When the only portfolio cannot be deleted, [deleteBlockedReason] says why. [dialog] is
  * the management dialog being shown, if any.
+ *
+ * The list can be filtered by class, bank or broker and type ([filter]). Only the [rows] and the [total] are filtered:
+ * [countLabel] and [isEmpty] still describe the scope. While a filter is active [filterSummary] says how many of the
+ * scope's products are shown, and [noMatches] says that the scope has products but none passes the filter.
  */
 data class CarteraUiState(
     val rows: List<HoldingRowUi>,
@@ -107,6 +114,9 @@ data class CarteraUiState(
     val managedPortfolioId: String? = null,
     val deleteBlockedReason: String? = null,
     val dialog: PortfolioDialogUi? = null,
+    val filter: CarteraFilterUi = CarteraFilterUi(),
+    val filterSummary: String? = null,
+    val noMatches: Boolean = false,
 )
 
 /** What the user is told about the last price refresh, kept apart from the data so a refresh never touches rows. */
@@ -117,6 +127,7 @@ private data class CarteraData(
     val holdings: List<PortfolioHolding> = emptyList(),
     val portfolios: List<Portfolio> = emptyList(),
     val storedSelection: String? = null,
+    val storedFilter: CarteraFilterSelection = CarteraFilterSelection(),
     val rates: FxRates = FxRates(emptyMap()),
 )
 
@@ -132,7 +143,8 @@ private sealed interface DialogState {
 /**
  * Cartera tab: the holdings of the selected portfolio (or of all) valued at their latest price, their total in EUR and
  * the manual price refresh. The selection is remembered through [PreferencesRepository]; one that names a portfolio
- * that no longer exists reads as "Todas". Portfolios are created, renamed and deleted through dialogs the ViewModel
+ * that no longer exists reads as "Todas". The filters of the list are remembered the same way and survive a change of
+ * scope: the stored values stay as they are and only those the scope has apply. Portfolios are created, renamed and deleted through dialogs the ViewModel
  * drives ([onNewPortfolio], [onRenamePortfolio], [onDeletePortfolio] and the `onDialog...` actions).
  *
  * The repository already refreshes stale prices on start; [onRefresh] forces every quoted holding, shows progress
@@ -148,11 +160,13 @@ class CarteraViewModel(
     private val refresh = MutableStateFlow(RefreshState())
     private val dialog = MutableStateFlow<DialogState?>(null)
     private var confirming = false
+    private val filterLock = Mutex()
 
     private val repositoryData = combine(
         portfolioRepository.observeAll(),
         portfolios.observePortfolios(),
         preferences.observeSelectedPortfolioId(),
+        preferences.observeCarteraFilter(),
         fxRepository.observeRates(),
         ::CarteraData,
     )
@@ -194,6 +208,26 @@ class CarteraViewModel(
     /** Shows the holdings of [portfolioId], or of every portfolio when it is `null`, and remembers the choice. */
     fun onSelectPortfolio(portfolioId: String?) {
         viewModelScope.launch { preferences.setSelectedPortfolioId(portfolioId) }
+    }
+
+    // ---- filters -------------------------------------------------------------------------------------------------
+
+    /** Chooses [key] of [dimension] in the filter, or takes it out when it was chosen; remembers the result. */
+    fun onToggleFilter(dimension: FilterDimension, key: String) = changeFilter { it.toggled(dimension, key) }
+
+    /** Takes [key] out of [dimension]'s filter (the cross of an active chip). */
+    fun onRemoveFilter(dimension: FilterDimension, key: String) = changeFilter { it.without(dimension, key) }
+
+    /** Forgets every filter, including remembered values the current scope does not have. */
+    fun onClearFilters() = changeFilter { CarteraFilterSelection() }
+
+    /** One change at a time, each on the value the previous one left, so quick taps never overwrite each other. */
+    private fun changeFilter(change: (CarteraFilterSelection) -> CarteraFilterSelection) {
+        viewModelScope.launch {
+            filterLock.withLock {
+                preferences.setCarteraFilter(change(preferences.observeCarteraFilter().first()))
+            }
+        }
     }
 
     // ---- management ----------------------------------------------------------------------------------------------
@@ -302,17 +336,20 @@ class CarteraViewModel(
     private fun buildState(data: CarteraData, refreshState: RefreshState, dialogState: DialogState?): CarteraUiState {
         val several = data.portfolios.size >= MIN_PORTFOLIOS_TO_CHOOSE
         val selected = data.portfolios.firstOrNull { several && it.id == data.storedSelection }
-        val holdings = data.holdings.inPortfolio(selected?.id)
+        val scope = data.holdings.inPortfolio(selected?.id)
+        val effectiveFilter = data.storedFilter.effectiveFor(scope)
+        val holdings = scope.matching(effectiveFilter)
+        val filter = filterUi(scope, effectiveFilter)
         val namesById = data.portfolios.associate { it.id to it.name }.takeIf { several && selected == null }
         val managed = selected ?: data.portfolios.singleOrNull()
         return CarteraUiState(
             // Closed positions go after the open ones, each group keeping its order.
             rows = holdings.map { it.toRow(data.rates, namesById?.get(it.portfolioId)) }.sortedBy { it.isClosed },
             total = portfolioTotalEur(holdings, data.rates),
-            countLabel = countLabel(holdings.size),
+            countLabel = countLabel(scope.size),
             isRefreshing = refreshState.running,
             refreshMessage = refreshState.message,
-            isEmpty = holdings.isEmpty(),
+            isEmpty = scope.isEmpty(),
             portfolios = data.portfolios.toOptions(),
             selectedPortfolioId = selected?.id,
             scopeLabel = if (several) selected?.name ?: ALL_PORTFOLIOS_LABEL else null,
@@ -320,6 +357,9 @@ class CarteraViewModel(
             managedPortfolioId = managed?.id,
             deleteBlockedReason = LAST_PORTFOLIO_TEXT.takeIf { managed != null && !several },
             dialog = dialogState?.let { dialogUi(it, data) },
+            filter = filter,
+            filterSummary = filterSummaryText(holdings.size, scope.size).takeIf { filter.active.isNotEmpty() },
+            noMatches = scope.isNotEmpty() && holdings.isEmpty(),
         )
     }
 

@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.data.datastore
 
+import com.denebapps.patrimonio.domain.repository.CarteraFilterSelection
 import com.denebapps.patrimonio.domain.repository.ThemeMode
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.produceIn
@@ -108,5 +109,49 @@ class PreferencesRepositoryImplTest {
 
         assertEquals("Ana", repo.observeFirstName().first())
         assertEquals(ThemeMode.DARK, repo.observeThemeMode().first())
+    }
+
+    @Test
+    fun `no cartera filter is remembered until one is set`() = runTest {
+        val repo = PreferencesRepositoryImpl(tempFilePath())
+
+        assertEquals(CarteraFilterSelection(), repo.observeCarteraFilter().first())
+    }
+
+    @Test
+    fun `the cartera filter round-trips its three dimensions and emits reactively`() = runTest {
+        val repo = PreferencesRepositoryImpl(tempFilePath())
+        val filters = repo.observeCarteraFilter().produceIn(backgroundScope)
+        assertEquals(CarteraFilterSelection(), filters.receive())
+        val chosen = CarteraFilterSelection(
+            assetClasses = setOf("EQUITY", "UNCLASSIFIED"),
+            brokers = setOf("myinvestor", ""),
+            types = setOf("FUND"),
+        )
+
+        repo.setCarteraFilter(chosen)
+
+        assertEquals(chosen, filters.receive())
+        assertEquals(chosen, repo.observeCarteraFilter().first())
+    }
+
+    @Test
+    fun `clearing the cartera filter forgets every dimension`() = runTest {
+        val repo = PreferencesRepositoryImpl(tempFilePath())
+        repo.setCarteraFilter(CarteraFilterSelection(brokers = setOf("degiro"), types = setOf("ETF")))
+
+        repo.setCarteraFilter(CarteraFilterSelection())
+
+        assertEquals(CarteraFilterSelection(), repo.observeCarteraFilter().first())
+    }
+
+    @Test
+    fun `the cartera filter does not disturb the selected portfolio`() = runTest {
+        val repo = PreferencesRepositoryImpl(tempFilePath())
+        repo.setSelectedPortfolioId("pf-hijos")
+
+        repo.setCarteraFilter(CarteraFilterSelection(types = setOf("FUND")))
+
+        assertEquals("pf-hijos", repo.observeSelectedPortfolioId().first())
     }
 }
