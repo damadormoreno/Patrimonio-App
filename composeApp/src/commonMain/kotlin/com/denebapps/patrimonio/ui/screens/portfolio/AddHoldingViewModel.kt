@@ -80,9 +80,12 @@ data class CandidateUi(
 data class QuoteUi(val priceText: String, val dateText: String, val currency: Currency)
 
 /**
- * The "Una compra" entry: the purchase that creates the position. [eurText] is what the euro field holds when [showEur]
- * (the product is not quoted in euros), [eurHint] why it needs to be typed, and [impliedPriceText] the price per unit
- * the amount and units come to.
+ * The "Una compra" entry: the purchase that creates the position. [amountText] and [eurText] are what the two amount
+ * fields hold (what the user typed in each, or what follows from the other at the rate of the day); the euro field is
+ * only there when [showEur] (the product is not quoted in euros). [eurHint] and [amountHint] say which one needs to be
+ * typed because the day has no rate, [impliedPriceText] is the price per unit the amount and units come to and
+ * [impliedRateText] the rate the two amounts come to. [amountPlaceholder] and [eurPlaceholder] are the value a field
+ * follows, to show muted inside it while it is empty (a field held blank while the user edits it).
  */
 data class PurchaseUi(
     val date: LocalDate,
@@ -92,16 +95,19 @@ data class PurchaseUi(
     val eurText: String = "",
     val showEur: Boolean = false,
     val eurHint: String? = null,
+    val amountHint: String? = null,
+    val amountPlaceholder: String? = null,
+    val eurPlaceholder: String? = null,
     val impliedPriceText: String? = null,
+    val impliedRateText: String? = null,
 )
 
-/** What the user typed in the purchase entry; [eurText] is `null` while it follows the rate of the day. */
+/** What the user typed in the purchase entry; an amount field that is not in [amounts] follows the other one. */
 private data class PurchaseTyped(
     val date: LocalDate,
     val unitsText: String = "",
-    val amountText: String = "",
+    val amounts: TypedAmounts = TypedAmounts(),
     val feeText: String = "",
-    val eurText: String? = null,
 )
 
 /**
@@ -289,22 +295,24 @@ class AddHoldingViewModel(
     }
 
     fun onPurchaseDateChange(date: LocalDate) {
-        purchase = purchase.copy(date = date, eurText = null)
+        purchase = purchase.copy(date = date, amounts = purchase.amounts.settled())
         pickedQuote?.let { fx.ensure(it.price.currency, date) }
         update { it.copy(saveError = null) }
     }
 
     fun onPurchaseUnitsChange(text: String) = changePurchase { it.copy(unitsText = text) }
 
-    fun onPurchaseAmountChange(text: String) = changePurchase { it.copy(amountText = text, eurText = null) }
+    /** The amount as typed; a blank field follows the euro equivalent again. */
+    fun onPurchaseAmountChange(text: String) = changePurchase { it.copy(amounts = it.amounts.withAmount(text)) }
 
     fun onPurchaseFeeChange(text: String) = changePurchase { it.copy(feeText = text) }
 
-    /** The euro equivalent as typed; a blank field follows the rate of the day again. */
-    fun onPurchaseEurChange(text: String) = changePurchase { it.copy(eurText = text) }
+    /** The euro equivalent as typed; a blank field follows the amount again. */
+    fun onPurchaseEurChange(text: String) = changePurchase { it.copy(amounts = it.amounts.withEur(text)) }
 
     private fun changePurchase(transform: (PurchaseTyped) -> PurchaseTyped) {
-        purchase = transform(purchase)
+        // Any input but the amount fields lets one held blank follow the other again.
+        purchase = transform(purchase.copy(amounts = purchase.amounts.settled()))
         update { it.copy(saveError = null) }
     }
 
@@ -539,9 +547,9 @@ class AddHoldingViewModel(
                 date = purchase.date,
                 currency = currency,
                 unitsText = purchase.unitsText,
-                amountText = purchase.amountText,
+                amountText = purchase.amounts.amount.orEmpty(),
                 feeText = purchase.feeText,
-                eurText = purchase.eurText,
+                eurText = purchase.amounts.eur,
                 rateScaled = fx.rateOn(currency, purchase.date),
             ),
         )
@@ -549,17 +557,28 @@ class AddHoldingViewModel(
 
     private fun purchaseUi(resolved: MovementEntry?): PurchaseUi {
         val currency = pickedQuote?.price?.currency ?: Currency.EUR
-        val showEur = currency != Currency.EUR
-        val missingRate = showEur && fx.rateOn(currency, purchase.date) == null && purchase.eurText.isNullOrBlank()
+        val amountText = purchase.amounts.amount ?: resolved?.amountPrefillText.orEmpty()
+        val eurText = purchase.amounts.eur ?: resolved?.eurPrefillText.orEmpty()
+        val hints = missingRateHints(
+            currency = currency,
+            rateScaled = fx.rateOn(currency, purchase.date),
+            amountText = purchase.amounts.amount.orEmpty(),
+            eurText = purchase.amounts.eur,
+            costOptional = false,
+        )
         return PurchaseUi(
             date = purchase.date,
             unitsText = purchase.unitsText,
-            amountText = purchase.amountText,
+            amountText = amountText,
             feeText = purchase.feeText,
-            eurText = purchase.eurText ?: resolved?.eurPrefillText.orEmpty(),
-            showEur = showEur,
-            eurHint = MISSING_EUR_HINT.takeIf { missingRate },
+            eurText = eurText,
+            showEur = currency != Currency.EUR,
+            eurHint = hints.eurHint,
+            amountHint = hints.amountHint,
+            amountPlaceholder = resolved?.amountPrefillText.takeIf { amountText.isEmpty() },
+            eurPlaceholder = resolved?.eurPrefillText.takeIf { eurText.isEmpty() },
             impliedPriceText = resolved?.impliedPriceText,
+            impliedRateText = resolved?.impliedRateText,
         )
     }
 
@@ -584,8 +603,6 @@ class AddHoldingViewModel(
         }
     }
 }
-
-private const val MISSING_EUR_HINT = "No hay cambio de esa fecha: escribe el equivalente en euros."
 
 /** A provider can send a nameless result; the ISIN, ticker or code then stands in for the name. */
 internal fun InstrumentCandidate.holdingName(): String = name.trim().ifBlank { isin ?: ticker ?: ref.code }

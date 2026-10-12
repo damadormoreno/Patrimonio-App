@@ -61,6 +61,10 @@ show the user's own results (cost, realized/unrealized gains, XIRR) separately f
 - [x] **T4 — UI own returns**: *Mi posición* section and position chart, portfolio detail gains/XIRR, closed
   positions (route: delegated writer).
 - [x] **T5 — Docs** (route: inline): README *Cartera*, roadmap.
+- [x] **T6 — Two-way currency amounts** (user, 2026-10-12, after PR #37 opened): in a non-EUR holding the user may
+  type the amount in EUR and get the holding-currency amount from that day's rate (today only USD → EUR works);
+  typing both keeps both (the broker's real charge) and shows the implied rate. Movement form and add-product
+  *Una compra* (route: delegated writer; 2+ non-trivial files).
 
 ## Acceptance criteria
 
@@ -128,7 +132,15 @@ show the user's own results (cost, realized/unrealized gains, XIRR) separately f
   the position chart header showed the pre-sale value when the sale was newer than the last quote; `valueSeries`
   now ends on the last movement's date at the last price. RED: 1 failing test; GREEN: check.sh (1596 tests).
 - **T5** (commit below, `docs: document portfolio movements`): README *Cartera → Movimientos*, backup v13, roadmap.
+- **T6** (commit below, `feat(portfolio): enter movement amounts in euros or in the quote currency`): shared pure
+  `CurrencyAmountInput.kt` (`TypedAmounts`, `resolveCurrencyAmounts`; EUR → holding via exact `mulDivHalfEven`
+  inverse of `toEur`, half-even); each field typed or derived, both typed kept with the implied rate
+  ("1 USD = 0,8924 €"); a cleared field stays blank (re-deriving into the text breaks typing) and shows the
+  derived value as a muted placeholder; date change re-derives; editing loads both as typed; movement form and
+  *Una compra*. RED: 76 + 16 compile errors; GREEN (parent re-run): check.sh (1639 tests), iOS compile.
+  Emulator (Apple, *Una compra*, cancelled): 860 € → 963,72 $ at 0,8924; both typed 965 $ / 860 € → 0,8912;
+  cleared USD shows 963,72 placeholder; units edit re-derives.
 
 ## Next step
 
-Done; push + PR.
+Done; push to PR #37.

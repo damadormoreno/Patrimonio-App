@@ -43,6 +43,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** The "Una compra" way of adding a product: it is created with a purchase instead of with the units it has now. */
@@ -209,6 +210,126 @@ class AddHoldingPurchaseTest {
         assertFalse(vm.state.value.canSave)
         assertNotNull(vm.state.value.purchase.eurHint)
         vm.onPurchaseEurChange("90")
+        assertTrue(vm.state.value.canSave)
+    }
+
+    @Test
+    fun `a purchase in dollars can be typed in euros and the dollar amount follows the rate of the day`() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+            pick(vm, usdRef)
+            vm.onEntryKindChange(EntryKind.PURCHASE)
+            settle()
+            vm.onPurchaseUnitsChange("2")
+
+            vm.onPurchaseEurChange("50")
+
+            // 5.000 cents x 1.000.000 / 920.000 = 5.434,78 -> 54,35
+            assertEquals("54,35", vm.state.value.purchase.amountText)
+            assertEquals("50", vm.state.value.purchase.eurText)
+            assertEquals("≈ 27,175 $/part.", vm.state.value.purchase.impliedPriceText)
+            assertEquals("1 USD = 0,9200 €", vm.state.value.purchase.impliedRateText)
+            assertNull(vm.state.value.purchase.amountHint)
+            assertTrue(vm.state.value.canSave)
+            vm.onSave()
+            settle()
+
+            val buy = movements.current.single()
+            assertEquals(CurrencyAmount(Money(5_435), Currency.USD), buy.amount)
+            assertEquals(Money(5_000), buy.amountEur)
+        }
+
+    @Test
+    fun `a purchase with both amounts typed keeps both and clearing one makes it follow the other`() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+            pick(vm, usdRef)
+            vm.onEntryKindChange(EntryKind.PURCHASE)
+            settle()
+            vm.onPurchaseUnitsChange("2")
+
+            vm.onPurchaseAmountChange("100")
+            vm.onPurchaseEurChange("86,12")
+            vm.onPurchaseAmountChange("100,5")
+
+            assertEquals("100,5", vm.state.value.purchase.amountText)
+            assertEquals("86,12", vm.state.value.purchase.eurText)
+            assertEquals("1 USD = 0,8569 €", vm.state.value.purchase.impliedRateText)
+
+            vm.onPurchaseEurChange("")
+            vm.onPurchaseFeeChange("1")
+            assertEquals("92,46", vm.state.value.purchase.eurText) // 10.050 x 0,92
+            vm.onSave()
+            settle()
+            assertEquals(Money(9_246), movements.current.single().amountEur)
+        }
+
+    @Test
+    fun `a purchase field held blank shows the value it follows as a placeholder`() = runTest(dispatcher) {
+        val vm = viewModel()
+        pick(vm, usdRef)
+        vm.onEntryKindChange(EntryKind.PURCHASE)
+        settle()
+        vm.onPurchaseEurChange("50")
+        assertEquals("54,35", vm.state.value.purchase.amountText)
+        assertNull(vm.state.value.purchase.amountPlaceholder)
+
+        vm.onPurchaseAmountChange("100")
+        vm.onPurchaseAmountChange("")
+
+        assertEquals("", vm.state.value.purchase.amountText)
+        assertEquals("54,35", vm.state.value.purchase.amountPlaceholder)
+        assertNull(vm.state.value.purchase.eurPlaceholder)
+
+        vm.onPurchaseAmountChange("100")
+        vm.onPurchaseEurChange("")
+        assertEquals("", vm.state.value.purchase.eurText)
+        assertEquals("92,00", vm.state.value.purchase.eurPlaceholder)
+        vm.onPurchaseUnitsChange("2")
+        assertEquals("92,00", vm.state.value.purchase.eurText)
+        assertNull(vm.state.value.purchase.eurPlaceholder)
+    }
+
+    @Test
+    fun `a purchase date recomputes the amount that is derived`() = runTest(dispatcher) {
+        fxHistory.set(
+            FxHistory(
+                mapOf(
+                    Currency.USD to listOf(
+                        DatedFxRate(LocalDate(2026, 9, 1), 900_000),
+                        DatedFxRate(LocalDate(2026, 10, 9), 920_000),
+                    ),
+                ),
+            ),
+        )
+        val vm = viewModel()
+        pick(vm, usdRef)
+        vm.onEntryKindChange(EntryKind.PURCHASE)
+        settle()
+        vm.onPurchaseEurChange("90")
+        assertEquals("97,83", vm.state.value.purchase.amountText)
+
+        vm.onPurchaseDateChange(LocalDate(2026, 9, 1))
+
+        assertEquals("100,00", vm.state.value.purchase.amountText)
+        assertEquals("90", vm.state.value.purchase.eurText)
+    }
+
+    @Test
+    fun `a purchase typed only in euros without a rate asks for the amount in dollars`() = runTest(dispatcher) {
+        fxHistory.set(FxHistory(emptyMap()))
+        val vm = viewModel()
+        pick(vm, usdRef)
+        vm.onEntryKindChange(EntryKind.PURCHASE)
+        vm.onPurchaseUnitsChange("2")
+
+        vm.onPurchaseEurChange("90")
+
+        assertEquals("No hay cambio de esa fecha: escribe el importe en USD.", vm.state.value.purchase.amountHint)
+        assertNull(vm.state.value.purchase.eurHint)
+        assertFalse(vm.state.value.canSave)
+        vm.onPurchaseAmountChange("100")
+        assertNull(vm.state.value.purchase.amountHint)
         assertTrue(vm.state.value.canSave)
     }
 

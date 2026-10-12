@@ -149,15 +149,25 @@ internal fun LockedUnitsField(text: String, suffix: String, note: String?, modif
     }
 }
 
-/** Big right-aligned amount field in a fixed [currency] (the one a quote came in), unlike `FormAmountField`. */
+/**
+ * Big right-aligned amount field in a fixed [currency] (the one a quote came in), unlike `FormAmountField`. While
+ * [text] is empty, [placeholder] (when given) shows muted in its place, e.g. the value the field would follow.
+ */
 @Composable
 internal fun FixedCurrencyAmountField(
     text: String,
     currency: Currency,
     onTextChange: (String) -> Unit,
     modifier: Modifier = Modifier,
+    placeholder: String? = null,
 ) {
     val colors = LocalAppColors.current
+    val valueStyle = TextStyle(
+        color = colors.ink,
+        fontSize = 32.sp,
+        fontWeight = FontWeight.SemiBold,
+        textAlign = TextAlign.End,
+    )
     Row(
         modifier = modifier.fillMaxWidth().fieldBox(),
         verticalAlignment = Alignment.Bottom,
@@ -169,13 +179,16 @@ internal fun FixedCurrencyAmountField(
             onValueChange = { onTextChange(filterAmountInput(it)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            textStyle = TextStyle(
-                color = colors.ink,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.End,
-            ),
+            textStyle = valueStyle,
             cursorBrush = SolidColor(colors.ink),
+            decorationBox = { field ->
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                    if (text.isEmpty() && placeholder != null) {
+                        Text(text = placeholder, style = valueStyle.copy(color = colors.muted2))
+                    }
+                    field()
+                }
+            },
             modifier = Modifier.weight(1f),
         )
         Text(text = currency.code, color = colors.muted2, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)

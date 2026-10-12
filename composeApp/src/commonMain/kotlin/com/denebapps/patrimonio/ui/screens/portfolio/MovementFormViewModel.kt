@@ -49,14 +49,16 @@ enum class MovementChoice(val label: String) {
 
 private const val LAST_MOVEMENT_WARNING = "La posición quedará con 0 participaciones y volverá a editarse a mano."
 private const val DELETE_WARNING = "Se recalcularán las participaciones con los demás movimientos."
-private const val MISSING_EUR_HINT = "No hay cambio de esa fecha: escribe el equivalente en euros."
 
 /**
  * The movement sheet, every text ready to show. [choices] is empty for an opening balance; [choice] is the selected
  * one. [showUnits], [showFee] and [showEur] say which fields the type needs; [amountLabel] names the amount field.
- * [eurText] is what the euro field holds (typed, or the amount at the rate of the day), [eurHint] why it needs to be
- * typed, and [impliedPriceText] the price per unit the amount and units come to. [error] is why the last save or
- * delete was refused, [canDelete] is set when editing and [deleteMessage] is what the confirmation says.
+ * [amountText] and [eurText] are what the two amount fields hold: what the user typed in each, or what follows from the
+ * other at the rate of the day. [eurHint] and [amountHint] say which of them needs to be typed because that day has no
+ * rate, [impliedPriceText] is the price per unit the amount and units come to and [impliedRateText] the rate the two
+ * amounts come to. [amountPlaceholder] and [eurPlaceholder] are the value a field follows, to show muted inside it while
+ * it is empty (a field held blank while the user edits it). [error] is why the last save or delete was refused, [canDelete] is set when editing and
+ * [deleteMessage] is what the confirmation says.
  */
 data class MovementFormUiState(
     val loaded: Boolean = false,
@@ -77,7 +79,11 @@ data class MovementFormUiState(
     val showFee: Boolean = true,
     val showEur: Boolean = false,
     val eurHint: String? = null,
+    val amountHint: String? = null,
+    val amountPlaceholder: String? = null,
+    val eurPlaceholder: String? = null,
     val impliedPriceText: String? = null,
+    val impliedRateText: String? = null,
     val error: String? = null,
     val canSave: Boolean = false,
     val canDelete: Boolean = false,
@@ -94,22 +100,21 @@ private class FormContext(
     val movementCount: Int,
 )
 
-/** What the user typed or picked; [eurText] is `null` while it follows the rate of the day. */
+/** What the user typed or picked; an amount field that is not in [amounts] follows the other one at the day rate. */
 private data class Typed(
     val choice: MovementChoice = MovementChoice.BUY,
     val date: LocalDate = LocalDate(1970, 1, 1),
     val unitsText: String = "",
-    val amountText: String = "",
+    val amounts: TypedAmounts = TypedAmounts(),
     val feeText: String = "",
-    val eurText: String? = null,
     val noteText: String = "",
 )
 
 /**
  * The sheet that adds, edits and deletes a movement of the quoted holding [holdingId]: buys, sells, dividends and fees,
  * or (with [openingBalance], or when [movementId] is one) the opening balance of a position that already had units.
- * A holding in another currency asks for the euro equivalent of the amount, prefilled from the rate of that day,
- * which is downloaded when the date asks for it. What the repository refuses (selling more than is held, a movement
+ * A holding in another currency has two amounts, in its currency and in euros: the user types either one and the other
+ * follows from the rate of that day (downloaded when the date asks for it), or types both and both are kept. What the repository refuses (selling more than is held, a movement
  * before the position started) is shown in [MovementFormUiState.error] and the sheet stays open; a save or a delete
  * closes it through [navigateBack]. Choosing a transfer asks to open the transfer form through [openTransfer].
  */
@@ -152,22 +157,23 @@ class MovementFormViewModel(
             openTransferChannel.trySend(Unit)
             return
         }
-        change { it.copy(choice = choice, eurText = null) }
+        change { it.copy(choice = choice) }
     }
 
     fun onDateChange(date: LocalDate) {
-        change { it.copy(date = date, eurText = null) }
+        change { it.copy(date = date) }
         context?.let { fx.ensure(it.currency, date) }
     }
 
     fun onUnitsChange(text: String) = change { it.copy(unitsText = text) }
 
-    fun onAmountChange(text: String) = change { it.copy(amountText = text, eurText = null) }
+    /** The amount as typed; a blank field follows the euro equivalent again. */
+    fun onAmountChange(text: String) = change { it.copy(amounts = it.amounts.withAmount(text)) }
 
     fun onFeeChange(text: String) = change { it.copy(feeText = text) }
 
-    /** The euro equivalent as typed; a blank field follows the rate of the day again. */
-    fun onEurChange(text: String) = change { it.copy(eurText = text) }
+    /** The euro equivalent as typed; a blank field follows the amount again. */
+    fun onEurChange(text: String) = change { it.copy(amounts = it.amounts.withEur(text)) }
 
     /** The note holds at most [MAX_MOVEMENT_NOTE_LENGTH] characters. */
     fun onNoteChange(text: String) = change { it.copy(noteText = text.take(MAX_MOVEMENT_NOTE_LENGTH)) }
@@ -227,7 +233,8 @@ class MovementFormViewModel(
     }
 
     private fun change(transform: (Typed) -> Typed) {
-        typed = transform(typed)
+        // Any input but the amount fields lets one held blank follow the other again.
+        typed = transform(typed.copy(amounts = typed.amounts.settled()))
         errorText = null
         render()
     }
@@ -267,10 +274,12 @@ class MovementFormViewModel(
         },
         date = movement.date,
         unitsText = movement.units?.let(::unitsInputText).orEmpty(),
-        amountText = movement.amount?.let { amountInputText(it.amount, currency) }.orEmpty(),
+        // Both amounts that were recorded are kept as typed: nothing is recomputed unless the user blanks one.
+        amounts = TypedAmounts(
+            amount = movement.amount?.let { amountInputText(it.amount, currency) },
+            eur = movement.amountEur?.takeIf { currency != Currency.EUR }?.let { amountInputText(it, Currency.EUR) },
+        ),
         feeText = movement.fee.takeIf { it.minorUnits > 0 }?.let { amountInputText(it, currency) }.orEmpty(),
-        // The equivalent that was recorded stands until the amount or the date changes.
-        eurText = movement.amountEur?.takeIf { currency != Currency.EUR }?.let { amountInputText(it, Currency.EUR) },
         noteText = movement.note.orEmpty(),
     )
 
@@ -281,31 +290,37 @@ class MovementFormViewModel(
     private fun typeOf(form: FormContext): MovementType =
         if (form.isOpening) MovementType.OPENING_BALANCE else typed.choice.movementType ?: MovementType.BUY
 
-    private fun entry(form: FormContext): MovementEntry {
-        val rate = form.currency.takeIf { it != Currency.EUR }?.let { fx.rateOn(it, typed.date) }
-        return resolveMovementEntry(
-            MovementEntryInput(
-                type = typeOf(form),
-                date = typed.date,
-                currency = form.currency,
-                unitsText = typed.unitsText,
-                amountText = typed.amountText,
-                feeText = typed.feeText,
-                eurText = typed.eurText,
-                noteText = typed.noteText,
-                rateScaled = rate,
-            ),
-        )
-    }
+    /** The rate of the day of a holding in another currency, `null` when it has none stored. */
+    private fun rateOf(form: FormContext): Long? =
+        form.currency.takeIf { it != Currency.EUR }?.let { fx.rateOn(it, typed.date) }
+
+    private fun entry(form: FormContext): MovementEntry = resolveMovementEntry(
+        MovementEntryInput(
+            type = typeOf(form),
+            date = typed.date,
+            currency = form.currency,
+            unitsText = typed.unitsText,
+            amountText = typed.amounts.amount.orEmpty(),
+            feeText = typed.feeText,
+            eurText = typed.amounts.eur,
+            noteText = typed.noteText,
+            rateScaled = rateOf(form),
+        ),
+    )
 
     private fun render() {
         val form = context ?: return
         val type = typeOf(form)
         val resolved = entry(form)
-        val inEuros = form.currency == Currency.EUR
-        val hasCost = type != MovementType.OPENING_BALANCE || typed.amountText.isNotBlank()
-        val showEur = !inEuros && hasCost
-        val missingRate = !inEuros && fx.rateOn(form.currency, typed.date) == null && typed.eurText.isNullOrBlank()
+        val amountText = typed.amounts.amount ?: resolved.amountPrefillText.orEmpty()
+        val eurText = typed.amounts.eur ?: resolved.eurPrefillText.orEmpty()
+        val hints = missingRateHints(
+            currency = form.currency,
+            rateScaled = rateOf(form),
+            amountText = typed.amounts.amount.orEmpty(),
+            eurText = typed.amounts.eur,
+            costOptional = type == MovementType.OPENING_BALANCE,
+        )
         mutableState.value = MovementFormUiState(
             loaded = true,
             title = titleOf(form),
@@ -316,16 +331,20 @@ class MovementFormViewModel(
             choice = typed.choice,
             date = typed.date,
             unitsText = typed.unitsText,
-            amountText = typed.amountText,
+            amountText = amountText,
             amountLabel = if (form.isOpening) "Coste total (opcional)" else "Importe",
             feeText = typed.feeText,
-            eurText = typed.eurText ?: resolved.eurPrefillText.orEmpty(),
+            eurText = eurText,
             noteText = typed.noteText,
             showUnits = type == MovementType.BUY || type == MovementType.SELL || type == MovementType.OPENING_BALANCE,
             showFee = type == MovementType.BUY || type == MovementType.SELL,
-            showEur = showEur,
-            eurHint = MISSING_EUR_HINT.takeIf { showEur && missingRate },
+            showEur = form.currency != Currency.EUR,
+            eurHint = hints.eurHint,
+            amountHint = hints.amountHint,
+            amountPlaceholder = resolved.amountPrefillText.takeIf { amountText.isEmpty() },
+            eurPlaceholder = resolved.eurPrefillText.takeIf { eurText.isEmpty() },
             impliedPriceText = resolved.impliedPriceText,
+            impliedRateText = resolved.impliedRateText,
             error = errorText,
             canSave = resolved.draft != null && !busy,
             canDelete = form.editing != null,

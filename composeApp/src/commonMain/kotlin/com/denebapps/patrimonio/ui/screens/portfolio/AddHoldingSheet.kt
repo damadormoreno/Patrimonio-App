@@ -278,7 +278,10 @@ private fun CurrentEntry(state: AddHoldingUiState, quote: QuoteUi, callbacks: Ad
     PreviewLine(state.preview)
 }
 
-/** One purchase: its date, units, the amount paid (with the price it implies), the fee and the euro equivalent. */
+/**
+ * One purchase: its date, units, the amount paid (with the price it implies), the fee and the euro equivalent (with the
+ * rate the two amounts imply).
+ */
 @Composable
 private fun PurchaseEntry(state: AddHoldingUiState, quote: QuoteUi, callbacks: AddHoldingCallbacks) {
     val purchase = state.purchase
@@ -293,8 +296,10 @@ private fun PurchaseEntry(state: AddHoldingUiState, quote: QuoteUi, callbacks: A
         text = purchase.amountText,
         currency = quote.currency,
         onTextChange = callbacks.onPurchaseAmountChange,
+        placeholder = purchase.amountPlaceholder,
     )
     PreviewLine(purchase.impliedPriceText)
+    PreviewLine(purchase.amountHint)
     Spacer(Modifier.height(20.dp))
     FormSectionLabel("Comisión (opcional)")
     FixedCurrencyAmountField(
@@ -309,8 +314,10 @@ private fun PurchaseEntry(state: AddHoldingUiState, quote: QuoteUi, callbacks: A
             text = purchase.eurText,
             currency = Currency.EUR,
             onTextChange = callbacks.onPurchaseEurChange,
+            placeholder = purchase.eurPlaceholder,
         )
-        purchase.eurHint?.let { PreviewLine(it) }
+        PreviewLine(purchase.impliedRateText)
+        PreviewLine(purchase.eurHint)
     }
 }
 

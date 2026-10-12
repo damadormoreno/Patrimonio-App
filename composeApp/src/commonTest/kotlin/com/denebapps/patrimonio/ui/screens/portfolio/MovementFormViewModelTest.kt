@@ -355,7 +355,264 @@ class MovementFormViewModelTest {
         assertNotNull(vm.state.value.eurHint)
     }
 
+    // ---- two-way amounts -----------------------------------------------------------------------------------------
+
+    private fun usd(cents: Long) = CurrencyAmount(Money(cents), Currency.USD)
+
+    private val usdRatesTwoDays = FxHistory(
+        mapOf(
+            Currency.USD to listOf(
+                DatedFxRate(LocalDate(2026, 9, 1), 900_000),
+                DatedFxRate(LocalDate(2026, 10, 9), 920_000),
+            ),
+        ),
+    )
+
+    @Test
+    fun `typing the euros of a dollar holding fills in the amount from the rate of the day`() = runTest(dispatcher) {
+        val s = setup("u", listOf(quoted("u", currency = Currency.USD)), fxHistory = usdRates)
+        s.vm.onUnitsChange("1")
+
+        s.vm.onEurChange("50")
+
+        // 5.000 cents x 1.000.000 / 920.000 = 5.434,78 -> 54,35
+        assertEquals("54,35", s.state.amountText)
+        assertEquals("50", s.state.eurText)
+        assertEquals("≈ 54,35 $/part.", s.state.impliedPriceText)
+        assertEquals("1 USD = 0,9200 €", s.state.impliedRateText)
+        assertNull(s.state.amountHint)
+        assertTrue(s.state.canSave)
+        s.vm.onSave()
+        settle()
+        val stored = s.movements.current.single()
+        assertEquals(usd(5_435), stored.amount)
+        assertEquals(Money(5_000), stored.amountEur)
+    }
+
+    @Test
+    fun `the field that is not typed follows the one that is as it changes`() = runTest(dispatcher) {
+        val s = setup("u", listOf(quoted("u", currency = Currency.USD)), fxHistory = usdRates)
+
+        s.vm.onAmountChange("100")
+        assertEquals("92,00", s.state.eurText)
+        s.vm.onAmountChange("200")
+        assertEquals("184,00", s.state.eurText)
+
+        s.vm.onAmountChange("")
+        s.vm.onEurChange("50")
+        assertEquals("54,35", s.state.amountText)
+        s.vm.onEurChange("60")
+        assertEquals("65,22", s.state.amountText)
+    }
+
+    @Test
+    fun `when both amounts are typed both are kept and the implied rate is shown`() = runTest(dispatcher) {
+        val s = setup("u", listOf(quoted("u", currency = Currency.USD)), fxHistory = usdRates)
+        s.vm.onUnitsChange("1")
+
+        s.vm.onAmountChange("100")
+        s.vm.onEurChange("86,12")
+        assertEquals("100", s.state.amountText)
+        assertEquals("86,12", s.state.eurText)
+        assertEquals("1 USD = 0,8612 €", s.state.impliedRateText)
+
+        // Typing the amount again no longer resets the euros: that is what the broker charged.
+        s.vm.onAmountChange("200")
+        assertEquals("86,12", s.state.eurText)
+        assertEquals("1 USD = 0,4306 €", s.state.impliedRateText)
+        s.vm.onSave()
+        settle()
+        val stored = s.movements.current.single()
+        assertEquals(usd(20_000), stored.amount)
+        assertEquals(Money(8_612), stored.amountEur)
+    }
+
+    @Test
+    fun `clearing a typed field makes it follow the other one again`() = runTest(dispatcher) {
+        val s = setup("u", listOf(quoted("u", currency = Currency.USD)), fxHistory = usdRates)
+        s.vm.onUnitsChange("1")
+        s.vm.onAmountChange("100")
+        s.vm.onEurChange("95")
+
+        // The field stays empty while it is being edited, so the user can type a new value, but it already follows.
+        s.vm.onEurChange("")
+        assertEquals("", s.state.eurText)
+        assertTrue(s.state.canSave)
+        // As soon as anything else changes it shows the value it follows.
+        s.vm.onUnitsChange("2")
+        assertEquals("92,00", s.state.eurText)
+        s.vm.onSave()
+        settle()
+        assertEquals(Money(9_200), s.movements.current.single().amountEur)
+    }
+
+    @Test
+    fun `a field held blank shows the value it follows as a placeholder, and a shown value needs none`() =
+        runTest(dispatcher) {
+            val s = setup("u", listOf(quoted("u", currency = Currency.USD)), fxHistory = usdRates)
+            s.vm.onEurChange("50")
+            assertEquals("54,35", s.state.amountText)
+            assertNull(s.state.amountPlaceholder)
+            assertNull(s.state.eurPlaceholder)
+
+            s.vm.onAmountChange("100")
+            s.vm.onAmountChange("")
+
+            assertEquals("", s.state.amountText)
+            assertEquals("54,35", s.state.amountPlaceholder)
+            assertNull(s.state.eurPlaceholder)
+            s.vm.onUnitsChange("1")
+            assertEquals("54,35", s.state.amountText)
+            assertNull(s.state.amountPlaceholder)
+        }
+
+    @Test
+    fun `the euro field held blank shows the euros of the typed amount as a placeholder`() = runTest(dispatcher) {
+        val s = setup("u", listOf(quoted("u", currency = Currency.USD)), fxHistory = usdRates)
+        s.vm.onAmountChange("100")
+        s.vm.onEurChange("95")
+
+        s.vm.onEurChange("")
+
+        assertEquals("", s.state.eurText)
+        assertEquals("92,00", s.state.eurPlaceholder)
+        assertNull(s.state.amountPlaceholder)
+    }
+
+    @Test
+    fun `a blank field with nothing to follow has no placeholder`() = runTest(dispatcher) {
+        val s = setup("u", listOf(quoted("u", currency = Currency.USD)), fxHistory = usdRates)
+
+        assertNull(s.state.amountPlaceholder)
+        assertNull(s.state.eurPlaceholder)
+        s.vm.onAmountChange("100")
+        s.vm.onAmountChange("")
+        assertNull(s.state.amountPlaceholder)
+        assertNull(s.state.eurPlaceholder)
+    }
+
+    @Test
+    fun `clearing the typed amount derives it from the typed euros`() = runTest(dispatcher) {
+        val s = setup("u", listOf(quoted("u", currency = Currency.USD)), fxHistory = usdRates)
+        s.vm.onUnitsChange("1")
+        s.vm.onAmountChange("100")
+        s.vm.onEurChange("50")
+
+        s.vm.onAmountChange("")
+        assertTrue(s.state.canSave)
+        s.vm.onFeeChange("1")
+
+        assertEquals("54,35", s.state.amountText)
+        assertEquals("50", s.state.eurText)
+    }
+
+    @Test
+    fun `a new date recomputes the field that is derived and leaves the typed one alone`() = runTest(dispatcher) {
+        val s = setup("u", listOf(quoted("u", currency = Currency.USD)), fxHistory = usdRatesTwoDays)
+        s.vm.onEurChange("90")
+        assertEquals("97,83", s.state.amountText) // 9.000 x 1.000.000 / 920.000 = 9.782,6
+
+        s.vm.onDateChange(LocalDate(2026, 9, 1))
+
+        assertEquals("90", s.state.eurText)
+        assertEquals("100,00", s.state.amountText) // at 0,90 EUR per USD
+
+        s.vm.onEurChange("")
+        s.vm.onAmountChange("100")
+        s.vm.onDateChange(LocalDate(2026, 10, 9))
+        assertEquals("100", s.state.amountText)
+        assertEquals("92,00", s.state.eurText)
+        s.vm.onDateChange(LocalDate(2026, 9, 1))
+        assertEquals("90,00", s.state.eurText)
+    }
+
+    @Test
+    fun `without a rate typing only the euros asks for the amount in the holding currency`() = runTest(dispatcher) {
+        val s = setup("u", listOf(quoted("u", currency = Currency.USD)))
+        s.vm.onUnitsChange("1")
+
+        s.vm.onEurChange("90")
+
+        assertEquals("No hay cambio de esa fecha: escribe el importe en USD.", s.state.amountHint)
+        assertNull(s.state.eurHint)
+        assertEquals("", s.state.amountText)
+        assertFalse(s.state.canSave)
+        s.vm.onAmountChange("100")
+        assertNull(s.state.amountHint)
+        assertEquals("1 USD = 0,9000 €", s.state.impliedRateText)
+        assertTrue(s.state.canSave)
+    }
+
+    @Test
+    fun `a holding in euros has no second amount, hint or rate`() = runTest(dispatcher) {
+        val s = setup("f", listOf(quoted("f")))
+        s.vm.onUnitsChange("1")
+        s.vm.onAmountChange("100")
+
+        assertFalse(s.state.showEur)
+        assertNull(s.state.amountHint)
+        assertNull(s.state.impliedRateText)
+        assertEquals("100", s.state.amountText)
+    }
+
+    @Test
+    fun `an opening balance in dollars may take its cost in euros and stays unknown with neither`() =
+        runTest(dispatcher) {
+            val holding = quoted("u", currency = Currency.USD, units = UnitsBalance(2 * UNITS_SCALE))
+            val known = setup("u", listOf(holding), openingBalance = true, fxHistory = usdRates)
+            val unknown = setup("u", listOf(holding), openingBalance = true, fxHistory = usdRates)
+
+            assertTrue(known.state.showEur)
+            assertNull(known.state.eurHint)
+            known.vm.onEurChange("50")
+            assertEquals("54,35", known.state.amountText)
+            known.vm.onSave()
+            settle()
+            assertEquals(usd(5_435), known.movements.current.single().amount)
+            assertEquals(Money(5_000), known.movements.current.single().amountEur)
+
+            unknown.vm.onSave()
+            settle()
+            assertNull(unknown.movements.current.single().amount)
+            assertNull(unknown.movements.current.single().amountEur)
+        }
+
     // ---- editing and deleting ------------------------------------------------------------------------------------
+
+    @Test
+    fun `editing a movement in dollars loads both stored amounts as typed`() = runTest(dispatcher) {
+        val stored = existingBuy(holding = "u").copy(
+            amount = usd(10_000),
+            amountEur = Money(9_500),
+            fee = Money(500),
+            feeEur = Money(475),
+        )
+        // Rates of other days: none for 15 January, so a recomputation would leave the form without euros.
+        val s = setup(
+            "u",
+            listOf(quoted("u", currency = Currency.USD)),
+            listOf(stored),
+            movementId = "m1",
+            fxHistory = usdRates,
+        )
+
+        assertEquals("100,00", s.state.amountText)
+        assertEquals("95,00", s.state.eurText)
+        assertEquals("1 USD = 0,9500 €", s.state.impliedRateText)
+        assertNull(s.state.eurHint)
+        assertNull(s.state.amountHint)
+        assertTrue(s.state.canSave)
+
+        s.vm.onDateChange(LocalDate(2026, 10, 9))
+        assertEquals("100,00", s.state.amountText)
+        assertEquals("95,00", s.state.eurText)
+        s.vm.onSave()
+        settle()
+        val saved = s.movements.current.single()
+        assertEquals(usd(10_000), saved.amount)
+        assertEquals(Money(9_500), saved.amountEur)
+        assertEquals(Money(475), saved.feeEur)
+    }
 
     @Test
     fun `an existing movement is loaded into the form and saved over itself`() = runTest(dispatcher) {

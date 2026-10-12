@@ -176,7 +176,10 @@ internal fun MovementFormContent(
     }
 }
 
-/** The fields the type needs: units, amount (with the price it implies), fee, euro equivalent, date and note. */
+/**
+ * The fields the type needs: units, amount (with the price it implies), fee, euro equivalent (with the rate the two
+ * amounts imply), date and note.
+ */
 @Composable
 private fun MovementFields(state: MovementFormUiState, callbacks: MovementFormCallbacks) {
     val colors = LocalAppColors.current
@@ -206,8 +209,10 @@ private fun MovementFields(state: MovementFormUiState, callbacks: MovementFormCa
         text = state.amountText,
         currency = state.currency,
         onTextChange = callbacks.onAmountChange,
+        placeholder = state.amountPlaceholder,
     )
     PreviewLine(state.impliedPriceText)
+    PreviewLine(state.amountHint)
     if (state.showFee) {
         Spacer(Modifier.height(20.dp))
         FormSectionLabel("Comisión (opcional)")
@@ -220,8 +225,14 @@ private fun MovementFields(state: MovementFormUiState, callbacks: MovementFormCa
     if (state.showEur) {
         Spacer(Modifier.height(20.dp))
         FormSectionLabel("Equivalente en EUR")
-        FixedCurrencyAmountField(text = state.eurText, currency = Currency.EUR, onTextChange = callbacks.onEurChange)
-        state.eurHint?.let { PreviewLine(it) }
+        FixedCurrencyAmountField(
+            text = state.eurText,
+            currency = Currency.EUR,
+            onTextChange = callbacks.onEurChange,
+            placeholder = state.eurPlaceholder,
+        )
+        PreviewLine(state.impliedRateText)
+        PreviewLine(state.eurHint)
     }
     Spacer(Modifier.height(20.dp))
     FormSectionLabel("Nota (opcional)")
