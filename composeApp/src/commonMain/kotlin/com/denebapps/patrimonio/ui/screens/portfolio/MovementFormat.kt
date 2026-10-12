@@ -63,6 +63,24 @@ internal fun movementRows(
     )
 }
 
+/**
+ * The same rows as [movementRows] grouped by the calendar year of the movement: the latest year first, and in each the
+ * latest movement first. A year without movements is not listed.
+ */
+internal fun movementYears(
+    movements: List<Movement>,
+    currency: Currency,
+    counterpartName: (Movement) -> String?,
+): List<MovementYearUi> {
+    val newestFirst = movements.asReversed()
+    val rows = movementRows(movements, currency, counterpartName)
+    val years = LinkedHashMap<Int, MutableList<MovementRowUi>>()
+    newestFirst.forEachIndexed { index, movement ->
+        years.getOrPut(movement.date.year) { mutableListOf() } += rows[index]
+    }
+    return years.map { (year, yearRows) -> MovementYearUi(year, yearRows) }
+}
+
 private fun movementTitle(movement: Movement, counterpart: String?): String = when {
     counterpart == null -> movementTypeLabel(movement.type)
     movement.type == MovementType.TRANSFER_OUT -> "Traspaso a «$counterpart»"

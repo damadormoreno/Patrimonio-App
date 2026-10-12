@@ -17,6 +17,8 @@ import com.denebapps.patrimonio.ui.screens.portfolio.InstrumentPreviewViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.MovementFormViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.PortfolioDetailViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.PositionDetailViewModel
+import com.denebapps.patrimonio.ui.screens.portfolio.PositionLotsViewModel
+import com.denebapps.patrimonio.ui.screens.portfolio.PositionMovementsViewModel
 import com.denebapps.patrimonio.ui.screens.portfolio.TransferFormViewModel
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
 import com.denebapps.patrimonio.ui.screens.settings.AccountTypesViewModel
@@ -38,7 +40,8 @@ import org.koin.dsl.module
  * three destinations (the Metas de ahorro section, `NewGoal`, `GoalAllocate`): the first two resolve
  * it with empty params, while `GoalAllocateSheet` passes `parametersOf(goalId, withdraw)`. [HoldingDetailViewModel]
  * takes the `HoldingDetail.holdingId` nav arg as `parametersOf(holdingId)`, and so does [PositionDetailViewModel] with
- * `PositionDetail.holdingId`; [InstrumentPreviewViewModel] takes the `InstrumentCandidate` it previews.
+ * `PositionDetail.holdingId`, as do [PositionMovementsViewModel] and [PositionLotsViewModel]; [InstrumentPreviewViewModel]
+ * takes the `InstrumentCandidate` it previews.
  * [MovementFormViewModel] takes `parametersOf(holdingId, movementId, openingBalance)` and [TransferFormViewModel]
  * `parametersOf(holdingId, transferId)`, both ids after the first being null for a new movement or transfer.
  */
@@ -187,6 +190,20 @@ val presentationModule = module {
             historyRepository = get(),
             clock = get(),
             zoneProvider = get<() -> TimeZone>(),
+        )
+    }
+    viewModel { params ->
+        PositionMovementsViewModel(
+            holdingId = params.get(),
+            portfolioRepository = get(),
+            movementRepository = get(),
+        )
+    }
+    viewModel { params ->
+        PositionLotsViewModel(
+            holdingId = params.get(),
+            portfolioRepository = get(),
+            movementRepository = get(),
         )
     }
 }

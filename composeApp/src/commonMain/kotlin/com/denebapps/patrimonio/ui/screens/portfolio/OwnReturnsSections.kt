@@ -27,7 +27,7 @@ private fun SectionSubtitle(text: String, modifier: Modifier = Modifier) {
 
 /** A small muted note under a card. */
 @Composable
-private fun CardNote(text: String, modifier: Modifier = Modifier) {
+internal fun CardNote(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
         color = LocalAppColors.current.muted2,
@@ -37,9 +37,12 @@ private fun CardNote(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-/** "Mi posición": the figures, what is missing to complete them, the open lots and the chart of my units' value. */
+/**
+ * "Mi posición": the figures, what is missing to complete them, the open lots (or, with many, the row that opens
+ * them all on [onOpenLots]) and the chart of my units' value.
+ */
 @Composable
-internal fun MyPositionSection(position: MyPositionUi, onRangeSelect: (HistoryRange) -> Unit) {
+internal fun MyPositionSection(position: MyPositionUi, onRangeSelect: (HistoryRange) -> Unit, onOpenLots: () -> Unit) {
     SectionLabel(MY_POSITION_TITLE)
     SectionSubtitle(MY_POSITION_SUBTITLE)
     OwnFiguresCard(position.figures)
@@ -48,6 +51,11 @@ internal fun MyPositionSection(position: MyPositionUi, onRangeSelect: (HistoryRa
         SectionLabel(LOTS_TITLE)
         LotsCard(position.lots)
         position.lotsNote?.let { CardNote(it) }
+    }
+    position.lotsSummary?.let {
+        DetailCard(Modifier.padding(top = 16.dp)) {
+            DrillDownRow(title = it.titleText, subtitle = it.oldestText, onClick = onOpenLots)
+        }
     }
     position.chart?.let {
         SectionLabel(MY_POSITION_CHART_TITLE)
@@ -93,7 +101,7 @@ private fun OwnFiguresCard(figures: List<OwnFigureUi>) {
 
 /** The open lots, oldest first: the day each was bought, its units and its cost. */
 @Composable
-private fun LotsCard(lots: List<LotUi>) {
+internal fun LotsCard(lots: List<LotUi>) {
     val colors = LocalAppColors.current
     DetailCard {
         lots.forEachIndexed { index, lot ->

@@ -6,6 +6,7 @@ import com.denebapps.patrimonio.domain.calc.positionReturns
 import com.denebapps.patrimonio.domain.calc.scopeReturns
 import com.denebapps.patrimonio.domain.model.FUND_A
 import com.denebapps.patrimonio.domain.model.FUND_B
+import com.denebapps.patrimonio.domain.model.FUND_C
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.Movement
 import com.denebapps.patrimonio.domain.model.buy
@@ -219,6 +220,42 @@ class OwnReturnsUiTest {
 
         assertEquals(listOf(LotUi("15/01/2025", "8,00 part.", "1.000,00 €")), card.lots)
         assertEquals("Los lotes recibidos por traspaso conservan su fecha de compra original.", card.lotsNote)
+    }
+
+    private fun purchases(count: Int): List<Movement> =
+        (1..count).map { buy("b$it", date(2025, it, 10), units(1), 10_000L * it, sequence = it.toLong()) }
+
+    @Test
+    fun `up to three lots stay inline without a summary`() {
+        val card = card(FUND_A, purchases(3), 200_000)
+
+        assertEquals(3, card.lots.size)
+        assertNull(card.lotsSummary)
+    }
+
+    @Test
+    fun `more than three lots are summarised with their count and the date of the oldest`() {
+        val card = card(FUND_A, purchases(4), 200_000)
+
+        assertTrue(card.lots.isEmpty())
+        assertEquals(
+            LotsSummaryUi(count = 4, titleText = "Lotes abiertos (4)", oldestText = "El más antiguo: 10/01/2025"),
+            card.lotsSummary,
+        )
+    }
+
+    @Test
+    fun `the oldest lot of a summary is the one with the earliest purchase date, also when it came in a transfer`() {
+        val movements = purchases(4) + listOf(
+            buy("old", date(2024, 2, 1), units(5), 40_000, holding = FUND_C, sequence = 20),
+            transferOut("o", date(2025, 6, 1), units(5), "t", holding = FUND_C, sequence = 21),
+            transferIn("i", date(2025, 6, 1), units(5), "t", holding = FUND_A, sequence = 22),
+        )
+
+        val card = card(FUND_A, movements, 200_000)
+
+        assertEquals("El más antiguo: 01/02/2024", card.lotsSummary?.oldestText)
+        assertEquals("Lotes abiertos (5)", card.lotsSummary?.titleText)
     }
 
     // ---- a scope -----------------------------------------------------------------------------------------------

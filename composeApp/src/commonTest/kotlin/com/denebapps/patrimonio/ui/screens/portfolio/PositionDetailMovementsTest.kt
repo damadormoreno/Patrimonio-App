@@ -206,6 +206,53 @@ class PositionDetailMovementsTest {
         jobs.forEach { it.cancel() }
     }
 
+    // ---- the summary -----------------------------------------------------------------------------------------------
+
+    private fun purchases(count: Int) = (1..count).map { buy("b$it", "a", it, it.toLong()) }
+
+    @Test
+    fun `the detail shows the three most recent movements and offers to see all of them`() = runTest(dispatcher) {
+        val s = setup("a", listOf(quoted("a")), purchases(5))
+        val job = open(s)
+
+        val section = s.state.movements
+        assertEquals(listOf("b5", "b4", "b3"), section.rows.map { it.id })
+        assertEquals(5, section.totalCount)
+        assertEquals("Ver todos los movimientos (5)", section.seeAllText)
+        job.cancel()
+    }
+
+    @Test
+    fun `with three movements or fewer there is no see all row`() = runTest(dispatcher) {
+        val three = setup("a", listOf(quoted("a")), purchases(3))
+        val one = setup("a", listOf(quoted("a")), purchases(1))
+        val none = setup("a", listOf(quoted("a")))
+        val jobs = listOf(open(three), open(one), open(none))
+
+        assertEquals(listOf("b3", "b2", "b1"), three.state.movements.rows.map { it.id })
+        assertEquals(3, three.state.movements.totalCount)
+        assertNull(three.state.movements.seeAllText)
+        assertNull(one.state.movements.seeAllText)
+        assertEquals(0, none.state.movements.totalCount)
+        assertNull(none.state.movements.seeAllText)
+        jobs.forEach { it.cancel() }
+    }
+
+    @Test
+    fun `the summary does not change what the position can do`() = runTest(dispatcher) {
+        val s = setup("a", listOf(quoted("a")), purchases(5))
+        val job = open(s)
+        val nav = events(s)
+
+        assertTrue(s.state.movements.canTransfer)
+        s.vm.onOpenMovement("b1")
+        settle()
+
+        // A movement that is not in the summary can still be opened.
+        assertEquals(listOf<PositionNavigation>(PositionNavigation.MovementForm("b1", openingBalance = false)), nav)
+        job.cancel()
+    }
+
     // ---- adding --------------------------------------------------------------------------------------------------
 
     @Test

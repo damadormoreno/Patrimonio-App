@@ -3,7 +3,6 @@ package com.denebapps.patrimonio.ui.screens.portfolio
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.denebapps.patrimonio.domain.calc.HistoryRange
-import com.denebapps.patrimonio.domain.calc.formatUnits
 import com.denebapps.patrimonio.domain.calc.holdingWeights
 import com.denebapps.patrimonio.domain.calc.mulDivHalfEven
 import com.denebapps.patrimonio.domain.calc.toEur
@@ -14,7 +13,6 @@ import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.HoldingValuation
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.Movement
-import com.denebapps.patrimonio.domain.model.MovementType
 import com.denebapps.patrimonio.domain.model.PERCENT_SCALE
 import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
@@ -63,7 +61,9 @@ internal const val PERCENT_TO_FRACTION = 100L * PERCENT_SCALE
 private const val QUOTED_NOTE = "Rentabilidades del producto, no de tus compras."
 private const val MANUAL_NOTE = "Sin histórico: es un valor manual."
 private const val WEIGHT_DECIMALS = 1
-private const val EMPTY_MOVEMENTS_TEXT = "Sin movimientos: las participaciones se editan a mano."
+
+/** The most recent movements the position detail lists; with more, it offers to see all of them on their own screen. */
+internal const val MAX_SUMMARY_MOVEMENTS = 3
 
 /** Whether there is a price history to draw: not applicable (manual), being downloaded, missing, or ready. */
 enum class HistoryStatus { NOT_APPLICABLE, LOADING, UNAVAILABLE, AVAILABLE }
@@ -167,9 +167,11 @@ data class PositionDetailUiState(
 )
 
 /**
- * The movements section. It is [visible] for a quoted position (a manual one has no units to move). Without movements
- * [emptyText] says that the units are edited by hand; [hasUnits] says that the position holds some, and [canTransfer]
- * is set for a fund that holds units and has movements, the only kind that can be transferred.
+ * The movements section. It is [visible] for a quoted position (a manual one has no units to move). [rows] are only
+ * the [MAX_SUMMARY_MOVEMENTS] most recent movements, newest first; [totalCount] counts all of them and [seeAllText]
+ * is the row that opens the full list (`null` when [rows] already are all of them). Without movements [emptyText]
+ * says that the units are edited by hand; [hasUnits] says that the position holds some, and [canTransfer] is set for
+ * a fund that holds units and has movements, the only kind that can be transferred.
  */
 data class MovementsUi(
     val visible: Boolean = false,
@@ -177,6 +179,8 @@ data class MovementsUi(
     val emptyText: String? = null,
     val hasUnits: Boolean = false,
     val canTransfer: Boolean = false,
+    val totalCount: Int = 0,
+    val seeAllText: String? = null,
 )
 
 /** Where the question that opens the movements of a position that already has units is. */
@@ -266,7 +270,7 @@ class PositionDetailViewModel(
     /** One-shot requests to open a movement or transfer sheet. */
     val navigate: Flow<PositionNavigation> = navigateChannel.receiveAsFlow()
 
-    private val choiceStep = MutableStateFlow<OpeningChoiceStep?>(null)
+    private val addPrompt = AddMovementPrompt { navigateChannel.trySend(it) }
 
     private var closed = false
 
@@ -286,7 +290,7 @@ class PositionDetailViewModel(
 
     private val data = combine(placement, history, rates, ::PositionData)
 
-    private val interaction = combine(selectedRange, myPositionRange, sync, choiceStep, ::Interaction)
+    private val interaction = combine(selectedRange, myPositionRange, sync, addPrompt.step, ::Interaction)
 
     /** The user's own returns on this position: every movement replayed, off the main thread. */
     private val ownPosition: Flow<OwnPositionAnalysis?> = combine(
@@ -349,47 +353,26 @@ class PositionDetailViewModel(
     fun onAddMovement() {
         val section = state.value.movements
         if (!section.visible) return
-        if (section.rows.isEmpty() && section.hasUnits) {
-            choiceStep.value = OpeningChoiceStep.CHOOSE
-        } else {
-            navigateChannel.trySend(PositionNavigation.MovementForm(null, openingBalance = false))
-        }
+        addPrompt.onAdd(needsChoice = section.totalCount == 0 && section.hasUnits)
     }
 
     /** The user keeps the units the position has as its opening balance. */
-    fun onChooseOpeningBalance() {
-        choiceStep.value = null
-        navigateChannel.trySend(PositionNavigation.MovementForm(null, openingBalance = true))
-    }
+    fun onChooseOpeningBalance() = addPrompt.onChooseOpeningBalance()
 
     /** The user will enter the purchases one by one; shows what happens to the units they have now. */
-    fun onChooseOneByOne() {
-        choiceStep.value = OpeningChoiceStep.WARN_ONE_BY_ONE
-    }
+    fun onChooseOneByOne() = addPrompt.onChooseOneByOne()
 
     /** The user accepts that the units will come from the movements and goes on to the first one. */
-    fun onConfirmOneByOne() {
-        choiceStep.value = null
-        navigateChannel.trySend(PositionNavigation.MovementForm(null, openingBalance = false))
-    }
+    fun onConfirmOneByOne() = addPrompt.onConfirmOneByOne()
 
-    fun onDismissChoice() {
-        choiceStep.value = null
-    }
+    fun onDismissChoice() = addPrompt.onDismiss()
 
     /** Opens the sheet that edits the movement [movementId]; a transfer leg opens its transfer. */
     fun onOpenMovement(movementId: String) {
         viewModelScope.launch {
             val movement = movementRepository.observeMovements(holdingId).first().firstOrNull { it.id == movementId }
                 ?: return@launch
-            val transferId = movement.transferId
-            navigateChannel.send(
-                if (transferId != null) {
-                    PositionNavigation.Transfer(transferId)
-                } else {
-                    PositionNavigation.MovementForm(movement.id, movement.type == MovementType.OPENING_BALANCE)
-                },
-            )
+            navigateChannel.send(movement.editTarget())
         }
     }
 
@@ -499,37 +482,19 @@ class PositionDetailViewModel(
         )
     }
 
-    /** The list of this position's movements (newest first) and what can be done with them. */
+    /** The most recent movements of this position (newest first), how many there are and what can be done with them. */
     private fun movementsUi(holding: PortfolioHolding, placed: Placement): MovementsUi {
         val valuation = holding.valuation as? HoldingValuation.Quoted ?: return MovementsUi()
         val own = placed.movements.filter { it.holdingId == holding.id }
-        val namesByHolding = placed.holdings.associate { it.id to it.name }
-        val transfers = placed.movements.filter { it.transferId != null }.groupBy { it.transferId }
-        val rows = movementRows(own, valuation.currency) { leg ->
-            transfers[leg.transferId]?.firstOrNull { it.id != leg.id }?.let { namesByHolding[it.holdingId] }
-        }
+        val rows = movementRows(own, valuation.currency, counterpartNames(placed.holdings, placed.movements))
         return MovementsUi(
             visible = true,
-            rows = rows,
+            rows = rows.take(MAX_SUMMARY_MOVEMENTS),
             emptyText = EMPTY_MOVEMENTS_TEXT.takeIf { rows.isEmpty() },
             hasUnits = !valuation.isClosed,
             canTransfer = rows.isNotEmpty() && !valuation.isClosed && isQuotedFund(holding.type, isQuoted = true),
-        )
-    }
-
-    private fun openingChoiceUi(holding: PortfolioHolding, step: OpeningChoiceStep): OpeningChoiceUi? {
-        val units = (holding.valuation as? HoldingValuation.Quoted)?.units ?: return null
-        val unitsText = "${formatUnits(units)} part."
-        return OpeningChoiceUi(
-            step = step,
-            openingLabel = "Saldo inicial con tus $unitsText",
-            oneByOneLabel = "Meter mis compras una a una",
-            warning = if (step == OpeningChoiceStep.WARN_ONE_BY_ONE) {
-                "Las participaciones pasarán a salir de tus movimientos: los $unitsText que tienes ahora se " +
-                    "sustituirán por lo que registres."
-            } else {
-                null
-            },
+            totalCount = rows.size,
+            seeAllText = "Ver todos los movimientos (${rows.size})".takeIf { rows.size > MAX_SUMMARY_MOVEMENTS },
         )
     }
 
