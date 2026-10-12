@@ -118,7 +118,7 @@ class BackupCodecTest {
         val json = BackupCodec.encode(BackupDocument(exportedAt = "2026-10-06T10:00:00Z"))
 
         assertTrue(""""format": "patrimonio-backup"""" in json, json)
-        assertTrue(""""version": 13""" in json, json)
+        assertTrue(""""version": ${BackupCodec.VERSION}""" in json, json)
         assertTrue(""""portfolioHoldings"""" in json, json)
         assertTrue(""""portfolios"""" in json, json)
         assertFalse("subscriptions" in json, json)
@@ -240,10 +240,12 @@ class BackupCodecTest {
     @Test
     fun `newer format version is rejected with an update hint`() {
         val error = assertFailsWith<InvalidBackupException> {
-            BackupCodec.decode("""{"format":"patrimonio-backup","version":14,"exportedAt":"x"}""")
+            BackupCodec.decode(
+                """{"format":"patrimonio-backup","version":${BackupCodec.VERSION + 1},"exportedAt":"x"}""",
+            )
         }
 
-        assertTrue("v14" in error.message.orEmpty())
+        assertTrue("v${BackupCodec.VERSION + 1}" in error.message.orEmpty())
     }
 
     @Test

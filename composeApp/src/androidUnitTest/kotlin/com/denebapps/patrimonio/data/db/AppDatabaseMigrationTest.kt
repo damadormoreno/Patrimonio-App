@@ -695,6 +695,63 @@ class AppDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun `migration 13 to 14 sets the default tolerance and adds an empty targets table`() {
+        helper.createDatabase(13).use { connection ->
+            connection.seedVersion11Holdings()
+            connection.execSQL("INSERT INTO portfolios (id, name, sortOrder) VALUES ('pf-2', 'Hijos', 1)")
+        }
+
+        helper.runMigrationsAndValidate(14, emptyList()).use { connection ->
+            connection.prepare("SELECT id, name, sortOrder, rebalanceToleranceBp FROM portfolios ORDER BY sortOrder")
+                .use { rows ->
+                    assertTrue(rows.step())
+                    assertEquals("pf-1", rows.getText(0))
+                    assertEquals("Mi cartera", rows.getText(1))
+                    assertEquals(0L, rows.getLong(2))
+                    assertEquals(500L, rows.getLong(3))
+                    assertTrue(rows.step())
+                    assertEquals("pf-2", rows.getText(0))
+                    assertEquals(500L, rows.getLong(3))
+                    assertFalse(rows.step())
+                }
+            assertEquals(2L, connection.count("portfolio_holdings"))
+            assertTrue(connection.tableExists("allocation_targets"))
+            assertEquals(0L, connection.count("allocation_targets"))
+            assertTrue(connection.indexExists("index_allocation_targets_portfolioId"))
+
+            connection.execSQL("PRAGMA foreign_keys = ON")
+            val insert = "INSERT INTO allocation_targets (portfolioId, assetClass, targetBp) VALUES ('%s', '%s', %d)"
+            connection.execSQL(insert.format("pf-2", "EQUITY", 6_000))
+            connection.execSQL(insert.format("pf-2", "FIXED_INCOME", 4_000))
+            connection.execSQL(insert.format("pf-1", "EQUITY", 10_000))
+            assertEquals(3L, connection.count("allocation_targets"))
+            assertFails { connection.execSQL(insert.format("pf-2", "EQUITY", 1)) }
+            assertFails { connection.execSQL(insert.format("ghost", "EQUITY", 10_000)) }
+
+            connection.execSQL("DELETE FROM portfolios WHERE id = 'pf-2'")
+            assertEquals(1L, connection.count("allocation_targets"), "the targets must go with their portfolio")
+        }
+    }
+
+    @Test
+    fun `a version 13 database opens through the app with the default tolerance and no targets`() = runBlocking {
+        helper.createDatabase(13).use { connection -> connection.seedVersion11Holdings() }
+
+        val db = Room.databaseBuilder<AppDatabase>(context = context, name = databaseFile.absolutePath)
+            .setDriver(AndroidSQLiteDriver())
+            .configureAppDatabase()
+            .build()
+        try {
+            val portfolio = db.portfolioDao().list().single()
+            assertEquals("pf-1", portfolio.id)
+            assertEquals(500, portfolio.rebalanceToleranceBp)
+            assertTrue(db.allocationTargetDao().list().isEmpty())
+        } finally {
+            db.close()
+        }
+    }
+
     /** Version 11 data: one portfolio with a quoted holding with broker and fundamentals, and a manual one. */
     private fun SQLiteConnection.seedVersion11Holdings() {
         execSQL("INSERT INTO portfolios (id, name, sortOrder) VALUES ('pf-1', 'Mi cartera', 0)")

@@ -33,6 +33,10 @@ interface PortfolioDao {
     @Query("UPDATE portfolios SET name = :name WHERE id = :id")
     suspend fun updateName(id: String, name: String): Int
 
+    /** @return rows touched (0 or 1). */
+    @Query("UPDATE portfolios SET rebalanceToleranceBp = :toleranceBp WHERE id = :id")
+    suspend fun updateTolerance(id: String, toleranceBp: Int): Int
+
     /** Fails while holdings still point at it: they are moved first, never cascaded away. @return rows deleted. */
     @Query("DELETE FROM portfolios WHERE id = :id")
     suspend fun delete(id: String): Int

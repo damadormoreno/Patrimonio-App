@@ -3,6 +3,7 @@ package com.denebapps.patrimonio.data.backup
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
 import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AccountTypeEntity
+import com.denebapps.patrimonio.data.db.entity.AllocationTargetEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.LiabilityEntity
 import com.denebapps.patrimonio.data.db.entity.MovementEntity
@@ -78,9 +79,13 @@ internal fun SavingsGoalLinkEventEntity.toBackup() =
 internal fun SavingsGoalLinkEventBackup.toEntity() =
     SavingsGoalLinkEventEntity(id, goalId, fromAssetId, toAssetId, kind, timestampEpochMs, fromGroupId, toGroupId)
 
-internal fun PortfolioEntity.toBackup() = PortfolioBackup(id, name, sortOrder)
+internal fun PortfolioEntity.toBackup() = PortfolioBackup(id, name, sortOrder, rebalanceToleranceBp)
 
-internal fun PortfolioBackup.toEntity() = PortfolioEntity(id, name, sortOrder)
+internal fun PortfolioBackup.toEntity() = PortfolioEntity(id, name, sortOrder, rebalanceToleranceBp)
+
+internal fun AllocationTargetEntity.toBackup() = AllocationTargetBackup(portfolioId, assetClass, targetBp)
+
+internal fun AllocationTargetBackup.toEntity() = AllocationTargetEntity(portfolioId, assetClass, targetBp)
 
 internal fun PortfolioHoldingEntity.toBackup() = PortfolioHoldingBackup(
     id,

@@ -6,7 +6,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
-/** Version 13 of the backup format: the movements of the positions, and how they are checked on the way in. */
+/** Backup format version 13: the movements of the positions, and how they are checked on the way in. */
 class BackupCodecMovementsTest {
     private val miCartera = PortfolioBackup("pf-1", "Mi cartera", 0)
 
@@ -103,11 +103,10 @@ class BackupCodecMovementsTest {
     }
 
     @Test
-    fun `the document is written as version 13 with its movements`() {
+    fun `the document is written with its movements`() {
         val json = BackupCodec.encode(document)
 
-        assertEquals(13, BackupCodec.VERSION)
-        assertTrue(""""version": 13""" in json, json)
+        assertTrue(""""version": ${BackupCodec.VERSION}""" in json, json)
         assertTrue(""""movements"""" in json, json)
     }
 
@@ -128,8 +127,10 @@ class BackupCodecMovementsTest {
     }
 
     @Test
-    fun `a version 14 backup is refused with an update hint`() {
-        val json = BackupCodec.encode(document).replace(""""version": 13""", """"version": 14""")
+    fun `a newer backup is refused with an update hint`() {
+        val json = BackupCodec.encode(
+            document,
+        ).replace(""""version": ${BackupCodec.VERSION}""", """"version": ${BackupCodec.VERSION + 1}""")
 
         val reason = assertFailsWith<InvalidBackupException> { BackupCodec.decode(json) }.message.orEmpty()
 

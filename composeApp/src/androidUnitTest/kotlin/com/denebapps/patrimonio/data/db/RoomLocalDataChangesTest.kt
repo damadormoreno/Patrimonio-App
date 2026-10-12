@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.data.db
 
+import com.denebapps.patrimonio.data.db.entity.AllocationTargetEntity
 import com.denebapps.patrimonio.data.db.entity.FxHistoryEntity
 import com.denebapps.patrimonio.data.db.entity.FxHistorySyncEntity
 import com.denebapps.patrimonio.data.db.entity.InstrumentPriceEntity
@@ -47,6 +48,22 @@ class RoomLocalDataChangesTest {
                 null, null, null, null, 250_000, 1L,
             ),
         )
+        signals.awaitAtLeast(2)
+
+        collector.cancel()
+        db.close()
+    }
+
+    @Test
+    fun `setting allocation targets signals a backup change`() = runBlocking {
+        val db = buildInMemoryTestDatabase()
+        db.insertTestPortfolio()
+        val signals = AtomicInteger()
+        val collector =
+            launch(Dispatchers.Default) { RoomLocalDataChanges(db).observe().collect { signals.incrementAndGet() } }
+        signals.awaitAtLeast(1)
+
+        db.allocationTargetDao().insertAll(listOf(AllocationTargetEntity(TEST_PORTFOLIO_ID, "EQUITY", 10_000)))
         signals.awaitAtLeast(2)
 
         collector.cancel()

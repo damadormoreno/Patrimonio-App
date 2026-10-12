@@ -16,6 +16,7 @@ import com.denebapps.patrimonio.data.db.dao.SavingsGoalDao
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.platform.PlatformContext
 import com.denebapps.patrimonio.domain.model.Asset
+import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.HoldingValuation
@@ -31,6 +32,7 @@ import com.denebapps.patrimonio.domain.model.UNITS_SCALE
 import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.model.UnitsBalance
 import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
+import com.denebapps.patrimonio.domain.repository.AllocationTargetRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.BackupRepository
 import com.denebapps.patrimonio.domain.repository.CloudBackup
@@ -415,6 +417,19 @@ class KoinModuleTest {
         assertEquals(listOf("Mi cartera", "Jubilación"), portfolios.observePortfolios().first().map { it.name })
         val stored = koin.get<PortfolioDao>().find(created.id)
         assertEquals(created, stored?.let { Portfolio(it.id, it.name, it.sortOrder) })
+    }
+
+    @Test
+    fun `AllocationTargetRepository resolves via DI as a singleton and stores through the shared database`() = runTest {
+        val koin = startTestKoin(fxModule, quotesModule)
+        val targets = koin.get<AllocationTargetRepository>()
+        val portfolioId = koin.get<PortfolioCollectionRepository>().observePortfolios().first().single().id
+
+        targets.setTargets(portfolioId, mapOf(AssetClass.EQUITY to 10_000), toleranceBp = 250)
+
+        assertSame(targets, koin.get<AllocationTargetRepository>())
+        assertEquals(listOf("EQUITY"), koin.get<AppDatabase>().allocationTargetDao().list().map { it.assetClass })
+        assertEquals(250, koin.get<PortfolioDao>().find(portfolioId)?.rebalanceToleranceBp)
     }
 
     @Test

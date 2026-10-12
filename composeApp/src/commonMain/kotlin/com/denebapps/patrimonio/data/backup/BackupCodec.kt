@@ -2,8 +2,10 @@ package com.denebapps.patrimonio.data.backup
 
 import com.denebapps.patrimonio.data.db.entity.HoldingKind
 import com.denebapps.patrimonio.data.repository.movementToDomain
+import com.denebapps.patrimonio.domain.calc.TargetsError
 import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalAdd
 import com.denebapps.patrimonio.domain.calc.movementValidationError
+import com.denebapps.patrimonio.domain.calc.validateTargets
 import com.denebapps.patrimonio.domain.model.AccountKind
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.AssetClass
@@ -24,6 +26,7 @@ import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
 import com.denebapps.patrimonio.domain.model.TypeColor
 import com.denebapps.patrimonio.domain.repository.InvalidBackupException
 import com.denebapps.patrimonio.domain.repository.MAX_MOVEMENT_NOTE_LENGTH
+import com.denebapps.patrimonio.domain.repository.MAX_REBALANCE_TOLERANCE_BP
 import com.denebapps.patrimonio.domain.repository.SavingsGoalArithmeticOverflowException
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.json.Json
@@ -46,7 +49,7 @@ import kotlin.uuid.Uuid
  * hand-edited or corrupted file is rejected with a readable reason instead of failing half-way
  * through an import or crashing a later read.
  *
- * Writes [VERSION] (13). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
+ * Writes [VERSION] (14). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
  * group-link fields, which default to null, v1–v3 files have numeric goal ids, which
  * [upgradeLegacyGoalIds] replaces before decoding, v1–v4 files link a goal to one `linkedAssetId`,
  * which [upgradeSingleLinkedAsset] turns into a list, v1–v5 files have no custom account types nor
@@ -56,11 +59,12 @@ import kotlin.uuid.Uuid
  * fundamentals (cost, risk, category, manager), which default to null, and v1–v10 files have no portfolios, which
  * [upgradeToSinglePortfolio] answers with one new "Mi cartera" that holds every holding, and v1–v11 holdings have no
  * asset class, which defaults to null (the class is inferred when read), and v1–v12 files have no movements, which
- * default to empty.
+ * default to empty, and v1–v13 files have no allocation targets, which default to empty, nor portfolio rebalance
+ * tolerances, which default to 500.
  */
 object BackupCodec {
     const val FORMAT = "patrimonio-backup"
-    const val VERSION = 13
+    const val VERSION = 14
 
     private val json = Json {
         prettyPrint = true
@@ -283,6 +287,50 @@ private fun BackupDocument.validate() {
     requireUnique("valor de cartera", portfolioHoldings.map { it.id })
     portfolioHoldings.forEach { validateHolding(it, portfolioIds) }
     validateMovements(movements, portfolioHoldings)
+    validateAllocationTargets(allocationTargets, portfolios)
+}
+
+/**
+ * Mirrors `AllocationTargetRepository`: every target is of a known portfolio and class, unique per (portfolio, class)
+ * and above zero (a class without a target has no row), and the targets of a portfolio pass `validateTargets` (each
+ * within 0 to 100 % and adding up to exactly 100 %), or the screens that read them would work from a broken target.
+ */
+private fun validateAllocationTargets(targets: List<AllocationTargetBackup>, portfolios: List<PortfolioBackup>) {
+    val portfolioNames = portfolios.associate { it.id to it.name }
+    targets.forEach { target ->
+        if (target.portfolioId !in portfolioNames) {
+            invalid("Un objetivo de reparto apunta a una cartera que no existe: ${target.portfolioId}.")
+        }
+        if (target.assetClass !in ASSET_CLASSES) {
+            invalid("Un objetivo de reparto tiene una clase de activo desconocida: ${target.assetClass}.")
+        }
+    }
+    requireUnique("objetivo de reparto", targets.map { "${it.portfolioId}/${it.assetClass}" })
+    targets.forEach { target ->
+        if (target.targetBp <= 0) {
+            invalid(
+                "El objetivo de ${target.assetClass} en la cartera '${portfolioNames.getValue(target.portfolioId)}' " +
+                    "debe ser mayor que 0: una clase sin objetivo no se guarda.",
+            )
+        }
+    }
+    targets.groupBy { it.portfolioId }.forEach { (portfolioId, rows) ->
+        val name = portfolioNames.getValue(portfolioId)
+        val targetsBp = rows.associate { AssetClass.valueOf(it.assetClass) to it.targetBp }
+        when (val error = validateTargets(targetsBp)) {
+            null -> Unit
+            is TargetsError.OutOfRange ->
+                invalid("El objetivo de ${error.assetClass.name} en la cartera '$name' está fuera de 0 a 100 %.")
+            is TargetsError.WrongSum ->
+                invalid("Los objetivos de la cartera '$name' suman ${percentOf(error.totalBp)} %, no 100 %.")
+        }
+    }
+}
+
+/** Basis points as a percentage in Spanish notation: 9000 is "90", 9050 is "90,5", 9005 is "90,05". */
+private fun percentOf(bp: Int): String {
+    val decimals = (bp % 100).toString().padStart(2, '0').trimEnd('0')
+    return if (decimals.isEmpty()) "${bp / 100}" else "${bp / 100},$decimals"
 }
 
 /**
@@ -351,6 +399,9 @@ private fun validatePortfolios(portfolios: List<PortfolioBackup>) {
                 "Hay una cartera con un nombre vacío, con espacios sobrantes o de más de " +
                     "$MAX_PORTFOLIO_NAME_LENGTH caracteres.",
             )
+        }
+        if (portfolio.rebalanceToleranceBp !in 0..MAX_REBALANCE_TOLERANCE_BP) {
+            invalid("La cartera '$name' tiene una tolerancia de reparto fuera de 0 a 100 %.")
         }
     }
     portfolios.groupBy { it.name.lowercase() }.values.firstOrNull { it.size > 1 }?.let { sameName ->

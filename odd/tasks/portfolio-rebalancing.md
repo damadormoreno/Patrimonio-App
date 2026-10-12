@@ -47,7 +47,7 @@ portfolio drifts out of its tolerance band, with where to put new money to get b
 
 - [x] **T1 — Rebalance math (pure)**: drift, band check, minimal no-sell contribution and split, zero-target
   and unclassified handling (route: delegated writer).
-- [ ] **T2 — Persistence**: entity/DAO/migration v14, repository (validated targets + tolerance), backup v14,
+- [x] **T2 — Persistence**: entity/DAO/migration v14, repository (validated targets + tolerance), backup v14,
   cloud keys, clear-all (route: delegated writer).
 - [ ] **T3 — UI**: targets editor and target-vs-actual in portfolio detail; Cartera banners (route: delegated
   writer).
@@ -71,7 +71,15 @@ portfolio drifts out of its tolerance band, with where to put new money to get b
   `onlySelling`, unclassified reported apart), `RebalanceStatus.splitContribution(amount)` (water-filling; the
   minimal split is the same routine with `amount = C`). Inputs come from `allocationByAssetClass` (same source as
   *Reparto por clase*). RED: unresolved references; GREEN: check.sh (1818 tests), iOS compile; parent re-run green.
+- **T2** (commit below, `feat(rebalance): store allocation targets and tolerance`): Room v14 via
+  `AutoMigration(13, 14)` (`allocation_targets` with FK cascade + `portfolios.rebalanceToleranceBp` DEFAULT 500,
+  `14.json`); `AllocationTargetRepository` (`observeTargets`, `observeAllTargets`, `setTargets` atomic and validated,
+  `clearTargets` keeps the tolerance; `InvalidAllocationTargetsException`, `InvalidRebalanceToleranceException`);
+  backup v14 (older files: default tolerance, no targets; codec tests now use `BackupCodec.VERSION`); cloud
+  `RECORD_KEYS`, `BACKED_UP_TABLES`, clear-all. Outside the listed surfaces: one test each in `CloudBackupSyncTest`
+  and `KoinModuleTest` (accepted). RED: 204 compile errors; GREEN: check.sh (1862 tests), iOS compile; parent re-run
+  of migration/repository/codec tests green.
 
 ## Next step
 
-T2.
+T3.

@@ -27,6 +27,7 @@ class RoomLocalDataChanges(private val database: AppDatabase) : LocalDataChanges
             "portfolios",
             "portfolio_holdings",
             "movements",
+            "allocation_targets",
         )
     }
 }
