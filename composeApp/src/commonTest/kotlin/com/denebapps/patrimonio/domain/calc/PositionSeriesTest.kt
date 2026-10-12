@@ -60,9 +60,38 @@ class PositionSeriesTest {
 
     @Test
     fun `prices before the first movement are left out`() {
-        val series = ledger.valueSeries(listOf(price(date(2024, 12, 1), 90), price(date(2025, 1, 9), 99)))
+        val series = ledger.valueSeries(
+            listOf(price(date(2024, 12, 1), 90), price(date(2025, 1, 9), 99), price(date(2025, 3, 11), 131)),
+        )
 
-        assertTrue(series.isEmpty())
+        assertEquals(listOf(point(date(2025, 3, 11), 0, 0)), series)
+    }
+
+    @Test
+    fun `a movement after the last price ends the series on that day at the last price`() {
+        // A sale newer than the latest quote: 6 u left on 2025-01-20, valued at the 2025-01-15 price (6 x 110 = 660).
+        val recent = computeLedgers(
+            listOf(
+                buy("b1", date(2025, 1, 10), units(10), cents = 100_000),
+                sell("s1", date(2025, 1, 20), units(4), cents = 44_000),
+            ),
+        ).getValue(FUND_A)
+
+        val series = recent.valueSeries(listOf(price(date(2025, 1, 10), 100), price(date(2025, 1, 15), 110)))
+
+        assertEquals(
+            listOf(
+                point(date(2025, 1, 10), 10_000_000, 100_000),
+                point(date(2025, 1, 15), 10_000_000, 110_000),
+                point(date(2025, 1, 20), 6_000_000, 66_000),
+            ),
+            series,
+        )
+    }
+
+    @Test
+    fun `without prices there is no series`() {
+        assertTrue(ledger.valueSeries(emptyList()).isEmpty())
     }
 
     @Test
@@ -70,6 +99,6 @@ class PositionSeriesTest {
         // 10 u x 12.345678 USD = 123.45678 -> 123.46 USD (12_346 cents), rounded half-even.
         val series = ledger.valueSeries(listOf(price(date(2025, 1, 15), 12, 345_678, Currency.USD)))
 
-        assertEquals(CurrencyAmount(Money(12_346), Currency.USD), series.single().value)
+        assertEquals(CurrencyAmount(Money(12_346), Currency.USD), series.first().value)
     }
 }
