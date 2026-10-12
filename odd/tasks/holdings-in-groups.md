@@ -17,6 +17,9 @@ fund). Also show the portfolio's products in Patrimonio like the other categorie
 2. Patrimonio shows the portfolio's products like the other categories (expandable Cartera card with a row per
    product).
 3. After this feature: redesign the Cartera tab layout (too cramped) — separate feature.
+4. (2026-10-12, after PR #42 opened, user request) A goal may follow **any mix of accounts, portfolio products and
+   groups** (several of each), not "accounts XOR one group". Its balance is the union without double counting (an
+   account selected directly and also inside a selected group counts once). Delivered in the same PR #42.
 
 ## Findings (explorer map, 2026-10-12)
 
@@ -62,6 +65,14 @@ fund). Also show the portfolio's products in Patrimonio like the other categorie
 - [x] **T3 — UI**: group form/list, Patrimonio Cartera rows, product detail usage + delete warning (route:
   delegated writer).
 - [x] **T4 — Docs + manual test** (route: inline).
+- [ ] **T5 — Goals with mixed links: persistence + domain + values**: schema **v16** (not v15: the emulator, and
+  possibly the user's phone via the PR preview, already run v15) — goal ↔ holdings and goal ↔ groups (several)
+  tables, migrate `linkedGroupId` into the groups table, link events for holdings/groups, `trackedBalance` as a
+  deduplicated union, sharing notices on effective overlap, usage (direct + via groups), deletes write events,
+  backup v16 (route: delegated writer).
+- [ ] **T6 — Goals with mixed links: UI**: goal form with Cuentas / Cartera / Grupos sections, captions, delete
+  warnings (route: delegated writer).
+- [ ] **T7 — Docs + manual test** (route: inline).
 
 ## Acceptance criteria
 
@@ -108,4 +119,4 @@ fund). Also show the portfolio's products in Patrimonio like the other categorie
 
 ## Next step
 
-Done; push + PR. Then the Cartera tab redesign (separate feature).
+T5 (goals with mixed links), then T6, T7; same PR #42. Then the Cartera tab redesign (separate feature).
