@@ -49,9 +49,9 @@ portfolio drifts out of its tolerance band, with where to put new money to get b
   and unclassified handling (route: delegated writer).
 - [x] **T2 — Persistence**: entity/DAO/migration v14, repository (validated targets + tolerance), backup v14,
   cloud keys, clear-all (route: delegated writer).
-- [ ] **T3 — UI**: targets editor and target-vs-actual in portfolio detail; Cartera banners (route: delegated
+- [x] **T3 — UI**: targets editor and target-vs-actual in portfolio detail; Cartera banners (route: delegated
   writer).
-- [ ] **T4 — Docs + manual test** (route: inline).
+- [x] **T4 — Docs + manual test** (route: inline).
 
 ## Acceptance criteria
 
@@ -79,7 +79,19 @@ portfolio drifts out of its tolerance band, with where to put new money to get b
   `RECORD_KEYS`, `BACKED_UP_TABLES`, clear-all. Outside the listed surfaces: one test each in `CloudBackupSyncTest`
   and `KoinModuleTest` (accepted). RED: 204 compile errors; GREEN: check.sh (1862 tests), iOS compile; parent re-run
   of migration/repository/codec tests green.
+- **T3** (commit below, `feat(rebalance): edit targets and show drift alerts`): portfolio detail section
+  *Objetivo de reparto* (rows with actual/target/drift and a bar with a target marker, margin, status, no-sell
+  suggestion, `onlySelling` and unclassified notes, «¿Cuánto vas a aportar?» calculator), editor sheet (8 classes,
+  decimals, live sum, tolerance, *Quitar objetivo*, Spanish error mapping), Cartera banner (selected portfolio;
+  *Todas* lists portfolios and opens the first one's detail), unaffected by filters. *Todas* with a single
+  portfolio behaves as that portfolio. RED: 265 compile errors; GREEN: check.sh (1922 tests), iOS compile.
+- **T4** (commit below, `docs: document rebalancing targets`): README (*Cartera*, backup v14). Manual test on the
+  user's emulator data (exported to `pre-rebalanceo.json` first; the install also migrated their v13 DB to v14
+  intact): *Mi cartera* 22.632,95 € all equity; editor prefilled 100 % RV, live sum 80 → 92,5 → 100 %; 80/20 saved
+  → «Fuera del margen», RV +20 pts / RF −20 pts, «aporta 5.658,24 €» (= ⌈22.632,95 / 0,8⌉ − 22.632,95), calculator
+  500 € → RF 500 €, Cartera banner «Renta variable +20 pts · Aporta 5.658,24 €…». Restored the backup: user data
+  identical (only the fundamentals cache timestamp, not backed up by design, differs).
 
 ## Next step
 
-T3.
+Done; push + PR.

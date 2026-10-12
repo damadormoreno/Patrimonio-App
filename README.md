@@ -65,6 +65,13 @@ producto puede llevar, opcionalmente, el banco o bróker que lo gestiona (*Banco
 - **Filtros**: *Filtrar* (junto a las carteras) por clase de activo, bróker y tipo. Varias opciones de un
   mismo filtro suman y filtros distintos se combinan; la lista y el total siguen el filtro («Filtrado · N de M
   productos») y se recuerda el último. No afectan al patrimonio neto ni al detalle de la cartera.
+- **Objetivo de reparto y rebalanceo** (por cartera, en su detalle): porcentaje objetivo por clase de activo
+  (suman 100 %) y un margen (±5 puntos por defecto). El detalle muestra el reparto actual frente al objetivo y
+  la desviación de cada clase; si alguna se sale del margen, *Cartera* avisa («Tu cartera se ha desviado del
+  objetivo») y dice cuánto aportar, y a qué clases, para volver al objetivo **sin vender**. Una calculadora
+  reparte la próxima aportación entre las clases que más lo necesitan. Una clase con dinero y objetivo 0 % solo
+  se corrige vendiendo (se avisa); los productos sin clase no cuentan. En *Todas* se listan las carteras que
+  necesitan rebalanceo.
 
 - **Precios**: Morningstar (`lt.morningstar.com`: búsqueda por ISIN y valor liquidativo en EUR,
   sobre todo fondos) y Yahoo Finance (búsqueda y cierres diarios de ETF y acciones), con la misma
@@ -153,7 +160,7 @@ acciones (MyInvestor no exporta sus órdenes), ni fondos en otra divisa que no s
 
 Ajustes → Datos → *Exportar copia* / *Importar copia* (selector nativo vía
 [FileKit](https://github.com/vinceglb/FileKit)). El archivo es JSON legible
-(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 13}`:
+(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 14}`:
 
 - Incluye activos, pasivos, grupos y miembros, histórico mensual y metas con sus aportaciones y
   vínculos (una meta se vincula a una cuenta **o** a un grupo), tipos de cuenta propios y los
@@ -165,7 +172,7 @@ Ajustes → Datos → *Exportar copia* / *Importar copia* (selector nativo vía
   las anteriores a la 10, sin datos de Morningstar (se rellenan solos), y las anteriores a la 11
   meten todos los productos en una única cartera *Mi cartera*. Desde la 12 guardan la clase de activo
   elegida a mano y desde la 13, los movimientos (al importar, las participaciones de los productos con
-  movimientos se recalculan a partir de ellos).
+  movimientos se recalculan a partir de ellos); desde la 14, el objetivo de reparto y el margen de cada cartera.
 - Importar **reemplaza** todos los datos en una sola transacción. El archivo se valida entero antes
   (divisas, tipos, ids únicos, referencias, reglas del ledger de metas), así que uno inválido no
   toca nada.
