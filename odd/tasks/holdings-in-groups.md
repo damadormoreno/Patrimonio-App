@@ -59,9 +59,9 @@ fund). Also show the portfolio's products in Patrimonio like the other categorie
   holding delete cascade, backup v15 (+ import order), clear-all (route: delegated writer).
 - [x] **T2 — Values + usage (pure)**: `groupTotal`, `trackedBalance`, holding usage, delete warning data
   (route: delegated writer).
-- [ ] **T3 — UI**: group form/list, Patrimonio Cartera rows, product detail usage + delete warning (route:
+- [x] **T3 — UI**: group form/list, Patrimonio Cartera rows, product detail usage + delete warning (route:
   delegated writer).
-- [ ] **T4 — Docs + manual test** (route: inline).
+- [x] **T4 — Docs + manual test** (route: inline).
 
 ## Acceptance criteria
 
@@ -90,7 +90,22 @@ fund). Also show the portfolio's products in Patrimonio like the other categorie
   groups, built-in excluded); `GruposViewModel` (observes holdings, `onHoldingToggle`/`selectedHoldingIds`, editing
   keeps holding members) and `SavingsGoalsViewModel` wired; regression: net worth identical with holdings in groups.
   RED: compile errors; GREEN: check.sh (1986 tests), iOS compile; parent re-run of the touched suites green.
+- **T3** (commit below, `feat(groups): show portfolio products in groups, Patrimonio and their detail`): group form
+  «Cartera · Qué productos incluir» section (portfolio name when several, «sin precio», usage tags, search covers
+  both lists, footer «1 cuenta y 2 productos seleccionados»); group member rows include products (tap → detail);
+  Patrimonio Cartera card expandable with product rows (closed last, folder/spark icons, tap → `PositionDetail`,
+  «Abrir cartera» link; assignment filters narrow products, a type filter hides the card); product detail usage
+  line and delete warning naming groups/goals. Writer note: for products, «En una meta» also covers goals that
+  follow the product's group (accounts don't get that). RED not observed by running (tests written first, compile
+  failures by construction); GREEN: check.sh (2021 tests), iOS compile.
+- **T4** (commit below, `docs: document products in groups`): README. Manual test on the user's emulator data
+  (exported to `pre-grupos.json` and pulled to the host first; the install migrated v14 → v15 intact): group «Casa»
+  = Cuenta corriente + Amundi + iShares Dev → 26.484,22 € (= 12.500 + 9.325,87 + 4.658,35); net worth unchanged
+  (44.458,82 €); Patrimonio Cartera card with folder icons on the grouped funds; Amundi detail «En el grupo Casa»
+  and delete warning «Está en el grupo «Casa»; se quitará de él.» (cancelled); goal «Entrada piso» 40.000 € linked
+  to the group → 26.484,22 € «Faltan 13.515,78 €». Restored the backup: every table identical (fundamentals cache
+  timestamp excluded), new table empty.
 
 ## Next step
 
-T3.
+Done; push + PR. Then the Cartera tab redesign (separate feature).

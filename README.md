@@ -62,6 +62,12 @@ producto puede llevar, opcionalmente, el banco o bróker que lo gestiona (*Banco
   eliminar una con productos se pide a qué otra moverlos, y la última no se puede borrar. Al añadir un
   producto se elige su cartera y desde su ficha se puede mover a otra.
 
+- **Grupos y metas**: los productos de la cartera pueden estar en grupos junto a las cuentas (un mismo producto
+  en varios grupos), así que una meta vinculada a un grupo sigue también su valor (p. ej. meta *Casa* = cuenta
+  remunerada + fondo monetario + renta fija a corto). Los grupos y las metas son vistas: el patrimonio neto no
+  cambia. Un producto sin precio todavía cuenta 0. En *Patrimonio*, la tarjeta *Cartera* se despliega con una fila
+  por producto (con los iconos de grupo y meta), y el detalle del producto dice en qué grupos y metas está; al
+  borrarlo se avisa.
 - **Filtros**: *Filtrar* (junto a las carteras) por clase de activo, bróker y tipo. Varias opciones de un
   mismo filtro suman y filtros distintos se combinan; la lista y el total siguen el filtro («Filtrado · N de M
   productos») y se recuerda el último. No afectan al patrimonio neto ni al detalle de la cartera.
@@ -160,7 +166,7 @@ acciones (MyInvestor no exporta sus órdenes), ni fondos en otra divisa que no s
 
 Ajustes → Datos → *Exportar copia* / *Importar copia* (selector nativo vía
 [FileKit](https://github.com/vinceglb/FileKit)). El archivo es JSON legible
-(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 14}`:
+(`data/backup/BackupDocument.kt`) con sobre `{"format": "patrimonio-backup", "version": 15}`:
 
 - Incluye activos, pasivos, grupos y miembros, histórico mensual y metas con sus aportaciones y
   vínculos (una meta se vincula a una cuenta **o** a un grupo), tipos de cuenta propios y los
@@ -172,7 +178,7 @@ Ajustes → Datos → *Exportar copia* / *Importar copia* (selector nativo vía
   las anteriores a la 10, sin datos de Morningstar (se rellenan solos), y las anteriores a la 11
   meten todos los productos en una única cartera *Mi cartera*. Desde la 12 guardan la clase de activo
   elegida a mano y desde la 13, los movimientos (al importar, las participaciones de los productos con
-  movimientos se recalculan a partir de ellos); desde la 14, el objetivo de reparto y el margen de cada cartera.
+  movimientos se recalculan a partir de ellos); desde la 14, el objetivo de reparto y el margen de cada cartera, y desde la 15, los productos de cada grupo.
 - Importar **reemplaza** todos los datos en una sola transacción. El archivo se valida entero antes
   (divisas, tipos, ids únicos, referencias, reglas del ledger de metas), así que uno inválido no
   toca nada.
