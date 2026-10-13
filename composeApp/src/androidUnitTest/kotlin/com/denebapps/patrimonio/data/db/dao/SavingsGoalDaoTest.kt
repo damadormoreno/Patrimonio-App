@@ -1,14 +1,20 @@
 package com.denebapps.patrimonio.data.db.dao
 
+import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.buildInMemoryTestDatabase
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
+import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalGroupEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 import com.denebapps.patrimonio.data.db.insertGoalReturningId
+import com.denebapps.patrimonio.data.db.insertTestPortfolio
 import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
+import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.produceIn
 import kotlinx.coroutines.test.runTest
@@ -17,7 +23,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
-import kotlin.test.assertNull
 
 @RunWith(RobolectricTestRunner::class)
 class SavingsGoalDaoTest {
@@ -124,45 +129,101 @@ class SavingsGoalDaoTest {
     }
 
     @Test
-    fun `group link primitives set and clear the group`() = runTest {
+    fun `group link primitives add remove and clear several groups`() = runTest {
         val db = buildInMemoryTestDatabase()
         val dao = db.savingsGoalDao()
-        db.accountGroupDao().insertGroup(AccountGroupEntity("g1", "Group", true, 0))
+        listOf("g1", "g2", "g3").forEach { db.accountGroupDao().insertGroup(AccountGroupEntity(it, it, true, 0)) }
+        val goalId = dao.insertGoalReturningId(goal())
+        val otherId = dao.insertGoalReturningId(goal())
+
+        dao.insertLinkedGroups(listOf("g3", "g1", "g2").map { SavingsGoalGroupEntity(goalId, it) })
+        dao.insertLinkedGroups(listOf(SavingsGoalGroupEntity(otherId, "g1")))
+        assertEquals(listOf("g1", "g2", "g3"), dao.listLinkedGroupIds(goalId))
+        assertEquals(listOf(goalId, otherId), dao.listGoalsLinkedToGroup("g1").map { it.id })
+        assertEquals(listOf(goalId), dao.listGoalsLinkedToGroup("g2").map { it.id })
+        assertFails { dao.insertLinkedGroups(listOf(SavingsGoalGroupEntity(goalId, "missing"))) }
+        assertFails { dao.insertLinkedGroups(listOf(SavingsGoalGroupEntity(goalId, "g1"))) }
+
+        assertEquals(2, dao.deleteLinkedGroups(goalId, listOf("g1", "g3", "elsewhere")))
+        assertEquals(listOf("g2"), dao.listLinkedGroupIds(goalId))
+        assertEquals(1, dao.clearLinkedGroup("g1"))
+        assertEquals(emptyList(), dao.listGoalsLinkedToGroup("g1"))
+        db.close()
+    }
+
+    @Test
+    fun `holding link primitives add remove and clear several products`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        val dao = db.savingsGoalDao()
+        testHoldings(db, "h1", "h2", "h3")
         val goalId = dao.insertGoalReturningId(goal())
 
-        assertEquals(1, dao.updateLinkedGroup(goalId, "g1"))
-        assertEquals("g1", dao.findGoal(goalId)?.linkedGroupId)
-        assertEquals(listOf(goalId), dao.listGoalsLinkedToGroup("g1").map { it.id })
+        dao.insertLinkedHoldings(listOf("h3", "h1", "h2").map { SavingsGoalHoldingEntity(goalId, it) })
+        assertEquals(listOf("h1", "h2", "h3"), dao.listLinkedHoldingIds(goalId))
+        assertEquals(listOf(goalId), dao.listGoalsLinkedToHolding("h2").map { it.id })
+        assertFails { dao.insertLinkedHoldings(listOf(SavingsGoalHoldingEntity(goalId, "missing"))) }
+        assertFails { dao.insertLinkedHoldings(listOf(SavingsGoalHoldingEntity(goalId, "h1"))) }
 
-        assertEquals(1, dao.updateLinkedGroup(goalId, null))
-        assertNull(dao.findGoal(goalId)?.linkedGroupId)
-        assertEquals(emptyList(), dao.listGoalsLinkedToGroup("g1"))
-
-        dao.updateLinkedGroup(goalId, "g1")
-        assertEquals(1, dao.clearLinkedGroup("g1"))
-        assertNull(dao.findGoal(goalId)?.linkedGroupId)
+        assertEquals(2, dao.deleteLinkedHoldings(goalId, listOf("h1", "h3", "elsewhere")))
+        assertEquals(1, dao.clearLinkedHolding("h2"))
+        assertEquals(emptyList(), dao.listLinkedHoldingIds(goalId))
         db.close()
     }
 
     @Test
-    fun `deleting a group nulls the group link of its goals through the foreign key`() = runTest {
+    fun `deleting a group or a holding drops only its link rows and a goal drops all of its own`() = runTest {
         val db = buildInMemoryTestDatabase()
         val dao = db.savingsGoalDao()
+        testHoldings(db, "h1")
         db.accountGroupDao().insertGroup(AccountGroupEntity("g1", "Group", true, 0))
-        val goalId = dao.insertGoalReturningId(goal(linkedGroupId = "g1"))
+        val goalId = dao.insertGoalReturningId(goal())
+        dao.insertLinkedGroups(listOf(SavingsGoalGroupEntity(goalId, "g1")))
+        dao.insertLinkedHoldings(listOf(SavingsGoalHoldingEntity(goalId, "h1")))
 
         db.accountGroupDao().deleteGroup("g1")
+        assertEquals(emptyList(), dao.listLinkedGroupIds(goalId))
+        assertEquals(listOf("h1"), dao.listLinkedHoldingIds(goalId))
+        db.portfolioHoldingDao().delete("h1")
+        assertEquals(emptyList(), dao.listLinkedHoldingIds(goalId))
+        assertEquals(listOf(goalId), dao.listAllGoals().map { it.id })
 
-        assertNull(dao.findGoal(goalId)?.linkedGroupId)
+        db.accountGroupDao().insertGroup(AccountGroupEntity("g2", "Group", true, 0))
+        dao.insertLinkedGroups(listOf(SavingsGoalGroupEntity(goalId, "g2")))
+        dao.deleteGoal(goalId)
+        assertEquals(emptyList(), dao.listAllLinkedGroups())
         db.close()
     }
 
     @Test
-    fun `a goal cannot reference a group that does not exist`() = runTest {
+    fun `relation snapshots carry the accounts products and groups of each goal`() = runTest {
         val db = buildInMemoryTestDatabase()
+        val dao = db.savingsGoalDao()
+        testHoldings(db, "h1")
+        db.assetDao().insert(asset("a1"))
+        db.accountGroupDao().insertGroup(AccountGroupEntity("g1", "Group", true, 0))
+        val goalId = dao.insertGoalReturningId(goal())
+        dao.insertLinkedAssets(listOf(SavingsGoalAssetEntity(goalId, "a1")))
+        dao.insertLinkedHoldings(listOf(SavingsGoalHoldingEntity(goalId, "h1")))
+        dao.insertLinkedGroups(listOf(SavingsGoalGroupEntity(goalId, "g1")))
 
-        assertFails { db.savingsGoalDao().insertGoal(goal(linkedGroupId = "missing")) }
+        val snapshot = dao.observeAll().first().single()
+
+        assertEquals(setOf("a1"), snapshot.linkedAssetIds)
+        assertEquals(setOf("h1"), snapshot.linkedHoldingIds)
+        assertEquals(setOf("g1"), snapshot.linkedGroupIds)
         db.close()
+    }
+
+    private suspend fun testHoldings(db: AppDatabase, vararg ids: String) {
+        db.insertTestPortfolio()
+        ids.forEach { id ->
+            db.portfolioHoldingDao().insert(
+                PortfolioHoldingEntity(
+                    id, TEST_PORTFOLIO_ID, "Fondo $id", "OTHER", null, null, "MANUAL", null, null, "EUR",
+                    null, null, null, null, 250_000, 1L,
+                ),
+            )
+        }
     }
 
     @Test
@@ -198,18 +259,13 @@ class SavingsGoalDaoTest {
 
     private var goalCount = 0L
 
-    private fun goal(
-        linkedGroupId: String? = null,
-        id: String = "goal-${++goalCount}",
-        createdAtEpochMs: Long = goalCount,
-    ) = SavingsGoalEntity(
+    private fun goal(id: String = "goal-${++goalCount}", createdAtEpochMs: Long = goalCount) = SavingsGoalEntity(
         id = id,
         name = "Emergency",
         targetMinor = 10_000,
         currency = "EUR",
         targetDateEpochDay = null,
         lifecycle = "OPEN",
-        linkedGroupId = linkedGroupId,
         createdAtEpochMs = createdAtEpochMs,
     )
 

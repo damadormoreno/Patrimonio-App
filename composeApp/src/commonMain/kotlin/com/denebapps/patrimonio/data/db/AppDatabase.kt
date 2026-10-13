@@ -37,6 +37,8 @@ import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalGroupEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 
 @Database(
@@ -52,6 +54,8 @@ import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
         SavingsGoalAllocationEventEntity::class,
         SavingsGoalLinkEventEntity::class,
         SavingsGoalAssetEntity::class,
+        SavingsGoalHoldingEntity::class,
+        SavingsGoalGroupEntity::class,
         AccountTypeEntity::class,
         PortfolioEntity::class,
         PortfolioHoldingEntity::class,
@@ -62,7 +66,7 @@ import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
         MovementEntity::class,
         AllocationTargetEntity::class,
     ],
-    version = 15,
+    version = 16,
     exportSchema = true,
     // 5 -> 6 only adds the custom account types table and the accounts' nullable emoji column. 6 -> 7 (drops
     // the subscriptions table) is the hand-written MIGRATION_6_7. 7 -> 8 only adds the portfolio holdings table.
@@ -71,7 +75,8 @@ import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
     // the holdings) is the hand-written MIGRATION_10_11. 11 -> 12 only adds the nullable asset class column of the
     // holdings. 12 -> 13 only adds the movements table of the positions. 13 -> 14 only adds the portfolios' tolerance
     // column (NOT NULL, with its database default) and the allocation targets table. 14 -> 15 only adds the
-    // table of the portfolio holdings that are members of account groups.
+    // table of the portfolio holdings that are members of account groups. 15 -> 16 (goals follow any mix of accounts,
+    // products and groups, so the goals lose their single group column) is the hand-written MIGRATION_15_16.
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),

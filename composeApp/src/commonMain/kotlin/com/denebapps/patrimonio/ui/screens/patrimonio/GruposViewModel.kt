@@ -252,7 +252,7 @@ class GruposViewModel(
         if (id == AccountGroup.ALL_ACCOUNTS_ID) return
         viewModelScope.launch {
             val linkedGoalNames = savingsGoalRepository.observeAll().first()
-                .filter { it.linkedGroupId == id }
+                .filter { id in it.linkedGroupIds }
                 .map { it.name }
             val groupName = accountGroupRepository.observeAll().first().firstOrNull { it.id == id }?.name
             if (linkedGoalNames.isEmpty() || groupName == null) {

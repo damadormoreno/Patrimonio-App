@@ -8,6 +8,7 @@ import androidx.sqlite.driver.AndroidSQLiteDriver
 import androidx.sqlite.execSQL
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.platform.app.InstrumentationRegistry
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalGroupEntity
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
@@ -18,7 +19,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -92,18 +92,18 @@ class AppDatabaseMigrationTest {
             val dao = db.savingsGoalDao()
             val goalId = dao.listAllGoals().first { it.name == "Viaje" }.id
             assertEquals(listOf("a1"), dao.listLinkedAssetIds(goalId))
-            assertNull(dao.findGoal(goalId)?.linkedGroupId)
+            assertEquals(emptyList(), dao.listLinkedGroupIds(goalId))
             assertEquals(2, dao.listAllocationHistory(goalId).size)
             assertEquals(1, dao.listAllLinkEvents().size)
 
             dao.deleteLinkedAssets(goalId, listOf("a1"))
-            dao.updateLinkedGroup(goalId, "g1")
-            assertEquals("g1", dao.findGoal(goalId)?.linkedGroupId)
-            assertFails { dao.updateLinkedGroup(goalId, "missing") }
+            dao.insertLinkedGroups(listOf(SavingsGoalGroupEntity(goalId, "g1")))
+            assertEquals(listOf("g1"), dao.listLinkedGroupIds(goalId))
+            assertFails { dao.insertLinkedGroups(listOf(SavingsGoalGroupEntity(goalId, "missing"))) }
 
             // The group foreign key is live after migration: deleting the group unlinks the goal.
             db.accountGroupDao().deleteGroup("g1")
-            assertNull(dao.findGoal(goalId)?.linkedGroupId)
+            assertEquals(emptyList(), dao.listLinkedGroupIds(goalId))
         } finally {
             db.close()
         }
@@ -802,6 +802,156 @@ class AppDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun `migration 15 to 16 moves group links into the goal groups table and keeps every goal field`() {
+        helper.createDatabase(15).use { connection -> connection.seedVersion15Goals() }
+
+        helper.runMigrationsAndValidate(16, listOf(MIGRATION_15_16)).use { connection ->
+            val goals = connection.prepare(
+                "SELECT id, name, targetMinor, currency, targetDateEpochDay, lifecycle, createdAtEpochMs " +
+                    "FROM savings_goals ORDER BY createdAtEpochMs",
+            ).use { rows ->
+                buildList {
+                    while (rows.step()) {
+                        add(
+                            listOf(
+                                rows.getText(0),
+                                rows.getText(1),
+                                rows.getLong(2),
+                                rows.getText(3),
+                                if (rows.isNull(4)) null else rows.getLong(4),
+                                rows.getText(5),
+                                rows.getLong(6),
+                            ),
+                        )
+                    }
+                }
+            }
+            assertEquals(
+                listOf(
+                    listOf("u1", "Viaje", 300_000L, "EUR", 20_800L, "OPEN", 7L),
+                    listOf("u2", "Casa", 900_000L, "USD", null, "OPEN", 12L),
+                    listOf("u3", "Coche", 50_000L, "EUR", 21_000L, "CLOSED", 15L),
+                    listOf("u4", "Vieja", 10_000L, "EUR", null, "CANCELLED", 20L),
+                ),
+                goals,
+            )
+            assertEquals(
+                listOf("u2" to "g1", "u4" to "g2"),
+                connection.pairs("savings_goal_groups", "goalId", "groupId"),
+            )
+            assertEquals(
+                listOf("u1" to "a1", "u1" to "a2"),
+                connection.pairs("savings_goal_assets", "goalId", "assetId"),
+            )
+            assertEquals(0L, connection.count("savings_goal_holdings"))
+            assertTrue(connection.tableExists("savings_goal_holdings"))
+            assertTrue(connection.indexExists("index_savings_goal_holdings_holdingId"))
+            assertTrue(connection.indexExists("index_savings_goal_groups_groupId"))
+            assertFalse(connection.columnExists("savings_goals", "linkedGroupId"))
+            assertTrue(connection.columnExists("savings_goal_link_events", "fromHoldingId"))
+            assertTrue(connection.columnExists("savings_goal_link_events", "toHoldingId"))
+
+            // Ledgers and link history survive, the group ids of the events included; the new columns are empty.
+            assertEquals(2L, connection.count("savings_goal_allocation_events"))
+            connection.prepare(
+                "SELECT goalId, toGroupId, toHoldingId, fromHoldingId FROM savings_goal_link_events WHERE id = 5",
+            ).use { rows ->
+                assertTrue(rows.step())
+                assertEquals("u2", rows.getText(0))
+                assertEquals("g1", rows.getText(1))
+                assertTrue(rows.isNull(2))
+                assertTrue(rows.isNull(3))
+            }
+
+            // Both new tables follow their foreign keys; the goals' own table is untouched by them.
+            connection.execSQL("PRAGMA foreign_keys = ON")
+            connection.execSQL("INSERT INTO savings_goal_holdings (goalId, holdingId) VALUES ('u1', 'p1')")
+            connection.execSQL("INSERT INTO savings_goal_holdings (goalId, holdingId) VALUES ('u1', 'p2')")
+            connection.execSQL("INSERT INTO savings_goal_groups (goalId, groupId) VALUES ('u2', 'g2')")
+            assertFails {
+                connection.execSQL(
+                    "INSERT INTO savings_goal_holdings (goalId, holdingId) VALUES ('u1', 'p1')",
+                )
+            }
+            assertFails {
+                connection.execSQL(
+                    "INSERT INTO savings_goal_holdings (goalId, holdingId) VALUES ('u1', 'x')",
+                )
+            }
+            assertFails { connection.execSQL("INSERT INTO savings_goal_groups (goalId, groupId) VALUES ('u2', 'x')") }
+            assertFails { connection.execSQL("INSERT INTO savings_goal_groups (goalId, groupId) VALUES ('x', 'g1')") }
+
+            connection.execSQL("DELETE FROM portfolio_holdings WHERE id = 'p2'")
+            assertEquals(1L, connection.count("savings_goal_holdings"), "a deleted product leaves the goal")
+            connection.execSQL("DELETE FROM account_groups WHERE id = 'g2'")
+            assertEquals(listOf("u2" to "g1"), connection.pairs("savings_goal_groups", "goalId", "groupId"))
+            assertEquals(4L, connection.count("savings_goals"), "deleting a product or a group keeps every goal")
+            connection.execSQL("DELETE FROM savings_goals WHERE id = 'u1'")
+            assertEquals(0L, connection.count("savings_goal_holdings"))
+            assertEquals(0L, connection.count("savings_goal_assets"))
+        }
+    }
+
+    @Test
+    fun `migration 15 to 16 on a database without goals just creates the new tables`() {
+        helper.createDatabase(15).use { connection -> connection.seedVersion11Holdings() }
+
+        helper.runMigrationsAndValidate(16, listOf(MIGRATION_15_16)).use { connection ->
+            assertEquals(0L, connection.count("savings_goals"))
+            assertEquals(0L, connection.count("savings_goal_groups"))
+            assertEquals(0L, connection.count("savings_goal_holdings"))
+            assertEquals(2L, connection.count("portfolio_holdings"))
+        }
+    }
+
+    @Test
+    fun `a version 15 database opens through the app with its goals following their groups`() = runBlocking {
+        helper.createDatabase(15).use { connection -> connection.seedVersion15Goals() }
+
+        val db = Room.databaseBuilder<AppDatabase>(context = context, name = databaseFile.absolutePath)
+            .setDriver(AndroidSQLiteDriver())
+            .configureAppDatabase()
+            .build()
+        try {
+            val goals = db.savingsGoalDao().observeAll().first().associateBy { it.goal.id }
+            assertEquals(setOf("a1", "a2"), goals.getValue("u1").linkedAssetIds)
+            assertEquals(emptySet(), goals.getValue("u1").linkedGroupIds)
+            assertEquals(setOf("g1"), goals.getValue("u2").linkedGroupIds)
+            assertEquals(emptySet(), goals.getValue("u3").linkedGroupIds)
+            assertEquals(setOf("g2"), goals.getValue("u4").linkedGroupIds)
+            assertTrue(goals.values.all { it.linkedHoldingIds.isEmpty() })
+            assertEquals(listOf("u2"), db.savingsGoalDao().listGoalsLinkedToGroup("g1").map { it.id })
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
+     * Version 15 data: two accounts, two groups, two holdings and four goals: one on two accounts, one on a group
+     * (in USD, with a target date), one closed and unlinked, one cancelled on the second group.
+     */
+    private fun SQLiteConnection.seedVersion15Goals() {
+        seedVersion14GroupsAndHoldings()
+        val columns = "id, name, targetMinor, currency, targetDateEpochDay, lifecycle, linkedGroupId, createdAtEpochMs"
+        listOf(
+            "INSERT INTO assets (id, `group`, name, subtitle, amountMinor, currency) " +
+                "VALUES ('a2', 'BANK', 'Otra', NULL, 1000, 'EUR')",
+            "INSERT INTO savings_goals ($columns) VALUES ('u1', 'Viaje', 300000, 'EUR', 20800, 'OPEN', NULL, 7)",
+            "INSERT INTO savings_goals ($columns) VALUES ('u2', 'Casa', 900000, 'USD', NULL, 'OPEN', 'g1', 12)",
+            "INSERT INTO savings_goals ($columns) VALUES ('u3', 'Coche', 50000, 'EUR', 21000, 'CLOSED', NULL, 15)",
+            "INSERT INTO savings_goals ($columns) VALUES ('u4', 'Vieja', 10000, 'EUR', NULL, 'CANCELLED', 'g2', 20)",
+            "INSERT INTO savings_goal_assets (goalId, assetId) VALUES ('u1', 'a1')",
+            "INSERT INTO savings_goal_assets (goalId, assetId) VALUES ('u1', 'a2')",
+            "INSERT INTO savings_goal_allocation_events (id, goalId, deltaMinor, timestampEpochMs) " +
+                "VALUES (3, 'u3', 50000, 1000)",
+            "INSERT INTO savings_goal_allocation_events (id, goalId, deltaMinor, timestampEpochMs) " +
+                "VALUES (4, 'u3', -20000, 2000)",
+            "INSERT INTO savings_goal_link_events (id, goalId, fromAssetId, toAssetId, kind, timestampEpochMs, " +
+                "fromGroupId, toGroupId) VALUES (5, 'u2', NULL, NULL, 'LINK', 1000, NULL, 'g1')",
+        ).forEach(::execSQL)
+    }
+
     /** Version 14 data: an account, two groups (one with the account as member) and two holdings. */
     private fun SQLiteConnection.seedVersion14GroupsAndHoldings() {
         seedVersion11Holdings()
@@ -873,6 +1023,22 @@ class AppDatabaseMigrationTest {
         statement.step()
         statement.getLong(0)
     }
+
+    private fun SQLiteConnection.pairs(table: String, first: String, second: String): List<Pair<String, String>> =
+        prepare("SELECT $first, $second FROM $table ORDER BY $first, $second").use { rows ->
+            buildList {
+                while (rows.step()) add(rows.getText(0) to rows.getText(1))
+            }
+        }
+
+    private fun SQLiteConnection.columnExists(table: String, column: String): Boolean =
+        prepare("PRAGMA table_info($table)").use { rows ->
+            var found = false
+            while (rows.step()) {
+                if (rows.getText(1) == column) found = true
+            }
+            found
+        }
 
     private fun SQLiteConnection.tableExists(name: String): Boolean =
         prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").use { statement ->

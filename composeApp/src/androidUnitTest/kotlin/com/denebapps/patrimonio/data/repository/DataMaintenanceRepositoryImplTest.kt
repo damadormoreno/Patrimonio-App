@@ -18,6 +18,8 @@ import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalGroupEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 import com.denebapps.patrimonio.data.db.insertTestPortfolio
 import com.denebapps.patrimonio.data.db.testSeedingGate
@@ -101,6 +103,8 @@ class DataMaintenanceRepositoryImplTest {
         )
         db.accountGroupDao().insertHoldingMember(AccountGroupHoldingMemberEntity("group-1", "holding-1"))
         db.accountGroupDao().insertHoldingMember(AccountGroupHoldingMemberEntity("group-1", "holding-3"))
+        db.savingsGoalDao().insertLinkedHoldings(listOf(SavingsGoalHoldingEntity("goal-1", "holding-1")))
+        db.savingsGoalDao().insertLinkedGroups(listOf(SavingsGoalGroupEntity("goal-1", "group-1")))
         db.movementDao().insert(
             MovementEntity(
                 "movement-1", "holding-3", "BUY", 20_000, 1_000_000, 10_000, "EUR", 0, 10_000, 0, null, null, 1,
@@ -126,6 +130,8 @@ class DataMaintenanceRepositoryImplTest {
         assertTrue(db.accountGroupDao().observeAll().first().isEmpty(), "account groups not cleared")
         assertTrue(db.savingsGoalDao().observeAll().first().isEmpty(), "savings goals not cleared")
         assertTrue(db.savingsGoalDao().listAllLinkedAssets().isEmpty(), "goal accounts not cleared")
+        assertTrue(db.savingsGoalDao().listAllLinkedHoldings().isEmpty(), "goal products not cleared")
+        assertTrue(db.savingsGoalDao().listAllLinkedGroups().isEmpty(), "goal groups not cleared")
         assertTrue(db.netWorthDao().observeAll().first().isEmpty(), "net-worth snapshots not cleared")
         assertTrue(db.accountGroupDao().listHoldingMembers().isEmpty(), "group holding members not cleared")
         assertTrue(db.portfolioHoldingDao().list().isEmpty(), "portfolio holdings not cleared")

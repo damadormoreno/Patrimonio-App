@@ -27,9 +27,9 @@ interface SavingsGoalRepository {
 
     suspend fun cancel(goalId: String)
 
-    /** Edits an open goal: name, target amount (its currency stays), target date and link (accounts,
-     *  group or none). Every account or group added leaves a LINK event, every one removed an UNLINK and
-     *  a group swapped for another a RELINK. */
+    /** Edits an open goal: name, target amount (its currency stays), target date and links (accounts, products,
+     *  groups or none). Every account, product or group added leaves a LINK event and every one removed an UNLINK.
+     *  Nothing is written when any of them does not exist. */
     suspend fun update(goalId: String, command: UpdateSavingsGoal)
 
     /** Removes the goal and its whole history, whatever its lifecycle. Unlike [cancel] nothing is
@@ -42,28 +42,18 @@ data class CreateSavingsGoal(
     val target: CurrencyAmount,
     val targetDate: LocalDate? = null,
     val linkedAssetIds: Set<String> = emptySet(),
-    val linkedGroupId: String? = null,
-) {
-    init {
-        require(linkedAssetIds.isEmpty() || linkedGroupId == null) {
-            "A savings goal cannot be linked to assets and a group at the same time"
-        }
-    }
-}
+    val linkedHoldingIds: Set<String> = emptySet(),
+    val linkedGroupIds: Set<String> = emptySet(),
+)
 
 data class UpdateSavingsGoal(
     val name: String,
     val targetAmount: Money,
     val targetDate: LocalDate?,
     val linkedAssetIds: Set<String>,
-    val linkedGroupId: String?,
-) {
-    init {
-        require(linkedAssetIds.isEmpty() || linkedGroupId == null) {
-            "A savings goal cannot be linked to assets and a group at the same time"
-        }
-    }
-}
+    val linkedHoldingIds: Set<String>,
+    val linkedGroupIds: Set<String>,
+)
 
 class InvalidSavingsGoalNameException(name: String) :
     IllegalArgumentException("Savings goal name must be trimmed and non-empty, was '$name'")
@@ -85,6 +75,9 @@ class SavingsGoalNotFoundException(goalId: String) :
 
 class SavingsGoalAssetNotFoundException(assetId: String) :
     NoSuchElementException("Savings goal asset '$assetId' was not found")
+
+class SavingsGoalHoldingNotFoundException(holdingId: String) :
+    NoSuchElementException("Savings goal portfolio holding '$holdingId' was not found")
 
 class SavingsGoalGroupNotFoundException(groupId: String) :
     NoSuchElementException("Savings goal group '$groupId' was not found")

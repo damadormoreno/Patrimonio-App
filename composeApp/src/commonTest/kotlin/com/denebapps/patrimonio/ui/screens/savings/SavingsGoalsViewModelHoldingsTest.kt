@@ -59,7 +59,7 @@ class SavingsGoalsViewModelHoldingsTest {
         target = CurrencyAmount(Money(100_000), Currency.EUR),
         targetDate = null,
         linkedAssetIds = emptySet(),
-        linkedGroupId = "g1",
+        linkedGroupIds = setOf("g1"),
         lifecycle = lifecycle,
         progress = Money.ZERO,
     )

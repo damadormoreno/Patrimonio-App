@@ -72,7 +72,7 @@ class SavingsGoalsViewModelTest {
         linkedAssetIds = linkedAssetIds,
         lifecycle = lifecycle,
         progress = Money(progressMinor),
-        linkedGroupId = linkedGroupId,
+        linkedGroupIds = setOfNotNull(linkedGroupId),
     )
 
     private fun group(id: String, vararg memberIds: String) = AccountGroup(
@@ -692,7 +692,7 @@ class SavingsGoalsViewModelTest {
     }
 
     @Test
-    fun `goals following the same balance get one notice naming them`() = runTest(dispatcher) {
+    fun `goals following the same balance directly or through a group get one notice`() = runTest(dispatcher) {
         val vm = viewModel(
             goals = FakeSavingsGoalRepository(
                 listOf(
@@ -709,7 +709,10 @@ class SavingsGoalsViewModelTest {
 
         assertEquals(
             listOf(
-                SharedBalanceNoticeUi(targetLabel = "«Asset a1»", goalNames = listOf("Goal goal-1", "Goal goal-2")),
+                SharedBalanceNoticeUi(
+                    targetLabel = "«Asset a1»",
+                    goalNames = listOf("Goal goal-1", "Goal goal-2", "Goal goal-3"),
+                ),
             ),
             vm.state.value.sharedBalanceNotices,
         )
@@ -745,8 +748,8 @@ class SavingsGoalsViewModelTest {
         advanceUntilIdle()
 
         val assets = vm.state.value.linkableAssets.associateBy { it.id }
-        // The goal being edited does not tag its own account.
-        assertEquals(listOf("Goal goal-2"), assets.getValue("a1").goalNames)
+        // The goal being edited does not tag its own account; goal-3 reaches it through the group that holds it.
+        assertEquals(listOf("Goal goal-2", "Goal goal-3"), assets.getValue("a1").goalNames)
         assertEquals(listOf("Group g1"), assets.getValue("a1").groupNames)
         assertEquals(emptyList(), assets.getValue("a2").goalNames)
         assertEquals(listOf("Goal goal-3"), vm.state.value.linkableGroups.single().goalNames)

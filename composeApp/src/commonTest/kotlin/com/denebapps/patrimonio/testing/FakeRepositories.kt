@@ -63,6 +63,7 @@ import com.denebapps.patrimonio.domain.repository.QuoteUnavailableException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalAssetNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalBuiltinGroupException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalGroupNotFoundException
+import com.denebapps.patrimonio.domain.repository.SavingsGoalHoldingNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.domain.repository.TerminalSavingsGoalException
@@ -303,6 +304,7 @@ class FakeSavingsGoalRepository(
     initial: List<SavingsGoal> = emptyList(),
     private val knownAssetIds: Set<String> = emptySet(),
     private val persistedGroupIds: Set<String> = emptySet(),
+    private val knownHoldingIds: Set<String> = emptySet(),
 ) : SavingsGoalRepository {
     private val backing = MutableStateFlow(initial)
 
@@ -343,7 +345,8 @@ class FakeSavingsGoalRepository(
             throw InvalidSavingsGoalTargetException(command.target.amount.minorUnits)
         }
         command.linkedAssetIds.forEach(::requireAsset)
-        command.linkedGroupId?.let { requireLinkableGroup(it) }
+        command.linkedHoldingIds.forEach(::requireHolding)
+        command.linkedGroupIds.forEach(::requireLinkableGroup)
 
         val goalId = "new-goal-${++createdGoals}"
         backing.value = backing.value + SavingsGoal(
@@ -354,9 +357,14 @@ class FakeSavingsGoalRepository(
             linkedAssetIds = command.linkedAssetIds,
             lifecycle = SavingsGoalLifecycle.OPEN,
             progress = Money.ZERO,
-            linkedGroupId = command.linkedGroupId,
+            linkedHoldingIds = command.linkedHoldingIds,
+            linkedGroupIds = command.linkedGroupIds,
         )
-        appendLinkEvents(goalId, emptySet(), null, command.linkedAssetIds, command.linkedGroupId)
+        appendLinkEvents(
+            goalId,
+            LinkSet(emptySet(), emptySet(), emptySet()),
+            LinkSet(command.linkedAssetIds, command.linkedHoldingIds, command.linkedGroupIds),
+        )
         return goalId
     }
 
@@ -387,7 +395,8 @@ class FakeSavingsGoalRepository(
         if (command.targetAmount <= Money.ZERO) throw InvalidSavingsGoalTargetException(command.targetAmount.minorUnits)
         val goal = requireOpenGoal(goalId)
         (command.linkedAssetIds - goal.linkedAssetIds).forEach(::requireAsset)
-        command.linkedGroupId?.takeIf { it != goal.linkedGroupId }?.let(::requireLinkableGroup)
+        (command.linkedHoldingIds - goal.linkedHoldingIds).forEach(::requireHolding)
+        (command.linkedGroupIds - goal.linkedGroupIds).forEach(::requireLinkableGroup)
 
         backing.value = backing.value.map {
             if (it.id != goalId) {
@@ -398,11 +407,16 @@ class FakeSavingsGoalRepository(
                     target = it.target.copy(amount = command.targetAmount),
                     targetDate = command.targetDate,
                     linkedAssetIds = command.linkedAssetIds,
-                    linkedGroupId = command.linkedGroupId,
+                    linkedHoldingIds = command.linkedHoldingIds,
+                    linkedGroupIds = command.linkedGroupIds,
                 )
             }
         }
-        appendLinkEvents(goalId, goal.linkedAssetIds, goal.linkedGroupId, command.linkedAssetIds, command.linkedGroupId)
+        appendLinkEvents(
+            goalId,
+            LinkSet(goal.linkedAssetIds, goal.linkedHoldingIds, goal.linkedGroupIds),
+            LinkSet(command.linkedAssetIds, command.linkedHoldingIds, command.linkedGroupIds),
+        )
     }
 
     override suspend fun delete(goalId: String) {
@@ -435,6 +449,10 @@ class FakeSavingsGoalRepository(
         if (assetId !in knownAssetIds) throw SavingsGoalAssetNotFoundException(assetId)
     }
 
+    private fun requireHolding(holdingId: String) {
+        if (holdingId !in knownHoldingIds) throw SavingsGoalHoldingNotFoundException(holdingId)
+    }
+
     private fun requireLinkableGroup(groupId: String) {
         if (groupId == AccountGroup.ALL_ACCOUNTS_ID) throw SavingsGoalBuiltinGroupException()
         if (groupId !in persistedGroupIds) throw SavingsGoalGroupNotFoundException(groupId)
@@ -463,6 +481,8 @@ class FakeSavingsGoalRepository(
         toAssetId: String? = null,
         fromGroupId: String? = null,
         toGroupId: String? = null,
+        fromHoldingId: String? = null,
+        toHoldingId: String? = null,
     ) {
         val event = SavingsGoalLinkEvent(
             id = nextEventId++,
@@ -473,33 +493,35 @@ class FakeSavingsGoalRepository(
             timestampEpochMs = 0L,
             fromGroupId = fromGroupId,
             toGroupId = toGroupId,
+            fromHoldingId = fromHoldingId,
+            toHoldingId = toHoldingId,
         )
         val goalEvents = linkEventsBacking.value[goalId].orEmpty() + event
         linkEventsBacking.value = linkEventsBacking.value + (goalId to goalEvents)
     }
 
-    /** Same events, in the same order, as the real repository: UNLINK per removed account, the group
-     *  change, LINK per added account. */
-    private fun appendLinkEvents(
-        goalId: String,
-        fromAssetIds: Set<String>,
-        fromGroupId: String?,
-        toAssetIds: Set<String>,
-        toGroupId: String?,
-    ) {
-        (fromAssetIds - toAssetIds).sorted().forEach {
+    private data class LinkSet(val assetIds: Set<String>, val holdingIds: Set<String>, val groupIds: Set<String>)
+
+    /** Same events, in the same order, as the real repository: UNLINK per removed account, product and group, then
+     *  LINK per added account, product and group. */
+    private fun appendLinkEvents(goalId: String, from: LinkSet, to: LinkSet) {
+        (from.assetIds - to.assetIds).sorted().forEach {
             appendLinkEvent(goalId, SavingsGoalLinkEventKind.UNLINK, fromAssetId = it)
         }
-        if (fromGroupId != toGroupId) {
-            val kind = when {
-                fromGroupId == null -> SavingsGoalLinkEventKind.LINK
-                toGroupId == null -> SavingsGoalLinkEventKind.UNLINK
-                else -> SavingsGoalLinkEventKind.RELINK
-            }
-            appendLinkEvent(goalId, kind, fromGroupId = fromGroupId, toGroupId = toGroupId)
+        (from.holdingIds - to.holdingIds).sorted().forEach {
+            appendLinkEvent(goalId, SavingsGoalLinkEventKind.UNLINK, fromHoldingId = it)
         }
-        (toAssetIds - fromAssetIds).sorted().forEach {
+        (from.groupIds - to.groupIds).sorted().forEach {
+            appendLinkEvent(goalId, SavingsGoalLinkEventKind.UNLINK, fromGroupId = it)
+        }
+        (to.assetIds - from.assetIds).sorted().forEach {
             appendLinkEvent(goalId, SavingsGoalLinkEventKind.LINK, toAssetId = it)
+        }
+        (to.holdingIds - from.holdingIds).sorted().forEach {
+            appendLinkEvent(goalId, SavingsGoalLinkEventKind.LINK, toHoldingId = it)
+        }
+        (to.groupIds - from.groupIds).sorted().forEach {
+            appendLinkEvent(goalId, SavingsGoalLinkEventKind.LINK, toGroupId = it)
         }
     }
 

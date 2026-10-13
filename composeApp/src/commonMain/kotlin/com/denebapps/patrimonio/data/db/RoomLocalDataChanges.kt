@@ -22,6 +22,8 @@ class RoomLocalDataChanges(private val database: AppDatabase) : LocalDataChanges
             "net_worth_snapshots",
             "savings_goals",
             "savings_goal_assets",
+            "savings_goal_holdings",
+            "savings_goal_groups",
             "savings_goal_allocation_events",
             "savings_goal_link_events",
             "account_types",

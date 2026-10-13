@@ -29,7 +29,7 @@ class HoldingUsageTest {
 
         val usage = holdingUsage(goals, groups)
 
-        assertEquals(HoldingUsage(listOf("reforma", "entrada", "retiro"), listOf("Casa", "Jubilación")), usage["h1"])
+        assertEquals(HoldingUsage(listOf("reforma", "retiro", "entrada"), listOf("Casa", "Jubilación")), usage["h1"])
         assertEquals(HoldingUsage(listOf("reforma", "entrada"), listOf("Casa")), usage["h2"])
         assertEquals(HoldingUsage(emptyList(), listOf("Sin metas")), usage["h3"])
         assertEquals(setOf("h1", "h2", "h3"), usage.keys)
@@ -91,6 +91,6 @@ class HoldingUsageTest {
         linkedAssetIds = linkedAssetIds,
         lifecycle = lifecycle,
         progress = Money.ZERO,
-        linkedGroupId = linkedGroupId,
+        linkedGroupIds = setOfNotNull(linkedGroupId),
     )
 }

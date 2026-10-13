@@ -6,6 +6,7 @@ import com.denebapps.patrimonio.data.db.dao.PortfolioHoldingDao
 import com.denebapps.patrimonio.data.db.dao.pruneUnreferenced
 import com.denebapps.patrimonio.data.db.entity.HoldingKind
 import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 import com.denebapps.patrimonio.data.db.writeTransaction
 import com.denebapps.patrimonio.data.platform.AppLogger
 import com.denebapps.patrimonio.domain.model.AssetClass
@@ -20,6 +21,7 @@ import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.QuoteProvider
+import com.denebapps.patrimonio.domain.model.SavingsGoalLinkEventKind
 import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.model.UnitsBalance
 import com.denebapps.patrimonio.domain.model.normalizeBroker
@@ -130,10 +132,35 @@ class PortfolioRepositoryImpl(
             if (appDatabase.movementDao().countTransferLegsWithOtherHoldings(id) > 0) {
                 throw HoldingHasTransfersException(id)
             }
+            unlinkGoalsFrom(id)
             if (dao.delete(id) == 0) throw PortfolioHoldingNotFoundException(id)
             // The cached price history of a product nobody holds any more is useless.
             appDatabase.instrumentPriceDao().pruneUnreferenced()
             snapshotUpserter.refreshCurrentMonth()
+        }
+    }
+
+    /** Goals that follow the product directly leave a `HOLDING_DELETED` event and lose the link before it goes (the
+     *  foreign key would drop the row anyway, silently). Goals that follow a group holding it are untouched. */
+    private suspend fun unlinkGoalsFrom(holdingId: String) {
+        val goals = appDatabase.savingsGoalDao()
+        val linkedGoals = goals.listGoalsLinkedToHolding(holdingId)
+        if (linkedGoals.isEmpty()) return
+        val timestampEpochMs = clock.now().toEpochMilliseconds()
+        linkedGoals.forEach { goal ->
+            goals.insertLinkEvent(
+                SavingsGoalLinkEventEntity(
+                    goalId = goal.id,
+                    fromAssetId = null,
+                    toAssetId = null,
+                    kind = SavingsGoalLinkEventKind.HOLDING_DELETED.name,
+                    timestampEpochMs = timestampEpochMs,
+                    fromHoldingId = holdingId,
+                ),
+            )
+        }
+        check(goals.clearLinkedHolding(holdingId) == linkedGoals.size) {
+            "Holding '$holdingId' links changed during deletion"
         }
     }
 

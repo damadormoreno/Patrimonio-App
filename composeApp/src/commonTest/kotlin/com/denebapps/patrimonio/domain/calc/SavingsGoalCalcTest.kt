@@ -97,16 +97,19 @@ class SavingsGoalCalcTest {
     }
 
     @Test
-    fun `a goal cannot be linked to an asset and a group at once`() {
-        assertFailsWith<IllegalArgumentException> {
-            goal(
-                id = "goal-1",
-                targetMinor = 100,
-                progressMinor = 0,
-                linkedAssetIds = setOf("asset-1"),
-                linkedGroupId = "group-1",
-            )
-        }
+    fun `a goal can follow an account and a group at once`() {
+        val goal = goal(
+            id = "goal-1",
+            targetMinor = 100,
+            progressMinor = 0,
+            linkedAssetIds = setOf("a1"),
+            linkedGroupId = "g1",
+        )
+
+        assertTrue(goal.tracksLinkedBalance)
+        val assets = listOf(asset("a1", 100), asset("a2", 40))
+        // a1 is followed directly and is a member of g1 too: it counts once.
+        assertEquals(Money(140), trackedBalance(goal, assets, listOf(group("g1", "a1", "a2")), null))
     }
 
     @Test
@@ -188,6 +191,7 @@ class SavingsGoalCalcTest {
 
         val sharing = goalsSharingLinkedBalance(
             listOf(sharedAsset1, alone, sharedGroup1, cancelledOnA1, sharedAsset2, unlinked, sharedGroup2),
+            listOf(group("g1", "a9")),
         )
 
         assertEquals(
@@ -202,8 +206,8 @@ class SavingsGoalCalcTest {
         val both2 = goal(id = "b2", targetMinor = 100, progressMinor = 0, linkedAssetIds = setOf("a1", "a2"))
         val overlap = goal(id = "o", targetMinor = 100, progressMinor = 0, linkedAssetIds = setOf("a2", "a3"))
 
-        fun sharing(vararg goals: SavingsGoal) =
-            goalsSharingLinkedBalance(goals.toList()).map { shared -> shared.targetIds to shared.goals.map { it.id } }
+        fun sharing(vararg goals: SavingsGoal) = goalsSharingLinkedBalance(goals.toList(), emptyList())
+            .map { shared -> shared.targetIds to shared.goals.map { it.id } }
 
         assertEquals(
             setOf(listOf("a1") to listOf("b1", "b2"), listOf("a2") to listOf("b1", "b2", "o")),
@@ -233,7 +237,7 @@ class SavingsGoalCalcTest {
         target = CurrencyAmount(Money(targetMinor), currency),
         targetDate = null,
         linkedAssetIds = linkedAssetIds,
-        linkedGroupId = linkedGroupId,
+        linkedGroupIds = setOfNotNull(linkedGroupId),
         lifecycle = lifecycle,
         progress = Money(progressMinor),
     )

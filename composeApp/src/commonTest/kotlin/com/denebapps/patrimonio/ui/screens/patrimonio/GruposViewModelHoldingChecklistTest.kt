@@ -62,7 +62,7 @@ class GruposViewModelHoldingChecklistTest {
         target = CurrencyAmount(Money(100_000), Currency.EUR),
         targetDate = null,
         linkedAssetIds = emptySet(),
-        linkedGroupId = groupId,
+        linkedGroupIds = setOf(groupId),
         lifecycle = SavingsGoalLifecycle.OPEN,
         progress = Money.ZERO,
     )

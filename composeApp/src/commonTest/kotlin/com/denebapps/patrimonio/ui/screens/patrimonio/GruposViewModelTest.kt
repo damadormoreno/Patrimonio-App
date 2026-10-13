@@ -63,7 +63,7 @@ class GruposViewModelTest {
         linkedAssetIds = linkedAssetIds,
         lifecycle = lifecycle,
         progress = Money.ZERO,
-        linkedGroupId = linkedGroupId,
+        linkedGroupIds = setOfNotNull(linkedGroupId),
     )
 
     private fun groupsWithPersonal() = FakeAccountGroupRepository(

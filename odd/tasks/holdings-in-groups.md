@@ -65,7 +65,7 @@ fund). Also show the portfolio's products in Patrimonio like the other categorie
 - [x] **T3 — UI**: group form/list, Patrimonio Cartera rows, product detail usage + delete warning (route:
   delegated writer).
 - [x] **T4 — Docs + manual test** (route: inline).
-- [ ] **T5 — Goals with mixed links: persistence + domain + values**: schema **v16** (not v15: the emulator, and
+- [x] **T5 — Goals with mixed links: persistence + domain + values**: schema **v16** (not v15: the emulator, and
   possibly the user's phone via the PR preview, already run v15) — goal ↔ holdings and goal ↔ groups (several)
   tables, migrate `linkedGroupId` into the groups table, link events for holdings/groups, `trackedBalance` as a
   deduplicated union, sharing notices on effective overlap, usage (direct + via groups), deletes write events,
@@ -116,7 +116,16 @@ fund). Also show the portfolio's products in Patrimonio like the other categorie
   and delete warning «Está en el grupo «Casa»; se quitará de él.» (cancelled); goal «Entrada piso» 40.000 € linked
   to the group → 26.484,22 € «Faltan 13.515,78 €». Restored the backup: every table identical (fundamentals cache
   timestamp excluded), new table empty.
+- **T5** (commit below, `feat(goals): follow any mix of accounts, products and groups`): manual `MIGRATION_15_16`
+  (new `savings_goal_holdings`/`savings_goal_groups`, `linkedGroupId` copied then the goals table rebuilt without
+  it, link events gain `fromHoldingId`/`toHoldingId`, `PRAGMA foreign_key_check`); `SavingsGoal` with three link
+  sets (XOR removed); events: removals then additions, `HOLDING_DELETED`, group swap = UNLINK + LINK; repository
+  validates added ids atomically; `trackedBalance` = deduplicated union (direct + via groups); sharing notices on
+  effective overlap; `accountUsage`/`holdingUsage` count goals direct or via groups; backup v16 (older files map
+  `linkedGroupId` to one group). RED not observed by running (tests written first); GREEN: check.sh (2062 tests),
+  iOS compile. Parent mutation check: dropping the dedup (`distinctBy`) fails 2 tests; parent re-run of goal,
+  migration and backup suites green.
 
 ## Next step
 
-T5 (goals with mixed links), then T6, T7; same PR #42. Then the Cartera tab redesign (separate feature).
+T6 (goal form UI), then T7; same PR #42. Then the Cartera tab redesign (separate feature).

@@ -131,7 +131,8 @@ private data class NewGoalForm(
     val currency: Currency = Currency.EUR,
     val targetDate: LocalDate? = null,
     val linkedAssetIds: Set<String> = emptySet(),
-    val linkedGroupId: String? = null,
+    val linkedHoldingIds: Set<String> = emptySet(),
+    val linkedGroupIds: Set<String> = emptySet(),
     /** Set once [SavingsGoalsViewModel.onStartEditing] has loaded an existing goal: saving updates it. */
     val editingGoalId: String? = null,
 )
@@ -231,22 +232,35 @@ class SavingsGoalsViewModel(
         newGoalForm.value = newGoalForm.value.copy(targetDate = date)
     }
 
-    /** Adds or removes one asset from the picked ones, dropping any picked group. */
+    /** Adds or removes one asset from the picked ones, dropping any picked product or group (this form still offers
+     *  one kind of link at a time). */
     fun onNewGoalAssetToggle(assetId: String) {
         val form = newGoalForm.value
         val picked = assetId in form.linkedAssetIds
         val assetIds = if (picked) form.linkedAssetIds - assetId else form.linkedAssetIds + assetId
-        newGoalForm.value = form.copy(linkedAssetIds = assetIds, linkedGroupId = null)
+        newGoalForm.value = form.copy(
+            linkedAssetIds = assetIds,
+            linkedHoldingIds = emptySet(),
+            linkedGroupIds = emptySet(),
+        )
     }
 
-    /** Picks a group, dropping any picked asset: a goal links to assets XOR a group. */
+    /** Picks a group, dropping any picked asset or product (this form still offers one kind of link at a time). */
     fun onNewGoalGroupLinkChange(groupId: String) {
-        newGoalForm.value = newGoalForm.value.copy(linkedAssetIds = emptySet(), linkedGroupId = groupId)
+        newGoalForm.value = newGoalForm.value.copy(
+            linkedAssetIds = emptySet(),
+            linkedHoldingIds = emptySet(),
+            linkedGroupIds = setOf(groupId),
+        )
     }
 
     /** Leaves the goal unlinked: it takes allocations instead of following a balance. */
     fun onNewGoalUnlink() {
-        newGoalForm.value = newGoalForm.value.copy(linkedAssetIds = emptySet(), linkedGroupId = null)
+        newGoalForm.value = newGoalForm.value.copy(
+            linkedAssetIds = emptySet(),
+            linkedHoldingIds = emptySet(),
+            linkedGroupIds = emptySet(),
+        )
     }
 
     /** Fills the form with an existing open goal so saving edits it. Calling it again for the same goal
@@ -261,7 +275,8 @@ class SavingsGoalsViewModel(
                 currency = goal.target.currency,
                 targetDate = goal.targetDate,
                 linkedAssetIds = goal.linkedAssetIds,
-                linkedGroupId = goal.linkedGroupId,
+                linkedHoldingIds = goal.linkedHoldingIds,
+                linkedGroupIds = goal.linkedGroupIds,
                 editingGoalId = goal.id,
             )
         }
@@ -285,7 +300,8 @@ class SavingsGoalsViewModel(
                         target = CurrencyAmount(Money(targetMinor), form.currency),
                         targetDate = form.targetDate,
                         linkedAssetIds = form.linkedAssetIds,
-                        linkedGroupId = form.linkedGroupId,
+                        linkedHoldingIds = form.linkedHoldingIds,
+                        linkedGroupIds = form.linkedGroupIds,
                     ),
                 )
                 errorMessage.value = null
@@ -306,7 +322,8 @@ class SavingsGoalsViewModel(
                         targetAmount = target,
                         targetDate = form.targetDate,
                         linkedAssetIds = form.linkedAssetIds,
-                        linkedGroupId = form.linkedGroupId,
+                        linkedHoldingIds = form.linkedHoldingIds,
+                        linkedGroupIds = form.linkedGroupIds,
                     ),
                 )
                 errorMessage.value = null
@@ -381,10 +398,11 @@ class SavingsGoalsViewModel(
     private fun buildState(data: SavingsGoalsData, forms: Forms): SavingsGoalsUiState {
         val (goals, assets, groups, rates, holdings) = data
 
-        val targetNames = assets.associate { it.id to it.name } + groups.associate { it.id to it.name }
+        val targetNames = assets.associate { it.id to it.name } + holdings.associate { it.id to it.name } +
+            groups.associate { it.id to it.name }
         val today = clock.todayIn(zoneProvider())
         val rows = goals.map { goal -> goal.toRowUi(assets, groups, holdings, rates, targetNames, today) }
-        val sharedBalanceNotices = goalsSharingLinkedBalance(goals).map { sharing ->
+        val sharedBalanceNotices = goalsSharingLinkedBalance(goals, groups).map { sharing ->
             SharedBalanceNoticeUi(
                 targetLabel = linkedTargetLabel(sharing.targetIds.mapNotNull(targetNames::get).sorted()).orEmpty(),
                 goalNames = sharing.goals.map { it.name },
@@ -419,7 +437,7 @@ class SavingsGoalsViewModel(
             newGoalCurrency = forms.newGoal.currency,
             newGoalTargetDate = forms.newGoal.targetDate,
             newGoalLinkedAssetIds = forms.newGoal.linkedAssetIds,
-            newGoalLinkedGroupId = forms.newGoal.linkedGroupId,
+            newGoalLinkedGroupId = forms.newGoal.linkedGroupIds.firstOrNull(),
             linkableAssets = linkableAssets,
             linkableGroups = linkableGroups,
             canSaveNewGoal = forms.newGoal.name.isNotBlank() && newGoalTargetMinor != null && newGoalTargetMinor > 0,
@@ -448,7 +466,7 @@ private fun SavingsGoal.toRowUi(
     today: LocalDate,
 ): SavingsGoalRowUi {
     val balance = trackedBalance(this, assets, groups, rates, holdings)
-    val linkedTargetIds = linkedAssetIds + listOfNotNull(linkedGroupId)
+    val linkedTargetIds = linkedAssetIds + linkedHoldingIds + linkedGroupIds
     val shown = if (tracksLinkedBalance) balance ?: Money.ZERO else progress
     val balanceUnavailable = tracksLinkedBalance && balance == null
     val closed = lifecycle != SavingsGoalLifecycle.OPEN
@@ -472,7 +490,7 @@ private fun SavingsGoal.toRowUi(
         targetReached = shown >= target.amount,
         closed = closed,
         linkedAssetIds = linkedAssetIds,
-        linkedGroupId = linkedGroupId,
+        linkedGroupId = linkedGroupIds.firstOrNull(),
         tracksBalance = tracksLinkedBalance,
         linkedTargetLabel = linkedTargetLabel(linkedTargetIds.mapNotNull(targetNames::get).sorted()),
         balanceUnavailable = balanceUnavailable,

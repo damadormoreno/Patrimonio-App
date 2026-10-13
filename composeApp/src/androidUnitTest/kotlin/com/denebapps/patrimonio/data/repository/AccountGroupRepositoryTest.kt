@@ -9,6 +9,7 @@ import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalGroupEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 import com.denebapps.patrimonio.data.db.insertGoalReturningId
 import com.denebapps.patrimonio.data.db.testSeedingGate
@@ -82,10 +83,9 @@ class AccountGroupRepositoryTest {
         db.assetDao().insert(AssetEntity("a1", "BANK", "Checking", null, 100_00, "EUR"))
         repo.insertGroup(AccountGroup("g1", "Savings", true, 0, memberAssetIds = setOf("a1")))
         repo.insertGroup(AccountGroup("g2", "Other", true, 1, memberAssetIds = setOf("a1")))
-        val open = db.savingsGoalDao().insertGoalReturningId(goal("Open", linkedGroupId = "g1"))
-        val closed =
-            db.savingsGoalDao().insertGoalReturningId(goal("Closed", lifecycle = "CLOSED", linkedGroupId = "g1"))
-        val onOtherGroup = db.savingsGoalDao().insertGoalReturningId(goal("Elsewhere", linkedGroupId = "g2"))
+        val open = db.insertGoalLinkedTo(goal("Open"), "g1")
+        val closed = db.insertGoalLinkedTo(goal("Closed", lifecycle = "CLOSED"), "g1")
+        val onOtherGroup = db.insertGoalLinkedTo(goal("Elsewhere"), "g2")
         val onAsset = db.savingsGoalDao().insertGoalReturningId(goal("OnAsset"))
         db.savingsGoalDao().insertLinkedAssets(listOf(SavingsGoalAssetEntity(onAsset, "a1")))
         db.savingsGoalDao().insertAllocationEvent(SavingsGoalAllocationEventEntity(0, open, 12_000, 1_000))
@@ -96,9 +96,9 @@ class AccountGroupRepositoryTest {
         assertNull(db.accountGroupDao().findGroup("g1"))
         val goals = db.savingsGoalDao().listAllGoals().associateBy { it.id }
         assertEquals(setOf(open, closed, onOtherGroup, onAsset), goals.keys)
-        assertNull(goals.getValue(open).linkedGroupId)
-        assertNull(goals.getValue(closed).linkedGroupId)
-        assertEquals("g2", goals.getValue(onOtherGroup).linkedGroupId)
+        assertEquals(emptyList(), db.savingsGoalDao().listLinkedGroupIds(open))
+        assertEquals(emptyList(), db.savingsGoalDao().listLinkedGroupIds(closed))
+        assertEquals(listOf("g2"), db.savingsGoalDao().listLinkedGroupIds(onOtherGroup))
         assertEquals(listOf("a1"), db.savingsGoalDao().listLinkedAssetIds(onAsset))
         assertEquals(listOf(12_000L), db.savingsGoalDao().listAllocationHistory(open).map { it.deltaMinor })
         listOf(open, closed).forEach { goalId ->
@@ -133,11 +133,11 @@ class AccountGroupRepositoryTest {
         val db = buildInMemoryTestDatabase()
         val failing = groupRepository(db, LinkEventFailingSource(db.savingsGoalDao()))
         failing.insertGroup(AccountGroup("g1", "Savings", true, 0, memberAssetIds = emptySet()))
-        val goalId = db.savingsGoalDao().insertGoalReturningId(goal("Open", linkedGroupId = "g1"))
+        val goalId = db.insertGoalLinkedTo(goal("Open"), "g1")
 
         assertFails { failing.deleteGroup("g1") }
 
-        assertEquals("g1", db.savingsGoalDao().findGoal(goalId)?.linkedGroupId)
+        assertEquals(listOf("g1"), db.savingsGoalDao().listLinkedGroupIds(goalId))
         assertEquals("g1", db.accountGroupDao().findGroup("g1")?.id)
         assertTrue(db.savingsGoalDao().listAllLinkEvents().isEmpty())
         db.close()
@@ -150,7 +150,7 @@ class AccountGroupRepositoryTest {
         db.assetDao().insert(AssetEntity("a1", "BANK", "Checking", null, 100_00, "EUR"))
         db.assetDao().insert(AssetEntity("a2", "CASH", "Wallet", null, 20_00, "EUR"))
         repo.insertGroup(AccountGroup("g1", "Savings", true, 3, memberAssetIds = setOf("a1")))
-        val goalId = db.savingsGoalDao().insertGoalReturningId(goal("Open", linkedGroupId = "g1"))
+        val goalId = db.insertGoalLinkedTo(goal("Open"), "g1")
 
         repo.updateGroup(AccountGroup("g1", "Colchón", false, 0, memberAssetIds = setOf("a2")))
 
@@ -160,7 +160,7 @@ class AccountGroupRepositoryTest {
         assertEquals(3, group.sortOrder)
         assertEquals(setOf("a2"), group.memberAssetIds)
         // An UPDATE, not a REPLACE: the goal keeps its group link and no unlink event is written.
-        assertEquals("g1", db.savingsGoalDao().findGoal(goalId)?.linkedGroupId)
+        assertEquals(listOf("g1"), db.savingsGoalDao().listLinkedGroupIds(goalId))
         assertTrue(db.savingsGoalDao().listAllLinkEvents().isEmpty())
         db.close()
     }
@@ -270,7 +270,7 @@ class AccountGroupRepositoryTest {
         val repo = groupRepository(db)
         seedAccountsAndHoldings(db)
         repo.insertGroup(AccountGroup("g1", "Casa", true, 3, setOf("a1"), setOf("h1", "h2")))
-        val goalId = db.savingsGoalDao().insertGoalReturningId(goal("Open", linkedGroupId = "g1"))
+        val goalId = db.insertGoalLinkedTo(goal("Open"), "g1")
 
         repo.updateGroup(AccountGroup("g1", "Casa nueva", true, 0, setOf("a1"), setOf("h3")))
 
@@ -278,7 +278,7 @@ class AccountGroupRepositoryTest {
         assertEquals("Casa nueva", group.name)
         assertEquals(setOf("a1"), group.memberAssetIds)
         assertEquals(setOf("h3"), group.memberHoldingIds)
-        assertEquals("g1", db.savingsGoalDao().findGoal(goalId)?.linkedGroupId)
+        assertEquals(listOf("g1"), db.savingsGoalDao().listLinkedGroupIds(goalId))
 
         repo.updateGroup(AccountGroup("g1", "Casa nueva", true, 0, emptySet(), emptySet()))
 
@@ -426,14 +426,19 @@ class AccountGroupRepositoryTest {
             GroupFixedClock(Instant.parse(DELETION_TIME)),
         )
 
-    private fun goal(name: String, lifecycle: String = "OPEN", linkedGroupId: String? = null) = SavingsGoalEntity(
+    private suspend fun AppDatabase.insertGoalLinkedTo(goal: SavingsGoalEntity, groupId: String): String {
+        savingsGoalDao().insertGoal(goal)
+        savingsGoalDao().insertLinkedGroups(listOf(SavingsGoalGroupEntity(goal.id, groupId)))
+        return goal.id
+    }
+
+    private fun goal(name: String, lifecycle: String = "OPEN") = SavingsGoalEntity(
         id = "goal-$name",
         name = name,
         targetMinor = 100_000,
         currency = "EUR",
         targetDateEpochDay = null,
         lifecycle = lifecycle,
-        linkedGroupId = linkedGroupId,
         createdAtEpochMs = 0,
     )
 

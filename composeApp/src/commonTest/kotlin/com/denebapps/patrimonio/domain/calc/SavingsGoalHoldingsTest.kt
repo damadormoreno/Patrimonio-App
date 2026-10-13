@@ -40,7 +40,7 @@ class SavingsGoalHoldingsTest {
         target = CurrencyAmount(Money(1_000_000), currency),
         targetDate = null,
         linkedAssetIds = linkedAssetIds,
-        linkedGroupId = linkedGroupId,
+        linkedGroupIds = setOfNotNull(linkedGroupId),
         lifecycle = lifecycle,
         progress = Money.ZERO,
     )
@@ -138,7 +138,7 @@ class SavingsGoalHoldingsTest {
         val first = goal()
         val second = goal().copy(id = "goal-2", name = "Reforma")
 
-        val sharing = goalsSharingLinkedBalance(listOf(first, second))
+        val sharing = goalsSharingLinkedBalance(listOf(first, second), listOf(group()))
 
         assertEquals(
             listOf(listOf("g1") to listOf("goal-1", "goal-2")),

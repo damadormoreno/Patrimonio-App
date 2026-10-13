@@ -2,6 +2,7 @@ package com.denebapps.patrimonio.data.repository
 
 import com.denebapps.patrimonio.data.backup.AccountGroupHoldingMemberBackup
 import com.denebapps.patrimonio.data.backup.BackupCodec
+import com.denebapps.patrimonio.data.backup.SavingsGoalBackup
 import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.buildInMemoryTestDatabase
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
@@ -15,6 +16,8 @@ import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalGroupEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 import com.denebapps.patrimonio.data.db.testSeedingGate
 import com.denebapps.patrimonio.domain.repository.InvalidBackupException
@@ -53,6 +56,8 @@ private data class TablesState(
     val allocations: List<SavingsGoalAllocationEventEntity>,
     val links: List<SavingsGoalLinkEventEntity>,
     val goalAssets: List<SavingsGoalAssetEntity>,
+    val goalHoldings: List<SavingsGoalHoldingEntity>,
+    val goalGroups: List<SavingsGoalGroupEntity>,
     val holdings: List<PortfolioHoldingEntity>,
     val portfolios: List<PortfolioEntity>,
 )
@@ -84,6 +89,8 @@ class BackupRepositoryImplTest {
         allocations = savingsGoalDao().listAllAllocationEvents(),
         links = savingsGoalDao().listAllLinkEvents(),
         goalAssets = savingsGoalDao().listAllLinkedAssets(),
+        goalHoldings = savingsGoalDao().listAllLinkedHoldings(),
+        goalGroups = savingsGoalDao().listAllLinkedGroups(),
         holdings = portfolioHoldingDao().list(),
         portfolios = portfolioDao().list(),
     )
@@ -105,7 +112,7 @@ class BackupRepositoryImplTest {
             SavingsGoalEntity(COCHE, "Coche", 900_000, "EUR", null, "CANCELLED", createdAtEpochMs = 12),
         )
         db.savingsGoalDao().insertGoal(
-            SavingsGoalEntity(COLCHON, "Colchón", 100_000, "EUR", null, "OPEN", "g1", createdAtEpochMs = 13),
+            SavingsGoalEntity(COLCHON, "Colchón", 100_000, "EUR", null, "OPEN", createdAtEpochMs = 13),
         )
         db.savingsGoalDao().insertAllocationEvent(SavingsGoalAllocationEventEntity(3, VIAJE, 50_000, 1_000))
         db.savingsGoalDao().insertAllocationEvent(SavingsGoalAllocationEventEntity(4, VIAJE, -20_000, 2_000))
@@ -141,6 +148,21 @@ class BackupRepositoryImplTest {
         )
         db.accountGroupDao().insertHoldingMember(AccountGroupHoldingMemberEntity("g1", "p1"))
         db.accountGroupDao().insertHoldingMember(AccountGroupHoldingMemberEntity("g1", "p3"))
+        // Goals following groups and products: the group link of "Colchón" plus two products, one of them next to a
+        // second group, and a deleted-product event.
+        db.accountGroupDao().insertGroup(AccountGroupEntity("g2", "Viaje", showBalance = true, sortOrder = 1))
+        db.savingsGoalDao().insertLinkedGroups(
+            listOf(SavingsGoalGroupEntity(COLCHON, "g1"), SavingsGoalGroupEntity(COLCHON, "g2")),
+        )
+        db.savingsGoalDao().insertLinkedHoldings(
+            listOf(SavingsGoalHoldingEntity(COLCHON, "p1"), SavingsGoalHoldingEntity(VIAJE, "p2")),
+        )
+        db.savingsGoalDao().insertLinkEvent(
+            SavingsGoalLinkEventEntity(8, COLCHON, null, null, "LINK", 1_500, toHoldingId = "p1"),
+        )
+        db.savingsGoalDao().insertLinkEvent(
+            SavingsGoalLinkEventEntity(9, COLCHON, null, null, "HOLDING_DELETED", 1_600, fromHoldingId = "gone"),
+        )
         upserterFor(db).refreshCurrentMonth()
     }
 
@@ -178,7 +200,11 @@ class BackupRepositoryImplTest {
             mapOf("p1" to TEST_PORTFOLIO_ID, "p2" to TEST_PORTFOLIO_ID, "p3" to "pf-hijos"),
             document.portfolioHoldings.associate { it.id to it.portfolioId },
         )
-        assertEquals("g1", document.savingsGoals.last().linkedGroupId)
+        val colchon = document.savingsGoals.last()
+        assertEquals(listOf("g1", "g2"), colchon.linkedGroupIds)
+        assertEquals(listOf("p1"), colchon.linkedHoldingIds)
+        assertEquals(listOf("p2"), document.savingsGoals.first().linkedHoldingIds)
+        assertEquals(listOf("HOLDING_DELETED"), document.savingsGoalLinkEvents.filter { it.id == 9L }.map { it.kind })
         assertEquals(listOf("a1", "a2"), document.savingsGoals.first().linkedAssetIds)
         assertEquals(
             listOf(AccountGroupHoldingMemberBackup("g1", "p1"), AccountGroupHoldingMemberBackup("g1", "p3")),
@@ -265,6 +291,98 @@ class BackupRepositoryImplTest {
     }
 
     @Test
+    fun `goal links to accounts products and groups come back after the groups and holdings they point at`() = runTest {
+        val source = buildInMemoryTestDatabase()
+        testSeedingGate(source).await()
+        populate(source)
+        val json = repositoryFor(source).exportJson()
+        source.close()
+        val target = buildInMemoryTestDatabase()
+
+        repositoryFor(target).importJson(json)
+
+        assertEquals(
+            listOf(SavingsGoalGroupEntity(COLCHON, "g1"), SavingsGoalGroupEntity(COLCHON, "g2")),
+            target.savingsGoalDao().listAllLinkedGroups(),
+        )
+        assertEquals(
+            listOf(SavingsGoalHoldingEntity(COLCHON, "p1"), SavingsGoalHoldingEntity(VIAJE, "p2")),
+            target.savingsGoalDao().listAllLinkedHoldings(),
+        )
+        assertEquals(listOf("a1", "a2"), target.savingsGoalDao().listLinkedAssetIds(VIAJE))
+        assertEquals(
+            listOf("HOLDING_DELETED"),
+            target.savingsGoalDao().listAllLinkEvents().filter { it.id == 9L }.map { it.kind },
+        )
+        target.close()
+    }
+
+    @Test
+    fun `a version 15 backup maps the single linked group of a goal to the goal groups`() = runTest {
+        val db = buildInMemoryTestDatabase()
+        testSeedingGate(db).await()
+        populate(db)
+        val v15 = """
+            {
+              "format": "patrimonio-backup",
+              "version": 15,
+              "exportedAt": "2026-01-01T00:00:00Z",
+              "assets": [{"id": "a1", "group": "BANK", "name": "Cuenta", "amountMinor": 150000, "currency": "EUR"}],
+              "accountGroups": [{"id": "g1", "name": "Casa", "showBalance": true, "sortOrder": 0}],
+              "accountGroupMembers": [{"groupId": "g1", "assetId": "a1"}],
+              "savingsGoals": [
+                {"id": "u1", "name": "Casa", "targetMinor": 300000, "currency": "EUR",
+                 "linkedAssetIds": [], "linkedGroupId": "g1", "lifecycle": "OPEN", "createdAtEpochMs": 1},
+                {"id": "u2", "name": "Viaje", "targetMinor": 100, "currency": "EUR",
+                 "linkedAssetIds": ["a1"], "linkedGroupId": null, "lifecycle": "OPEN", "createdAtEpochMs": 2}
+              ],
+              "savingsGoalLinkEvents": [
+                {"id": 1, "goalId": "u1", "kind": "LINK", "timestampEpochMs": 1000, "toGroupId": "g1"}
+              ]
+            }
+        """.trimIndent()
+
+        repositoryFor(db).importJson(v15)
+
+        assertEquals(listOf(SavingsGoalGroupEntity("u1", "g1")), db.savingsGoalDao().listAllLinkedGroups())
+        assertEquals(listOf("a1"), db.savingsGoalDao().listLinkedAssetIds("u2"))
+        assertTrue(db.savingsGoalDao().listAllLinkedHoldings().isEmpty())
+        assertEquals("g1", db.savingsGoalDao().listAllLinkEvents().single().toGroupId)
+        db.close()
+    }
+
+    @Test
+    fun `a backup whose goal links an unknown product or group or the builtin group is refused and changes nothing`() =
+        runTest {
+            val db = buildInMemoryTestDatabase()
+            testSeedingGate(db).await()
+            populate(db)
+            val before = db.tables()
+            val repository = repositoryFor(db)
+            val exported = BackupCodec.decode(repository.exportJson())
+
+            fun withGoal(change: (SavingsGoalBackup) -> SavingsGoalBackup) = BackupCodec.encode(
+                exported.copy(savingsGoals = exported.savingsGoals.map { if (it.id == COLCHON) change(it) else it }),
+            )
+
+            assertFailsWith<InvalidBackupException> {
+                repository.importJson(withGoal { it.copy(linkedHoldingIds = it.linkedHoldingIds + "nope") })
+            }
+            assertFailsWith<InvalidBackupException> {
+                repository.importJson(withGoal { it.copy(linkedGroupIds = it.linkedGroupIds + "nope") })
+            }
+            assertFailsWith<InvalidBackupException> {
+                repository.importJson(withGoal { it.copy(linkedGroupIds = it.linkedGroupIds + "__all__") })
+            }
+            assertFailsWith<InvalidBackupException> {
+                repository.importJson(withGoal { it.copy(linkedHoldingIds = listOf("p1", "p1")) })
+            }
+
+            assertEquals(before, db.tables())
+            db.close()
+        }
+
+    @Test
     fun `import replaces existing data instead of merging`() = runTest {
         val db = buildInMemoryTestDatabase()
         testSeedingGate(db).await()
@@ -338,7 +456,8 @@ class BackupRepositoryImplTest {
 
         val goal = db.savingsGoalDao().listAllGoals().single()
         assertEquals(listOf("a1"), db.savingsGoalDao().listLinkedAssetIds(goal.id))
-        assertNull(goal.linkedGroupId)
+        assertEquals(emptyList(), db.savingsGoalDao().listLinkedGroupIds(goal.id))
+        assertEquals(emptyList(), db.savingsGoalDao().listLinkedHoldingIds(goal.id))
         val link = db.savingsGoalDao().listAllLinkEvents().single()
         assertEquals(goal.id, link.goalId)
         assertNull(link.fromGroupId)
