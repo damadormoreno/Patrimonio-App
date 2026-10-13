@@ -217,7 +217,8 @@ class AllocationTargetRepositoryTest {
     @Test
     fun `a target outside zero to 100 percent is refused and nothing is written`() = runTest {
         val db = buildInMemoryTestDatabase()
-        val repository = repositoryFor(db)
+        val seeding = testSeedingGate(db)
+        val repository = AllocationTargetRepositoryImpl(db, seeding)
 
         val error = assertFailsWith<InvalidAllocationTargetsException> {
             repository.setTargets(
@@ -229,14 +230,17 @@ class AllocationTargetRepositoryTest {
 
         assertEquals(TargetsError.OutOfRange(AssetClass.EQUITY, 11_000), error.error)
         assertTrue(db.allocationTargetDao().list().isEmpty())
+        // The refusal happens before the repository waits for seeding: let it finish before closing the database.
+        seeding.await()
         db.close()
     }
 
     @Test
     fun `a tolerance outside zero to 100 percent is refused and nothing is written`() = runTest {
         val db = buildInMemoryTestDatabase()
-        val repository = repositoryFor(db)
-        val portfolios = portfoliosFor(db)
+        val seeding = testSeedingGate(db)
+        val repository = AllocationTargetRepositoryImpl(db, seeding)
+        val portfolios = PortfolioCollectionRepositoryImpl(db, seeding) { "portfolio-unused" }
 
         for (bad in listOf(-1, 10_001)) {
             val error = assertFailsWith<InvalidRebalanceToleranceException> {
