@@ -58,8 +58,9 @@ producto puede llevar, opcionalmente, el banco o bróker que lo gestiona (*Banco
 
 - **Varias carteras** (p. ej. *Jubilación*, *Hijos*): cada producto está en **una sola** cartera y el
   patrimonio neto suma todas. En la pestaña se elige *Todas* o una cartera (se recuerda la elección);
-  lista, total y detalle siguen esa selección. Se crean, renombran y eliminan desde *Gestionar*: al
-  eliminar una con productos se pide a qué otra moverlos, y la última no se puede borrar. Al añadir un
+  lista, total y detalle siguen esa selección. Se crean con *+ Nueva* y se renombran o eliminan desde su
+  detalle (*Ver detalle → Gestionar cartera*): al eliminar una con productos se pide a qué otra moverlos, y la
+  última no se puede borrar. Al añadir un
   producto se elige su cartera y desde su ficha se puede mover a otra.
 
 - **Grupos y metas**: los productos de la cartera pueden estar en grupos junto a las cuentas (un mismo producto
@@ -69,7 +70,9 @@ producto puede llevar, opcionalmente, el banco o bróker que lo gestiona (*Banco
   grupos y las metas son vistas: el patrimonio neto no cambia. Un producto sin precio todavía cuenta 0. En *Patrimonio*, la tarjeta *Cartera* se despliega con una fila
   por producto (con los iconos de grupo y meta), y el detalle del producto dice en qué grupos y metas está; al
   borrarlo se avisa.
-- **Filtros**: *Filtrar* (junto a las carteras) por clase de activo, bróker y tipo. Varias opciones de un
+- **Lista**: cada producto en dos líneas — nombre y valor; debajo, tipo · clase · participaciones · bróker
+  (· cartera, en *Todas*).
+- **Filtros**: el icono de filtro sobre la lista (con el número de filtros activos) por clase de activo, bróker y tipo. Varias opciones de un
   mismo filtro suman y filtros distintos se combinan; la lista y el total siguen el filtro («Filtrado · N de M
   productos») y se recuerda el último. No afectan al patrimonio neto ni al detalle de la cartera.
 - **Objetivo de reparto y rebalanceo** (por cartera, en su detalle): porcentaje objetivo por clase de activo
@@ -87,8 +90,8 @@ producto puede llevar, opcionalmente, el banco o bróker que lo gestiona (*Banco
 - **No son APIs oficiales**: pueden cambiar o dejar de responder sin aviso. Si falla una consulta
   se conserva el último precio con su fecha. Aceptable para uso personal; antes de publicar la app
   habría que pasar a una fuente con licencia.
-- Los precios se actualizan al abrir la app si tienen más de 6 horas y con *Actualizar* (o
-  deslizando hacia abajo) en la pestaña. Solo se admiten productos cotizados en EUR, USD, GBP o JPY.
+- Los precios se actualizan al abrir la app si tienen más de 6 horas y con el icono de actualizar
+  (o deslizando hacia abajo) en la pestaña. Solo se admiten productos cotizados en EUR, USD, GBP o JPY.
 - **Criptomonedas** con [CoinGecko](https://www.coingecko.com/) (API pública, sin clave): búsqueda,
   precio en EUR e histórico **del último año** (la API pública no da más). Las monedas que valen menos de
   un céntimo pierden precisión (los precios se guardan con 6 decimales).
@@ -146,7 +149,7 @@ propia); **con movimientos**, las participaciones salen de ellos y no se editan 
 
 ### Importar de MyInvestor
 
-*Cartera → Importar*: los lotes abiertos de cada fondo de MyInvestor entran como compras con su **fecha
+*Cartera →* icono de importar: los lotes abiertos de cada fondo de MyInvestor entran como compras con su **fecha
 fiscal y su coste reales** (los que llegaron por traspaso conservan los originales).
 
 1. En la web de MyInvestor, entra en cada fondo → *Plusvalías y minusvalías* → descarga el CSV. No le
