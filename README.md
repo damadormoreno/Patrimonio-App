@@ -138,7 +138,9 @@ propia); **con movimientos**, las participaciones salen de ellos y no se editan 
 - **Divisas**: cada movimiento guarda el importe en la divisa del producto y su equivalente en EUR;
   coste y plusvalías se calculan en EUR. Se puede escribir cualquiera de los dos y el otro se calcula con
   el tipo de ese día; si se escriben los dos (lo que cobró de verdad el bróker), se respetan y se muestra
-  el tipo resultante.
+  el tipo resultante. La comisión de un producto en otra divisa se puede escribir en esa divisa o en euros
+  (por defecto en euros, como cobran los brókeres): en euros cuenta tal cual para el coste y se muestra su
+  equivalente.
 - **Mi posición** (en el detalle del producto, aparte de su histórico): aportado, valor actual,
   plusvalía latente y realizada, dividendos, comisiones, rentabilidad anual (**XIRR**), lotes abiertos y
   la evolución del valor de tu posición. Los mismos datos, por cartera o para *Todas*, en *Tu
