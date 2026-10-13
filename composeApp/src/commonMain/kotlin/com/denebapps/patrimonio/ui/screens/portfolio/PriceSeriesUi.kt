@@ -157,7 +157,7 @@ internal fun productDataUi(
 }
 
 /** Said under the chart of a product whose provider cannot give more than a year of history. */
-internal const val COINGECKO_HISTORY_NOTE = "Histórico del último año (límite de CoinGecko)."
+internal const val COINGECKO_HISTORY_NOTE = "Histórico del último año (límite de la API). Powered by CoinGecko."
 
 /** The note that goes under the price chart of a product quoted by [provider]; `null` when there is none. */
 internal fun historyNote(provider: QuoteProvider): String? = when (provider) {

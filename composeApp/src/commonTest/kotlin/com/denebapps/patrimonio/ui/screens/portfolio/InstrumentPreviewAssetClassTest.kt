@@ -208,7 +208,7 @@ class InstrumentPreviewAssetClassTest {
         assertEquals("Cripto", state.header.typeLabel)
         assertEquals("BTC · CoinGecko", state.header.identifier)
         assertNull(state.product)
-        assertEquals("Histórico del último año (límite de CoinGecko).", state.chartNote)
+        assertEquals("Histórico del último año (límite de la API). Powered by CoinGecko.", state.chartNote)
         job.cancel()
     }
 

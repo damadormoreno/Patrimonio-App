@@ -9,6 +9,18 @@ build/
 # Local config (SDK path, secrets)
 local.properties
 
+# Signing keys and API keys: never committed (the repository is public). CI reads them from GitHub secrets.
+*.jks
+*.keystore
+*.p12
+*.p8
+*.mobileprovision
+keystore.properties
+signing.properties
+*.key
+.env
+.env.*
+
 # IDE
 .idea/
 *.iml

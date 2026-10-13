@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -60,6 +61,7 @@ fun SettingsScreen(
     onOpenProfile: () -> Unit,
     modifier: Modifier = Modifier,
     onOpenAccount: () -> Unit = {},
+    onOpenAbout: () -> Unit = {},
     viewModel: SettingsViewModel = koinViewModel(),
     backupViewModel: BackupViewModel = koinViewModel(),
     accountViewModel: AccountViewModel = koinViewModel(),
@@ -86,6 +88,7 @@ fun SettingsScreen(
         accountCloud = accountState.cloud,
         onOpenProfile = onOpenProfile,
         onOpenAccount = onOpenAccount,
+        onOpenAbout = onOpenAbout,
         onThemeModeSelect = viewModel::onThemeModeSelect,
         onExport = { exportLauncher.launch(suggestedName = backupViewModel.suggestedFileName(), extension = "json") },
         onConfirmImport = { importLauncher.launch() },
@@ -104,6 +107,7 @@ private fun SettingsContent(
     accountCloud: CloudBackupState,
     onOpenProfile: () -> Unit,
     onOpenAccount: () -> Unit,
+    onOpenAbout: () -> Unit,
     onThemeModeSelect: (ThemeMode) -> Unit,
     onExport: () -> Unit,
     onConfirmImport: () -> Unit,
@@ -188,16 +192,24 @@ private fun SettingsContent(
             SettingsSection(title = "Información", modifier = Modifier.padding(top = 12.dp))
             SettingsCard {
                 SettingsRow(
-                    title = "Versión",
+                    title = "Acerca de",
                     leading = { SettingsIcon(AppIcons.info) },
                     trailing = {
                         Text(text = state.versionName, color = colors.muted, fontSize = 13.sp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            imageVector = AppIcons.chevronR,
+                            contentDescription = null,
+                            tint = colors.muted,
+                            modifier = Modifier.size(18.dp),
+                        )
                     },
+                    onClick = onOpenAbout,
                     showDivider = false,
                 )
             }
             Text(
-                text = "Tus datos viven solo en este dispositivo. Exporta una copia de vez en cuando.",
+                text = settingsFooterText(accountCloud),
                 color = colors.muted2,
                 fontSize = 11.sp,
                 letterSpacing = 0.04.sp,

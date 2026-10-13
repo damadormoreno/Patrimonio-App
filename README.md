@@ -1,8 +1,8 @@
 # Patrimonio
 
 App personal para seguir el patrimonio neto: activos, pasivos, grupos de cuentas, histórico
-mensual, metas de ahorro y cartera de inversión, multi-divisa con conversión a EUR. Sin cuenta ni backend: los datos
-viven en el dispositivo.
+mensual, metas de ahorro y cartera de inversión, multi-divisa con conversión a EUR. Los datos viven en el
+dispositivo; opcionalmente, con una cuenta, se guarda una copia cifrada de extremo a extremo en la nube.
 
 Nace como extracción de la parte de patrimonio de *FinanzasPersonales*, sin movimientos,
 presupuestos, categorías ni analítica.
@@ -35,6 +35,17 @@ para escribir y testear migraciones. CI falla si el schema generado no coincide 
 - **android** (Ubuntu): `ktlintCheck`, `testDebugUnitTest`, `assembleDebug` y comprobación del
   schema de Room. Si fallan los tests, sube los informes como artifact.
 - **ios** (macOS): `compileKotlinIosArm64`. Los minutos de macOS cuentan x10 en repos privados.
+
+`.github/workflows/release.yml`, en cada etiqueta `v*` (o a mano): tests y AAB de release firmado (con los secretos
+`RELEASE_*`) y su mapping de R8 como artifacts. Cómo publicar la beta en Google Play (pruebas internas) y TestFlight,
+paso a paso: [`docs/release.md`](docs/release.md). Borrador de política de privacidad:
+[`docs/privacy-policy.md`](docs/privacy-policy.md).
+
+**Icono**: «P» cursiva de Instrument Serif con una tendencia, generado desde la fuente por
+[`tools/icon/AppIcon.java`](tools/icon/AppIcon.java) (icono adaptativo y temático en Android, 1024 px en iOS,
+512 px para la ficha de Play en `docs/store/`). **Acerca de** (Ajustes) muestra las fuentes de datos con su atribución
+y las licencias; la política de privacidad y el contacto aparecen al configurar `PRIVACY_POLICY_URL` y `CONTACT_EMAIL`
+en `ui/screens/about/AboutConfig.kt`.
 
 ## Estructura
 

@@ -11,6 +11,7 @@
 		7555FF76242A565900829871 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7555FF75242A565900829871 /* ContentView.swift */; };
 		7555FF78242A565B00829871 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7555FF77242A565A00829871 /* Assets.xcassets */; };
 		7555FF7B242A565B00829871 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7555FF7A242A565B00829871 /* Preview Assets.xcassets */; };
+		7555FF92242A565D00829871 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7555FF91242A565D00829871 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -20,6 +21,7 @@
 		7555FF77242A565A00829871 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7555FF7A242A565B00829871 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Content/Preview Assets.xcassets"; sourceTree = "<group>"; };
 		7555FF7C242A565B00829871 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		7555FF91242A565D00829871 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -56,6 +58,7 @@
 				7555FF75242A565900829871 /* ContentView.swift */,
 				7555FF77242A565A00829871 /* Assets.xcassets */,
 				7555FF7C242A565B00829871 /* Info.plist */,
+				7555FF91242A565D00829871 /* PrivacyInfo.xcprivacy */,
 				7555FF79242A565B00829871 /* Preview Content */,
 			);
 			path = iosApp;
@@ -106,9 +109,10 @@
 			};
 			buildConfigurationList = 7555FF6B242A565900829871 /* Build configuration list for PBXProject "iosApp" */;
 			compatibilityVersion = "Xcode 9.3";
-			developmentRegion = en;
+			developmentRegion = es;
 			hasScannedForEncodings = 0;
 			knownRegions = (
+				es,
 				en,
 				Base,
 			);
@@ -129,6 +133,7 @@
 			files = (
 				7555FF7B242A565B00829871 /* Preview Assets.xcassets in Resources */,
 				7555FF78242A565B00829871 /* Assets.xcassets in Resources */,
+				7555FF92242A565D00829871 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
