@@ -360,4 +360,127 @@ class AddHoldingPurchaseTest {
         assertEquals(EntryKind.CURRENT, vm.state.value.entryKind)
         assertEquals("", vm.state.value.purchase.unitsText)
     }
+
+    // ---- the fee in euros ----------------------------------------------------------------------------------------
+
+    @Test
+    fun `the fee of a purchase in dollars is typed in euros by default, one in euros has no choice`() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+            pick(vm, usdRef)
+            vm.onEntryKindChange(EntryKind.PURCHASE)
+            settle()
+
+            assertTrue(vm.state.value.purchase.showFeeCurrency)
+            assertTrue(vm.state.value.purchase.feeInEur)
+
+            vm.onBackToSearch()
+            pick(vm, fundRef)
+            vm.onEntryKindChange(EntryKind.PURCHASE)
+
+            assertFalse(vm.state.value.purchase.showFeeCurrency)
+            assertFalse(vm.state.value.purchase.feeInEur)
+            vm.onPurchaseFeeCurrencyChange(true)
+            assertFalse(vm.state.value.purchase.feeInEur)
+        }
+
+    @Test
+    fun `a purchase fee in euros is stored exactly and the fee in dollars follows the rate of the day`() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+            pick(vm, usdRef)
+            vm.onEntryKindChange(EntryKind.PURCHASE)
+            settle()
+            vm.onPurchaseUnitsChange("2")
+            vm.onPurchaseAmountChange("100")
+
+            vm.onPurchaseFeeChange("1,38")
+
+            // 138 cents x 1.000.000 / 920.000 = 150 cents.
+            assertEquals("≈ 1,50 $", vm.state.value.purchase.feePreviewText)
+            assertTrue(vm.state.value.canSave)
+            vm.onSave()
+            settle()
+
+            val buy = movements.current.single()
+            assertEquals(Money(150), buy.fee)
+            assertEquals(Money(138), buy.feeEur)
+            assertEquals(Money(9_200), buy.amountEur)
+        }
+
+    @Test
+    fun `a purchase fee in euros follows the rate the two typed amounts imply`() = runTest(dispatcher) {
+        val vm = viewModel()
+        pick(vm, usdRef)
+        vm.onEntryKindChange(EntryKind.PURCHASE)
+        settle()
+        vm.onPurchaseUnitsChange("2")
+        vm.onPurchaseAmountChange("100")
+        vm.onPurchaseEurChange("86,12")
+
+        vm.onPurchaseFeeChange("1")
+
+        assertEquals("≈ 1,16 $", vm.state.value.purchase.feePreviewText)
+        vm.onSave()
+        settle()
+        val buy = movements.current.single()
+        assertEquals(Money(116), buy.fee)
+        assertEquals(Money(100), buy.feeEur)
+    }
+
+    @Test
+    fun `switching the purchase fee to dollars keeps the typed number and shows its euros`() = runTest(dispatcher) {
+        val vm = viewModel()
+        pick(vm, usdRef)
+        vm.onEntryKindChange(EntryKind.PURCHASE)
+        settle()
+        vm.onPurchaseUnitsChange("2")
+        vm.onPurchaseAmountChange("100")
+        vm.onPurchaseFeeChange("1,5")
+
+        vm.onPurchaseFeeCurrencyChange(false)
+
+        assertFalse(vm.state.value.purchase.feeInEur)
+        assertEquals("1,5", vm.state.value.purchase.feeText)
+        assertEquals("≈ 1,38 €", vm.state.value.purchase.feePreviewText)
+        vm.onSave()
+        settle()
+        val buy = movements.current.single()
+        assertEquals(Money(150), buy.fee)
+        assertEquals(Money(138), buy.feeEur)
+    }
+
+    @Test
+    fun `a purchase fee in euros without a rate waits for the equivalent of the amount`() = runTest(dispatcher) {
+        fxHistory.set(FxHistory(emptyMap()))
+        val vm = viewModel()
+        pick(vm, usdRef)
+        vm.onEntryKindChange(EntryKind.PURCHASE)
+        vm.onPurchaseUnitsChange("2")
+        vm.onPurchaseAmountChange("100")
+
+        vm.onPurchaseFeeChange("1")
+
+        assertFalse(vm.state.value.canSave)
+        assertNotNull(vm.state.value.purchase.eurHint)
+        assertNull(vm.state.value.purchase.feePreviewText)
+        vm.onPurchaseEurChange("90")
+        assertTrue(vm.state.value.canSave)
+        assertEquals("≈ 1,11 $", vm.state.value.purchase.feePreviewText)
+    }
+
+    @Test
+    fun `going back to the search brings the fee back to euros`() = runTest(dispatcher) {
+        val vm = viewModel()
+        pick(vm, usdRef)
+        vm.onEntryKindChange(EntryKind.PURCHASE)
+        settle()
+        vm.onPurchaseFeeCurrencyChange(false)
+
+        vm.onBackToSearch()
+        pick(vm, usdRef)
+        vm.onEntryKindChange(EntryKind.PURCHASE)
+
+        assertTrue(vm.state.value.purchase.feeInEur)
+    }
 }

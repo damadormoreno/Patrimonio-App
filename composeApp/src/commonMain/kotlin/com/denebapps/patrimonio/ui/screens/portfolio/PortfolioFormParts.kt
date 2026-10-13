@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -28,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -192,6 +194,88 @@ internal fun FixedCurrencyAmountField(
             modifier = Modifier.weight(1f),
         )
         Text(text = currency.code, color = colors.muted2, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/**
+ * The optional fee of a buy or a sell, shared by the movement sheet and the "Una compra" way of adding a product. A
+ * holding in another currency than euros ([showSwitch]) can have it typed in euros ([inEur]) or in its [currency], with
+ * a switch on the label; [previewText] is the other amount it comes to, muted under the field.
+ */
+@Composable
+internal fun FeeField(
+    text: String,
+    currency: Currency,
+    inEur: Boolean,
+    showSwitch: Boolean,
+    previewText: String?,
+    onTextChange: (String) -> Unit,
+    onCurrencyChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        FormSectionLabel("Comisión (opcional)")
+        if (showSwitch) {
+            FeeCurrencySwitch(
+                currency = currency,
+                inEur = inEur,
+                onChange = onCurrencyChange,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+        }
+    }
+    FixedCurrencyAmountField(
+        text = text,
+        currency = if (inEur && showSwitch) Currency.EUR else currency,
+        onTextChange = onTextChange,
+    )
+    PreviewLine(previewText)
+}
+
+/** A small two-way switch between the currency of the holding and euros, drawn like [SegmentedToggle]. */
+@Composable
+private fun FeeCurrencySwitch(
+    currency: Currency,
+    inEur: Boolean,
+    onChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = LocalAppColors.current
+    val options = listOf(false to currency.code, true to Currency.EUR.code)
+    Row(
+        modifier = modifier
+            .background(color = colors.bg2, shape = RoundedCornerShape(10.dp))
+            .border(width = 1.dp, color = colors.line2, shape = RoundedCornerShape(10.dp))
+            .padding(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        options.forEach { (optionInEur, label) ->
+            val active = optionInEur == inEur
+            Text(
+                text = label,
+                color = if (active) colors.ink else colors.muted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                modifier = Modifier
+                    .background(
+                        color = if (active) colors.surface2 else Color.Transparent,
+                        shape = RoundedCornerShape(8.dp),
+                    )
+                    .selectable(
+                        selected = active,
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        role = Role.RadioButton,
+                        onClick = { onChange(optionInEur) },
+                    )
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            )
+        }
     }
 }
 

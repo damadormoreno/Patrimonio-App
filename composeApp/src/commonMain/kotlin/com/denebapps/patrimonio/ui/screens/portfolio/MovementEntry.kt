@@ -14,6 +14,7 @@ import com.denebapps.patrimonio.domain.model.UNITS_SCALE
 import com.denebapps.patrimonio.domain.model.Units
 import com.denebapps.patrimonio.domain.repository.FxHistoryRepository
 import com.denebapps.patrimonio.domain.repository.MovementDraft
+import com.denebapps.patrimonio.ui.components.formatMoney
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -35,7 +36,9 @@ private const val PRICE_FACTOR = PRICE_SCALE * UNITS_SCALE
 /**
  * What a movement form holds: the texts as typed, in the holding [currency]. [amountText] is the amount when the user
  * typed one and [eurText] the euro equivalent when the user typed one (blank or `null`: not typed). Whichever was not
- * typed follows from the other at [rateScaled], the rate of [date]; both typed are kept as they are.
+ * typed follows from the other at [rateScaled], the rate of [date]; both typed are kept as they are. [feeText] is in
+ * euros when [feeInEur] (ignored for a holding in euros) and in the holding currency otherwise; the other one follows
+ * from the ratio of the two typed amounts or, with one typed, from [rateScaled].
  */
 internal data class MovementEntryInput(
     val type: MovementType,
@@ -47,6 +50,7 @@ internal data class MovementEntryInput(
     val eurText: String? = null,
     val noteText: String = "",
     val rateScaled: Long? = null,
+    val feeInEur: Boolean = false,
 )
 
 /**
@@ -55,7 +59,8 @@ internal data class MovementEntryInput(
  * come to ("1 USD = 0,8612 €"). [eurPrefillText] and [amountPrefillText] are the texts of the euro and the amount
  * fields when the user did not type them but they follow the other one at the rate of the day. [needsEur] says that
  * the holding is in another currency and only the amount was typed but there is no rate for that day, [needsAmount]
- * the other way round: only the euros were typed.
+ * the other way round: only the euros were typed. [feePreviewText] is the fee in the currency it was not typed in
+ * ("≈ 1,08 $" for a fee in euros, "≈ 0,92 €" for one in the holding currency), `null` while there is none to show.
  */
 internal data class MovementEntry(
     val draft: MovementDraft?,
@@ -65,6 +70,7 @@ internal data class MovementEntry(
     val amountPrefillText: String? = null,
     val impliedRateText: String? = null,
     val needsAmount: Boolean = false,
+    val feePreviewText: String? = null,
 )
 
 /** Turns what was typed into a [MovementDraft], the price it implies and the derived amounts. Pure and exact. */
@@ -76,14 +82,16 @@ internal fun resolveMovementEntry(input: MovementEntryInput): MovementEntry {
     // An opening balance may have no cost at all (unknown cost): neither amount typed.
     val costOptional = type == MovementType.OPENING_BALANCE && input.amountText.isBlank() &&
         (currency == Currency.EUR || input.eurText.isNullOrBlank())
-    val feeMinor = when {
+    val feeInEur = input.feeInEur && currency != Currency.EUR
+    val feeTyped = when {
         type !in TYPES_WITH_FEE || input.feeText.isBlank() -> 0L
-        else -> parseAmountToMinor(input.feeText, currency, allowZero = true)
+        else -> parseAmountToMinor(input.feeText, if (feeInEur) Currency.EUR else currency, allowZero = true)
     }
     val impliedPrice = impliedPriceText(units?.scaled, amounts.amountMinor, currency)
     val impliedRate = impliedRateText(currency, amounts.amountMinor, amounts.eurMinor)
     val amountMinor = amounts.amountMinor
     val eurMinor = amounts.eurMinor
+    val fee = feeTyped?.let { resolveFee(it, feeInEur, input, amounts) }
     fun entry(draft: MovementDraft?, needsEur: Boolean = false, needsAmount: Boolean = false) = MovementEntry(
         draft = draft,
         impliedPriceText = impliedPrice,
@@ -92,10 +100,11 @@ internal fun resolveMovementEntry(input: MovementEntryInput): MovementEntry {
         amountPrefillText = amounts.amountPrefillText,
         impliedRateText = impliedRate,
         needsAmount = needsAmount,
+        feePreviewText = fee?.let { feePreviewText(it, feeInEur, currency) },
     )
     val incomplete = (type in TYPES_WITH_UNITS && units == null) ||
         (!costOptional && amountMinor == null && eurMinor == null) ||
-        feeMinor == null ||
+        feeTyped == null ||
         amounts.invalid
     if (incomplete) return entry(null)
     // A holding in another currency needs both amounts, each typed or followed from the other at the rate of the day.
@@ -103,37 +112,75 @@ internal fun resolveMovementEntry(input: MovementEntryInput): MovementEntry {
         if (amountMinor != null && eurMinor == null) return entry(null, needsEur = true)
         if (eurMinor != null && amountMinor == null) return entry(null, needsAmount = true)
     }
-    val draft = try {
-        buildDraft(input, units?.scaled, amountMinor, checkNotNull(feeMinor), eurMinor, amounts.bothTyped)
+    // A fee in euros that the amounts and the rate cannot turn into the holding currency leaves the form incomplete.
+    if (fee == null) return entry(null)
+    return entry(buildDraft(input, units?.scaled, amountMinor, fee, eurMinor))
+}
+
+/**
+ * A fee as both amounts: [minor] in the holding currency and [eurMinor] in euros. [eurMinor] is `null` when there is no
+ * fee, the holding is in euros (the fee is its own euros), or the euros cannot be known yet.
+ */
+private class FeeAmounts(val minor: Long, val eurMinor: Long?)
+
+/**
+ * The fee [typed] (in euros when [inEur], else in the holding currency) with its counterpart. Both amounts typed give
+ * the ratio the broker applied; otherwise the rate of the day does. Rounded half-even to minor units. `null` when a fee
+ * typed in euros cannot be turned into the holding currency (no rate and no pair of typed amounts, or it does not fit).
+ */
+private fun resolveFee(typed: Long, inEur: Boolean, input: MovementEntryInput, amounts: CurrencyAmounts): FeeAmounts? {
+    val currency = input.currency
+    val amountMinor = amounts.amountMinor
+    val eurMinor = amounts.eurMinor
+    if (currency == Currency.EUR) return FeeAmounts(typed, null)
+    if (typed == 0L) return FeeAmounts(0L, null)
+    return try {
+        if (inEur) {
+            val minor = if (amounts.bothTyped && amountMinor != null && eurMinor != null) {
+                mulDivHalfEven(typed, amountMinor, eurMinor)
+            } else {
+                eurToHolding(typed, currency, input.rateScaled)
+            }
+            minor?.let { FeeAmounts(it, typed) }
+        } else {
+            val feeEur = when {
+                amountMinor == null || eurMinor == null -> null
+                // The fee follows the ratio of what the broker charged, so both stay in step with it.
+                amounts.bothTyped -> mulDivHalfEven(typed, eurMinor, amountMinor)
+                else -> holdingToEur(typed, currency, input.rateScaled)
+            }
+            FeeAmounts(typed, feeEur)
+        }
     } catch (e: ArithmeticException) {
         null
     }
-    return entry(draft)
+}
+
+/** "≈ 1,08 $" (a fee typed in euros) or "≈ 0,92 €" (one typed in the holding currency); `null` without a fee. */
+private fun feePreviewText(fee: FeeAmounts, inEur: Boolean, currency: Currency): String? {
+    if (currency == Currency.EUR) return null
+    val shown = (if (inEur) fee.minor else fee.eurMinor) ?: return null
+    val typed = (if (inEur) fee.eurMinor else fee.minor) ?: return null
+    if (typed == 0L) return null
+    return "≈ ${formatMoney(Money(shown), if (inEur) currency else Currency.EUR)}"
 }
 
 private fun buildDraft(
     input: MovementEntryInput,
     unitsScaled: Long?,
     amountMinor: Long?,
-    feeMinor: Long,
+    fee: FeeAmounts,
     eurMinor: Long?,
-    bothTyped: Boolean,
 ): MovementDraft {
     val currency = input.currency
-    val feeEur = when {
-        currency == Currency.EUR || feeMinor == 0L || amountMinor == null || eurMinor == null -> null
-        // The fee follows the ratio of what the broker charged, so both stay in step with it.
-        bothTyped -> Money(mulDivHalfEven(feeMinor, eurMinor, amountMinor))
-        else -> Money(checkNotNull(holdingToEur(feeMinor, currency, input.rateScaled)))
-    }
     return MovementDraft(
         type = input.type,
         date = input.date,
         units = unitsScaled?.let(::Units),
         amount = amountMinor?.let { CurrencyAmount(Money(it), currency) },
-        fee = Money(feeMinor),
+        fee = Money(fee.minor),
         amountEur = eurMinor?.let(::Money),
-        feeEur = feeEur,
+        feeEur = fee.eurMinor?.takeIf { it > 0L }?.let(::Money),
         note = input.noteText.trim().ifEmpty { null },
     )
 }
@@ -189,5 +236,29 @@ internal class FxRateLookup(
                 // Offline or the source is down: what is stored stays and the user types the equivalent.
             }
         }
+    }
+}
+
+/**
+ * Whether a stored fee is shown in euros when its movement is edited. The currency a fee was typed in is not stored, so
+ * the one that gives back the stored amounts is chosen: in euros when typing [feeEur] again produces exactly [fee] at
+ * the ratio of the stored [amount] and [amountEur] (saving the movement untouched then changes nothing), else in the
+ * holding currency, which is also the answer when the ratio is not known. A movement without a fee, whose fee field
+ * is empty, gets the default for new ones: euros. A holding in euros has no such choice.
+ */
+internal fun feeWasTypedInEur(
+    currency: Currency,
+    fee: Money,
+    feeEur: Money,
+    amount: Money?,
+    amountEur: Money?,
+): Boolean {
+    if (currency == Currency.EUR) return false
+    if (fee.minorUnits == 0L && feeEur.minorUnits == 0L) return true
+    if (amount == null || amountEur == null || amount.minorUnits <= 0L || amountEur.minorUnits <= 0L) return false
+    return try {
+        mulDivHalfEven(feeEur.minorUnits, amount.minorUnits, amountEur.minorUnits) == fee.minorUnits
+    } catch (e: ArithmeticException) {
+        false
     }
 }

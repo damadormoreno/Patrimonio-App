@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.ui.screens.portfolio
 
+import com.denebapps.patrimonio.domain.calc.computeLedgers
 import com.denebapps.patrimonio.domain.calc.fixedClock
 import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
@@ -291,6 +292,7 @@ class MovementFormViewModelTest {
             assertTrue(s.state.showEur)
             s.vm.onUnitsChange("1")
             s.vm.onAmountChange("100")
+            s.vm.onFeeCurrencyChange(false)
             s.vm.onFeeChange("10")
 
             assertEquals("92,00", s.state.eurText)
@@ -768,6 +770,188 @@ class MovementFormViewModelTest {
 
         assertEquals(eur(80_000), s.movements.current.single().amount)
     }
+
+    // ---- the fee in euros ----------------------------------------------------------------------------------------
+
+    @Test
+    fun `the fee of a holding in dollars is typed in euros by default, a holding in euros has no choice`() =
+        runTest(dispatcher) {
+            val dollars = setup("u", listOf(quoted("u", currency = Currency.USD)), fxHistory = usdRates)
+            val euros = setup("f", listOf(quoted("f")))
+
+            assertTrue(dollars.state.showFeeCurrency)
+            assertTrue(dollars.state.feeInEur)
+            assertEquals(Currency.EUR, dollars.state.feeCurrency)
+            assertFalse(euros.state.showFeeCurrency)
+            assertFalse(euros.state.feeInEur)
+            assertEquals(Currency.EUR, euros.state.feeCurrency)
+            euros.vm.onFeeCurrencyChange(true)
+            assertFalse(euros.state.feeInEur)
+        }
+
+    @Test
+    fun `a fee in euros is stored exactly, the fee in dollars follows the rate and the cost adds the euros`() =
+        runTest(dispatcher) {
+            val s = setup("u", listOf(quoted("u", currency = Currency.USD)), fxHistory = usdRates)
+            s.vm.onUnitsChange("1")
+            s.vm.onAmountChange("100")
+
+            s.vm.onFeeChange("1,38")
+
+            // 138 cents x 1.000.000 / 920.000 = 150 cents.
+            assertEquals("≈ 1,50 $", s.state.feePreviewText)
+            assertTrue(s.state.canSave)
+            s.vm.onSave()
+            settle()
+            val stored = s.movements.current.single()
+            assertEquals(Money(150), stored.fee)
+            assertEquals(Money(138), stored.feeEur)
+            assertEquals(Money(9_200), stored.amountEur)
+            // The buy costs the 92,00 EUR of the amount plus the 1,38 EUR of the fee.
+            val lot = computeLedgers(s.movements.current).getValue("u").lots.single()
+            assertEquals(Money(9_338), lot.costEur)
+        }
+
+    @Test
+    fun `switching the fee currency keeps the typed number and rereads it`() = runTest(dispatcher) {
+        val s = setup("u", listOf(quoted("u", currency = Currency.USD)), fxHistory = usdRates)
+        s.vm.onUnitsChange("1")
+        s.vm.onAmountChange("100")
+        s.vm.onFeeChange("1,5")
+        assertEquals("≈ 1,63 $", s.state.feePreviewText)
+
+        s.vm.onFeeCurrencyChange(false)
+
+        assertFalse(s.state.feeInEur)
+        assertEquals(Currency.USD, s.state.feeCurrency)
+        assertEquals("1,5", s.state.feeText)
+        assertEquals("≈ 1,38 €", s.state.feePreviewText)
+        s.vm.onSave()
+        settle()
+        val stored = s.movements.current.single()
+        assertEquals(Money(150), stored.fee)
+        assertEquals(Money(138), stored.feeEur)
+    }
+
+    @Test
+    fun `a fee in euros follows the rate the typed amounts imply`() = runTest(dispatcher) {
+        val s = setup("u", listOf(quoted("u", currency = Currency.USD)), fxHistory = usdRates)
+        s.vm.onUnitsChange("1")
+        s.vm.onAmountChange("100")
+        s.vm.onEurChange("86,12")
+
+        s.vm.onFeeChange("1")
+
+        // 100 cents x 10.000 / 8.612 = 116,12 -> 116 cents.
+        assertEquals("≈ 1,16 $", s.state.feePreviewText)
+        s.vm.onSave()
+        settle()
+        val stored = s.movements.current.single()
+        assertEquals(Money(116), stored.fee)
+        assertEquals(Money(100), stored.feeEur)
+        assertEquals(Money(8_612), stored.amountEur)
+    }
+
+    @Test
+    fun `a sell with a fee in euros takes exactly those euros off the proceeds`() = runTest(dispatcher) {
+        val bought = existingBuy(holding = "u").copy(
+            units = units(10),
+            amount = usd(10_000),
+            amountEur = Money(9_500),
+            fee = Money.ZERO,
+            feeEur = Money.ZERO,
+        )
+        val s = setup("u", listOf(quoted("u", currency = Currency.USD)), listOf(bought), fxHistory = usdRates)
+        s.vm.onChoiceChange(MovementChoice.SELL)
+        s.vm.onUnitsChange("5")
+        s.vm.onAmountChange("120")
+        s.vm.onEurChange("110")
+
+        s.vm.onFeeChange("1,5")
+        s.vm.onSave()
+        settle()
+
+        val sale = s.movements.current.first { it.type == MovementType.SELL }
+        assertEquals(Money(150), sale.feeEur)
+        // The two amounts were typed, so the dollar fee follows their ratio: 150 x 12.000 / 11.000 = 163,64 -> 164.
+        assertEquals(Money(164), sale.fee)
+        val ledger = computeLedgers(s.movements.current).getValue("u")
+        // Proceeds 110,00 - 1,50 = 108,50 against half of the 95,00 cost: 108,50 - 47,50 = 61,00.
+        assertEquals(Money(6_100), ledger.realized.knownGainEur)
+        assertEquals(Money(150), ledger.tradeFeesEur)
+    }
+
+    @Test
+    fun `without a rate a fee in euros waits for the equivalent and then follows the typed amounts`() =
+        runTest(dispatcher) {
+            val s = setup("u", listOf(quoted("u", currency = Currency.USD)))
+            s.vm.onUnitsChange("1")
+            s.vm.onAmountChange("100")
+
+            s.vm.onFeeChange("1")
+
+            assertFalse(s.state.canSave)
+            assertNotNull(s.state.eurHint)
+            assertNull(s.state.feePreviewText)
+            s.vm.onEurChange("90")
+            assertTrue(s.state.canSave)
+            assertEquals("≈ 1,11 $", s.state.feePreviewText)
+            s.vm.onSave()
+            settle()
+            assertEquals(Money(111), s.movements.current.single().fee)
+            assertEquals(Money(100), s.movements.current.single().feeEur)
+        }
+
+    @Test
+    fun `editing restores the currency the fee was typed in when the stored amounts tell`() = runTest(dispatcher) {
+        val inEuros = existingBuy(holding = "u").copy(
+            amount = usd(10_000),
+            amountEur = Money(9_500),
+            fee = Money(500),
+            feeEur = Money(475),
+        )
+        val s = setup(
+            "u",
+            listOf(quoted("u", currency = Currency.USD)),
+            listOf(inEuros),
+            movementId = "m1",
+            fxHistory = usdRates,
+        )
+
+        assertTrue(s.state.feeInEur)
+        assertEquals("4,75", s.state.feeText)
+        assertEquals("≈ 5,00 $", s.state.feePreviewText)
+        s.vm.onSave()
+        settle()
+        assertEquals(Money(475), s.movements.current.single().feeEur)
+        assertEquals(Money(500), s.movements.current.single().fee)
+    }
+
+    @Test
+    fun `editing a fee that the euros could not have produced shows it in the holding currency`() =
+        runTest(dispatcher) {
+            val inDollars = existingBuy(holding = "u").copy(
+                amount = usd(10_000),
+                amountEur = Money(5_000),
+                fee = Money(3),
+                feeEur = Money(2),
+            )
+            val s = setup(
+                "u",
+                listOf(quoted("u", currency = Currency.USD)),
+                listOf(inDollars),
+                movementId = "m1",
+                fxHistory = usdRates,
+            )
+
+            assertFalse(s.state.feeInEur)
+            assertEquals("0,03", s.state.feeText)
+            assertEquals("≈ 0,02 €", s.state.feePreviewText)
+            s.vm.onSave()
+            settle()
+            assertEquals(Money(3), s.movements.current.single().fee)
+            assertEquals(Money(2), s.movements.current.single().feeEur)
+        }
 
     // ---- not applicable ------------------------------------------------------------------------------------------
 
