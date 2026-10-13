@@ -61,6 +61,7 @@ internal class AddHoldingCallbacks(
     val onPurchaseUnitsChange: (String) -> Unit,
     val onPurchaseAmountChange: (String) -> Unit,
     val onPurchaseFeeChange: (String) -> Unit,
+    val onPurchaseFeeCurrencyChange: (Boolean) -> Unit,
     val onPurchaseEurChange: (String) -> Unit,
     val onStartManual: () -> Unit,
     val onAddManuallyFromPicked: () -> Unit,
@@ -100,6 +101,7 @@ fun AddHoldingSheet(
             onPurchaseUnitsChange = viewModel::onPurchaseUnitsChange,
             onPurchaseAmountChange = viewModel::onPurchaseAmountChange,
             onPurchaseFeeChange = viewModel::onPurchaseFeeChange,
+            onPurchaseFeeCurrencyChange = viewModel::onPurchaseFeeCurrencyChange,
             onPurchaseEurChange = viewModel::onPurchaseEurChange,
             onStartManual = viewModel::onStartManual,
             onAddManuallyFromPicked = viewModel::onAddManuallyFromPicked,
@@ -301,11 +303,14 @@ private fun PurchaseEntry(state: AddHoldingUiState, quote: QuoteUi, callbacks: A
     PreviewLine(purchase.impliedPriceText)
     PreviewLine(purchase.amountHint)
     Spacer(Modifier.height(20.dp))
-    FormSectionLabel("Comisión (opcional)")
-    FixedCurrencyAmountField(
+    FeeField(
         text = purchase.feeText,
         currency = quote.currency,
+        inEur = purchase.feeInEur,
+        showSwitch = purchase.showFeeCurrency,
+        previewText = purchase.feePreviewText,
         onTextChange = callbacks.onPurchaseFeeChange,
+        onCurrencyChange = callbacks.onPurchaseFeeCurrencyChange,
     )
     if (purchase.showEur) {
         Spacer(Modifier.height(20.dp))

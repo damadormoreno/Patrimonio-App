@@ -26,6 +26,7 @@ class MovementEntryTest {
         eur: String? = null,
         note: String = "",
         rate: Long? = null,
+        feeInEur: Boolean = false,
     ) = MovementEntryInput(
         type = type,
         date = day,
@@ -36,6 +37,7 @@ class MovementEntryTest {
         eurText = eur,
         noteText = note,
         rateScaled = rate,
+        feeInEur = feeInEur,
     )
 
     private fun eur(cents: Long) = CurrencyAmount(Money(cents), Currency.EUR)

@@ -86,12 +86,17 @@ data class QuoteUi(val priceText: String, val dateText: String, val currency: Cu
  * typed because the day has no rate, [impliedPriceText] is the price per unit the amount and units come to and
  * [impliedRateText] the rate the two amounts come to. [amountPlaceholder] and [eurPlaceholder] are the value a field
  * follows, to show muted inside it while it is empty (a field held blank while the user edits it).
+ * [feeText] is in euros when [feeInEur] (the default for a product not quoted in euros, which shows the switch
+ * [showFeeCurrency]) and in the product currency otherwise; [feePreviewText] is the fee in the other one.
  */
 data class PurchaseUi(
     val date: LocalDate,
     val unitsText: String = "",
     val amountText: String = "",
     val feeText: String = "",
+    val feeInEur: Boolean = false,
+    val showFeeCurrency: Boolean = false,
+    val feePreviewText: String? = null,
     val eurText: String = "",
     val showEur: Boolean = false,
     val eurHint: String? = null,
@@ -108,6 +113,7 @@ private data class PurchaseTyped(
     val unitsText: String = "",
     val amounts: TypedAmounts = TypedAmounts(),
     val feeText: String = "",
+    val feeInEur: Boolean = true,
 )
 
 /**
@@ -306,6 +312,15 @@ class AddHoldingViewModel(
     fun onPurchaseAmountChange(text: String) = changePurchase { it.copy(amounts = it.amounts.withAmount(text)) }
 
     fun onPurchaseFeeChange(text: String) = changePurchase { it.copy(feeText = text) }
+
+    /**
+     * The fee is typed in euros (`true`) or in the currency of a product that is not in euros. The typed number stays as
+     * it is and is read in the new currency.
+     */
+    fun onPurchaseFeeCurrencyChange(inEur: Boolean) {
+        if (pickedQuote?.price?.currency.let { it == null || it == Currency.EUR }) return
+        changePurchase { it.copy(feeInEur = inEur) }
+    }
 
     /** The euro equivalent as typed; a blank field follows the amount again. */
     fun onPurchaseEurChange(text: String) = changePurchase { it.copy(amounts = it.amounts.withEur(text)) }
@@ -551,6 +566,7 @@ class AddHoldingViewModel(
                 feeText = purchase.feeText,
                 eurText = purchase.amounts.eur,
                 rateScaled = fx.rateOn(currency, purchase.date),
+                feeInEur = currency != Currency.EUR && purchase.feeInEur,
             ),
         )
     }
@@ -571,6 +587,9 @@ class AddHoldingViewModel(
             unitsText = purchase.unitsText,
             amountText = amountText,
             feeText = purchase.feeText,
+            feeInEur = currency != Currency.EUR && purchase.feeInEur,
+            showFeeCurrency = currency != Currency.EUR,
+            feePreviewText = resolved?.feePreviewText,
             eurText = eurText,
             showEur = currency != Currency.EUR,
             eurHint = hints.eurHint,

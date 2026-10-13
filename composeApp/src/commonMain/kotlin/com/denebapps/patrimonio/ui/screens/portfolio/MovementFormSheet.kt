@@ -46,6 +46,7 @@ internal class MovementFormCallbacks(
     val onUnitsChange: (String) -> Unit,
     val onAmountChange: (String) -> Unit,
     val onFeeChange: (String) -> Unit,
+    val onFeeCurrencyChange: (Boolean) -> Unit,
     val onEurChange: (String) -> Unit,
     val onNoteChange: (String) -> Unit,
     val onSave: () -> Unit,
@@ -78,6 +79,7 @@ fun MovementFormSheet(
             onUnitsChange = viewModel::onUnitsChange,
             onAmountChange = viewModel::onAmountChange,
             onFeeChange = viewModel::onFeeChange,
+            onFeeCurrencyChange = viewModel::onFeeCurrencyChange,
             onEurChange = viewModel::onEurChange,
             onNoteChange = viewModel::onNoteChange,
             onSave = viewModel::onSave,
@@ -215,11 +217,14 @@ private fun MovementFields(state: MovementFormUiState, callbacks: MovementFormCa
     PreviewLine(state.amountHint)
     if (state.showFee) {
         Spacer(Modifier.height(20.dp))
-        FormSectionLabel("Comisión (opcional)")
-        FixedCurrencyAmountField(
+        FeeField(
             text = state.feeText,
             currency = state.currency,
+            inEur = state.feeInEur,
+            showSwitch = state.showFeeCurrency,
+            previewText = state.feePreviewText,
             onTextChange = callbacks.onFeeChange,
+            onCurrencyChange = callbacks.onFeeCurrencyChange,
         )
     }
     if (state.showEur) {

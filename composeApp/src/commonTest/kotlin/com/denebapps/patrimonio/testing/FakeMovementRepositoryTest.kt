@@ -110,6 +110,29 @@ class FakeMovementRepositoryTest {
     }
 
     @Test
+    fun `a fee typed in euros is stored as typed, even when it comes to nothing in the holding currency`() = runTest {
+        val holdings = FakePortfolioRepository(listOf(fund("jpy", currency = Currency.JPY)))
+        val movements = FakeMovementRepository(holdings)
+        val draft = MovementDraft(
+            type = MovementType.BUY,
+            date = LocalDate(2026, 1, 1),
+            units = units(1),
+            amount = CurrencyAmount(Money(10_000), Currency.JPY),
+            amountEur = Money(6_000),
+            feeEur = Money(1),
+        )
+
+        val stored = movements.addMovement("jpy", draft)
+
+        assertEquals(Money.ZERO, stored.fee)
+        assertEquals(Money(1), stored.feeEur)
+        // A fee in the holding currency still has to bring its euros.
+        assertFailsWith<MissingEurEquivalentException> {
+            movements.addMovement("jpy", draft.copy(fee = Money(5), feeEur = null))
+        }
+    }
+
+    @Test
     fun `transfers are between two funds, move the units and are deleted as a pair`() = runTest {
         val holdings = FakePortfolioRepository(listOf(fund("a"), fund("b"), fund("etf", InstrumentType.ETF)))
         val movements = FakeMovementRepository(holdings)

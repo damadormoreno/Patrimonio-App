@@ -57,8 +57,10 @@ private const val DELETE_WARNING = "Se recalcularán las participaciones con los
  * other at the rate of the day. [eurHint] and [amountHint] say which of them needs to be typed because that day has no
  * rate, [impliedPriceText] is the price per unit the amount and units come to and [impliedRateText] the rate the two
  * amounts come to. [amountPlaceholder] and [eurPlaceholder] are the value a field follows, to show muted inside it while
- * it is empty (a field held blank while the user edits it). [error] is why the last save or delete was refused, [canDelete] is set when editing and
- * [deleteMessage] is what the confirmation says.
+ * it is empty (a field held blank while the user edits it). [feeText] is in euros when [feeInEur] (the default for a
+ * holding in another currency, which shows the switch [showFeeCurrency]) and in the holding currency otherwise;
+ * [feePreviewText] is the fee in the other one. [error] is why the last save or delete was refused, [canDelete] is set
+ * when editing and [deleteMessage] is what the confirmation says.
  */
 data class MovementFormUiState(
     val loaded: Boolean = false,
@@ -73,6 +75,9 @@ data class MovementFormUiState(
     val amountText: String = "",
     val amountLabel: String = "Importe",
     val feeText: String = "",
+    val feeInEur: Boolean = false,
+    val showFeeCurrency: Boolean = false,
+    val feePreviewText: String? = null,
     val eurText: String = "",
     val noteText: String = "",
     val showUnits: Boolean = true,
@@ -88,7 +93,10 @@ data class MovementFormUiState(
     val canSave: Boolean = false,
     val canDelete: Boolean = false,
     val deleteMessage: String = "",
-)
+) {
+    /** The currency the fee field is typed in: euros when [feeInEur], else the holding [currency]. */
+    val feeCurrency: Currency get() = if (feeInEur) Currency.EUR else currency
+}
 
 /** What the position and its history say, once loaded: it does not change while the sheet is open. */
 private class FormContext(
@@ -100,6 +108,9 @@ private class FormContext(
     val movementCount: Int,
 )
 
+/** The fee field of a stored movement: its [text] in the currency it is shown in, euros when [inEur]. */
+private class StoredFee(val text: String, val inEur: Boolean)
+
 /** What the user typed or picked; an amount field that is not in [amounts] follows the other one at the day rate. */
 private data class Typed(
     val choice: MovementChoice = MovementChoice.BUY,
@@ -107,6 +118,7 @@ private data class Typed(
     val unitsText: String = "",
     val amounts: TypedAmounts = TypedAmounts(),
     val feeText: String = "",
+    val feeInEur: Boolean = true,
     val noteText: String = "",
 )
 
@@ -171,6 +183,15 @@ class MovementFormViewModel(
     fun onAmountChange(text: String) = change { it.copy(amounts = it.amounts.withAmount(text)) }
 
     fun onFeeChange(text: String) = change { it.copy(feeText = text) }
+
+    /**
+     * The fee is typed in euros (`true`) or in the currency of a holding that is not in euros. The typed number stays as
+     * it is and is read in the new currency, so no rounding creeps in by switching back and forth.
+     */
+    fun onFeeCurrencyChange(inEur: Boolean) {
+        if (context?.currency == Currency.EUR) return
+        change { it.copy(feeInEur = inEur) }
+    }
 
     /** The euro equivalent as typed; a blank field follows the amount again. */
     fun onEurChange(text: String) = change { it.copy(amounts = it.amounts.withEur(text)) }
@@ -265,23 +286,48 @@ class MovementFormViewModel(
         render()
     }
 
-    private fun typedFrom(movement: Movement, currency: Currency) = Typed(
-        choice = when (movement.type) {
-            MovementType.SELL -> MovementChoice.SELL
-            MovementType.DIVIDEND -> MovementChoice.DIVIDEND
-            MovementType.FEE -> MovementChoice.FEE
-            else -> MovementChoice.BUY
-        },
-        date = movement.date,
-        unitsText = movement.units?.let(::unitsInputText).orEmpty(),
-        // Both amounts that were recorded are kept as typed: nothing is recomputed unless the user blanks one.
-        amounts = TypedAmounts(
-            amount = movement.amount?.let { amountInputText(it.amount, currency) },
-            eur = movement.amountEur?.takeIf { currency != Currency.EUR }?.let { amountInputText(it, Currency.EUR) },
-        ),
-        feeText = movement.fee.takeIf { it.minorUnits > 0 }?.let { amountInputText(it, currency) }.orEmpty(),
-        noteText = movement.note.orEmpty(),
-    )
+    private fun typedFrom(movement: Movement, currency: Currency): Typed {
+        val fee = storedFee(movement, currency)
+        return Typed(
+            choice = when (movement.type) {
+                MovementType.SELL -> MovementChoice.SELL
+                MovementType.DIVIDEND -> MovementChoice.DIVIDEND
+                MovementType.FEE -> MovementChoice.FEE
+                else -> MovementChoice.BUY
+            },
+            date = movement.date,
+            unitsText = movement.units?.let(::unitsInputText).orEmpty(),
+            // Both amounts that were recorded are kept as typed: nothing is recomputed unless the user blanks one.
+            amounts = TypedAmounts(
+                amount = movement.amount?.let { amountInputText(it.amount, currency) },
+                eur = movement.amountEur
+                    ?.takeIf { currency != Currency.EUR }
+                    ?.let { amountInputText(it, Currency.EUR) },
+            ),
+            feeText = fee.text,
+            feeInEur = fee.inEur,
+            noteText = movement.note.orEmpty(),
+        )
+    }
+
+    /** The fee field of a stored movement: which currency it shows ([feeWasTypedInEur]) and the text in it. */
+    private fun storedFee(movement: Movement, currency: Currency): StoredFee {
+        val inEur = feeWasTypedInEur(
+            currency = currency,
+            fee = movement.fee,
+            feeEur = movement.feeEur,
+            amount = movement.amount?.amount,
+            amountEur = movement.amountEur,
+        )
+        val shown = if (inEur) movement.feeEur else movement.fee
+        val text = shown.takeIf { it.minorUnits > 0 }?.let {
+            amountInputText(
+                it,
+                if (inEur) Currency.EUR else currency,
+            )
+        }
+        return StoredFee(text.orEmpty(), inEur)
+    }
 
     private fun close() {
         navigateBackChannel.trySend(Unit)
@@ -294,6 +340,9 @@ class MovementFormViewModel(
     private fun rateOf(form: FormContext): Long? =
         form.currency.takeIf { it != Currency.EUR }?.let { fx.rateOn(it, typed.date) }
 
+    /** Whether the fee field is read in euros: only a holding in another currency has the choice. */
+    private fun feeInEurOf(form: FormContext): Boolean = form.currency != Currency.EUR && typed.feeInEur
+
     private fun entry(form: FormContext): MovementEntry = resolveMovementEntry(
         MovementEntryInput(
             type = typeOf(form),
@@ -305,12 +354,14 @@ class MovementFormViewModel(
             eurText = typed.amounts.eur,
             noteText = typed.noteText,
             rateScaled = rateOf(form),
+            feeInEur = feeInEurOf(form),
         ),
     )
 
     private fun render() {
         val form = context ?: return
         val type = typeOf(form)
+        val showFee = type == MovementType.BUY || type == MovementType.SELL
         val resolved = entry(form)
         val amountText = typed.amounts.amount ?: resolved.amountPrefillText.orEmpty()
         val eurText = typed.amounts.eur ?: resolved.eurPrefillText.orEmpty()
@@ -334,10 +385,13 @@ class MovementFormViewModel(
             amountText = amountText,
             amountLabel = if (form.isOpening) "Coste total (opcional)" else "Importe",
             feeText = typed.feeText,
+            feeInEur = feeInEurOf(form),
+            showFeeCurrency = form.currency != Currency.EUR && showFee,
+            feePreviewText = resolved.feePreviewText,
             eurText = eurText,
             noteText = typed.noteText,
             showUnits = type == MovementType.BUY || type == MovementType.SELL || type == MovementType.OPENING_BALANCE,
-            showFee = type == MovementType.BUY || type == MovementType.SELL,
+            showFee = showFee,
             showEur = form.currency != Currency.EUR,
             eurHint = hints.eurHint,
             amountHint = hints.amountHint,
