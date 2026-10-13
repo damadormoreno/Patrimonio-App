@@ -39,9 +39,9 @@ sources (Morningstar/Yahoo) would need a licensed source or a bring-your-own-key
 - [x] **T2 — In-app basics**: Settings footer honest about cloud backup, «Acerca de» (version, data sources with
   CoinGecko attribution, open-source/font licenses, privacy policy link when configured), CoinGecko attribution
   where crypto prices show (route: delegated writer).
-- [ ] **T3 — App icon**: chosen proposal as Android adaptive icon (vector foreground + background, monochrome for
+- [x] **T3 — App icon**: chosen proposal as Android adaptive icon (vector foreground + background, monochrome for
   themed icons), Play Store 512 px PNG, iOS AppIcon 1024 px (route: inline or writer).
-- [ ] **T4 — Docs + manual check**: README, emulator (icon on launcher, Acerca de), release build locally
+- [x] **T4 — Docs + manual check**: README, emulator (icon on launcher, Acerca de), release build locally
   (route: inline).
 
 ## Acceptance criteria
@@ -76,7 +76,16 @@ sources (Morningstar/Yahoo) would need a licensed source or a bring-your-own-key
   contact rows hidden until `PRIVACY_POLICY_URL`/`CONTACT_EMAIL` are set (`AboutConfig.kt`); CoinGecko credit in
   the crypto chart note. RED: compile failures; GREEN: check.sh (2141 tests), iOS compile. Parent: emulator shows
   the row with «1.0.0-dev» and the screen sections.
+- **T3** (commit below, `feat(app): add the app icon`): the user picked **B**; built from the bundled italic Instrument
+  Serif (the app's amount font) with `tools/icon/AppIcon.java` (Java2D): adaptive icon (vector foreground in the
+  108 viewport, composition fitted to 46 units so it stays inside the 66 safe circle; paper background; monochrome
+  layer for themed icons), `android:icon`/`roundIcon`, iOS `AppIcon-1024.png` (opaque) in the asset catalog, Play
+  listing `docs/store/play-icon-512.png`. Parent: previews under circle/squircle/themed masks; emulator launcher
+  shows the icon; check.sh green.
+- **T4** (commit below, `docs: document the beta release`): README (cloud copy in the intro, release workflow,
+  runbook, privacy draft, icon generator, Acerca de config).
 
 ## Next step
 
-T3 (icon) once the user picks A, B or C.
+Push + PR. Then the user: accounts, keystore + `RELEASE_*` secrets, first AAB upload to internal testing,
+TestFlight from a Mac (see `docs/release.md`); EODHD trial for fund NAV coverage.
