@@ -4,11 +4,14 @@ import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.SeedingGate
 import com.denebapps.patrimonio.data.db.dao.AccountGroupDao
 import com.denebapps.patrimonio.data.db.dao.AssetDao
+import com.denebapps.patrimonio.data.db.dao.PortfolioHoldingDao
 import com.denebapps.patrimonio.data.db.dao.SavingsGoalDataSource
 import com.denebapps.patrimonio.data.db.dao.SavingsGoalRelations
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalGroupEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 import com.denebapps.patrimonio.data.db.writeTransaction
 import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalAdd
@@ -33,6 +36,7 @@ import com.denebapps.patrimonio.domain.repository.NegativeSavingsGoalProgressExc
 import com.denebapps.patrimonio.domain.repository.SavingsGoalAssetNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalBuiltinGroupException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalGroupNotFoundException
+import com.denebapps.patrimonio.domain.repository.SavingsGoalHoldingNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalNotFoundException
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.domain.repository.TerminalSavingsGoalException
@@ -54,6 +58,7 @@ class SavingsGoalRepositoryImpl(
     private val clock: Clock,
     private val accountGroupDao: AccountGroupDao = database.accountGroupDao(),
     private val newGoalId: () -> String = ::randomGoalId,
+    private val holdingDao: PortfolioHoldingDao = database.portfolioHoldingDao(),
 ) : SavingsGoalRepository {
     override fun observeAll(): Flow<List<SavingsGoal>> = flow {
         seedingGate.await()
@@ -78,8 +83,8 @@ class SavingsGoalRepositoryImpl(
         seedingGate.await()
         validateDetails(command.name, command.target.amount)
         return database.writeTransaction {
-            command.linkedAssetIds.forEach { assetId -> requireAsset(assetId) }
-            command.linkedGroupId?.let { groupId -> requireLinkableGroup(groupId) }
+            val next = LinkState(command.linkedAssetIds, command.linkedHoldingIds, command.linkedGroupIds)
+            requireLinkTargets(LinkState.NONE, next)
             val goalId = newGoalId()
             val now = clock.now().toEpochMilliseconds()
             dataSource.insertGoal(
@@ -93,8 +98,8 @@ class SavingsGoalRepositoryImpl(
                     createdAtEpochMs = now,
                 ),
             )
-            // The links, group included, are written by changeLinks like on any later edit.
-            changeLinks(goalId, LinkState.NONE, LinkState(command.linkedAssetIds, command.linkedGroupId), now)
+            // The links are written by changeLinks like on any later edit.
+            changeLinks(goalId, LinkState.NONE, next, now)
             goalId
         }
     }
@@ -144,38 +149,53 @@ class SavingsGoalRepositoryImpl(
         seedingGate.await()
         validateDetails(command.name, command.targetAmount)
         database.writeTransaction {
-            val goal = requireOpenGoal(goalId)
+            requireOpenGoal(goalId)
             dataSource.updateDetails(
                 goalId = goalId,
                 name = command.name,
                 targetMinor = command.targetAmount.minorUnits,
                 targetDateEpochDay = command.targetDate?.toEpochDays()?.toLong(),
             )
-            val previous = LinkState(dataSource.listLinkedAssetIds(goalId).toSet(), goal.linkedGroupId)
-            val next = LinkState(command.linkedAssetIds, command.linkedGroupId)
-            (next.assetIds - previous.assetIds).forEach { assetId -> requireAsset(assetId) }
-            if (next.groupId != null && next.groupId != previous.groupId) requireLinkableGroup(next.groupId)
+            val previous = LinkState(
+                dataSource.listLinkedAssetIds(goalId).toSet(),
+                dataSource.listLinkedHoldingIds(goalId).toSet(),
+                dataSource.listLinkedGroupIds(goalId).toSet(),
+            )
+            val next = LinkState(command.linkedAssetIds, command.linkedHoldingIds, command.linkedGroupIds)
+            requireLinkTargets(previous, next)
             changeLinks(goalId, previous, next, clock.now().toEpochMilliseconds())
         }
     }
 
     /**
-     * Rewrites the goal's links from [previous] to [next] (already validated) with one audit event per
-     * change: LINK/UNLINK for every account added/removed and for a group set/cleared, RELINK when a
-     * group is swapped for another. Removals come first so the history reads in that order.
+     * Rewrites the goal's links from [previous] to [next] (already validated) with one audit event per target
+     * added (LINK) or removed (UNLINK). Removals come first, then additions; within each, accounts, then products,
+     * then groups, each sorted by id, so the history reads in that order.
      */
     private suspend fun changeLinks(goalId: String, previous: LinkState, next: LinkState, timestampEpochMs: Long) {
         val removedAssets = (previous.assetIds - next.assetIds).sorted()
         val addedAssets = (next.assetIds - previous.assetIds).sorted()
+        val removedHoldings = (previous.holdingIds - next.holdingIds).sorted()
+        val addedHoldings = (next.holdingIds - previous.holdingIds).sorted()
+        val removedGroups = (previous.groupIds - next.groupIds).sorted()
+        val addedGroups = (next.groupIds - previous.groupIds).sorted()
         if (removedAssets.isNotEmpty()) dataSource.deleteLinkedAssets(goalId, removedAssets)
-        if (previous.groupId != next.groupId) dataSource.updateLinkedGroup(goalId, next.groupId)
+        if (removedHoldings.isNotEmpty()) dataSource.deleteLinkedHoldings(goalId, removedHoldings)
+        if (removedGroups.isNotEmpty()) dataSource.deleteLinkedGroups(goalId, removedGroups)
         if (addedAssets.isNotEmpty()) {
-            dataSource.insertLinkedAssets(addedAssets.map { assetId -> SavingsGoalAssetEntity(goalId, assetId) })
+            dataSource.insertLinkedAssets(addedAssets.map { SavingsGoalAssetEntity(goalId, it) })
         }
-        val groupChange = LinkChange(previous.groupTarget, next.groupTarget).takeIf { it.from != it.to }
-        val changes = removedAssets.map { LinkChange(LinkTarget.Asset(it), null) } +
-            listOfNotNull(groupChange) +
-            addedAssets.map { LinkChange(null, LinkTarget.Asset(it)) }
+        if (addedHoldings.isNotEmpty()) {
+            dataSource.insertLinkedHoldings(addedHoldings.map { SavingsGoalHoldingEntity(goalId, it) })
+        }
+        if (addedGroups.isNotEmpty()) {
+            dataSource.insertLinkedGroups(addedGroups.map { SavingsGoalGroupEntity(goalId, it) })
+        }
+        val removed = removedAssets.map<String, LinkTarget> { LinkTarget.Asset(it) } +
+            removedHoldings.map { LinkTarget.Holding(it) } + removedGroups.map { LinkTarget.Group(it) }
+        val added = addedAssets.map<String, LinkTarget> { LinkTarget.Asset(it) } +
+            addedHoldings.map { LinkTarget.Holding(it) } + addedGroups.map { LinkTarget.Group(it) }
+        val changes = removed.map { LinkChange(it, added = false) } + added.map { LinkChange(it, added = true) }
         changes.forEach { change -> dataSource.insertLinkEvent(change.toEntity(goalId, timestampEpochMs)) }
     }
 
@@ -194,9 +214,20 @@ class SavingsGoalRepositoryImpl(
     private suspend fun currentProgress(goalId: String): Money =
         checkedSavingsGoalProgress(dataSource.listAllocationHistory(goalId).map(::toDomain))
 
+    /** Validates every account, product and group [next] adds to [previous]; one unknown id fails the whole call. */
+    private suspend fun requireLinkTargets(previous: LinkState, next: LinkState) {
+        (next.assetIds - previous.assetIds).forEach { requireAsset(it) }
+        (next.holdingIds - previous.holdingIds).forEach { requireHolding(it) }
+        (next.groupIds - previous.groupIds).forEach { requireLinkableGroup(it) }
+    }
+
     /** Any currency is fine: the tracked balance converts each account to the goal's currency. */
     private suspend fun requireAsset(assetId: String) {
         assetDao.find(assetId) ?: throw SavingsGoalAssetNotFoundException(assetId)
+    }
+
+    private suspend fun requireHolding(holdingId: String) {
+        holdingDao.find(holdingId) ?: throw SavingsGoalHoldingNotFoundException(holdingId)
     }
 
     /** Only persisted groups are linkable: the builtin "all accounts" group is synthesized, never a row. */
@@ -212,37 +243,43 @@ class SavingsGoalRepositoryImpl(
     )
 }
 
-/** One side of a link event: an asset or a group. */
+/** The target of one link event: an account, a portfolio product or a group. */
 private sealed interface LinkTarget {
     data class Asset(val id: String) : LinkTarget
+
+    data class Holding(val id: String) : LinkTarget
 
     data class Group(val id: String) : LinkTarget
 }
 
-/** Everything a goal follows: some accounts XOR one group XOR nothing. */
-private data class LinkState(val assetIds: Set<String>, val groupId: String?) {
-    val groupTarget: LinkTarget.Group? get() = groupId?.let { LinkTarget.Group(it) }
-
+/** Everything a goal follows, any combination of accounts, products and groups. */
+private data class LinkState(val assetIds: Set<String>, val holdingIds: Set<String>, val groupIds: Set<String>) {
     companion object {
-        val NONE = LinkState(emptySet(), null)
+        val NONE = LinkState(emptySet(), emptySet(), emptySet())
     }
 }
 
-/** One link event: [from] null means LINK, [to] null UNLINK, both set RELINK. */
-private data class LinkChange(val from: LinkTarget?, val to: LinkTarget?) {
-    fun toEntity(goalId: String, timestampEpochMs: Long) = SavingsGoalLinkEventEntity(
-        goalId = goalId,
-        fromAssetId = (from as? LinkTarget.Asset)?.id,
-        toAssetId = (to as? LinkTarget.Asset)?.id,
-        kind = when {
-            from == null -> SavingsGoalLinkEventKind.LINK
-            to == null -> SavingsGoalLinkEventKind.UNLINK
-            else -> SavingsGoalLinkEventKind.RELINK
-        }.name,
-        timestampEpochMs = timestampEpochMs,
-        fromGroupId = (from as? LinkTarget.Group)?.id,
-        toGroupId = (to as? LinkTarget.Group)?.id,
-    )
+/** One link event: LINK when [added], UNLINK otherwise. */
+private data class LinkChange(val target: LinkTarget, val added: Boolean) {
+    fun toEntity(goalId: String, timestampEpochMs: Long): SavingsGoalLinkEventEntity {
+        val id = when (target) {
+            is LinkTarget.Asset -> target.id
+            is LinkTarget.Holding -> target.id
+            is LinkTarget.Group -> target.id
+        }
+        fun side(wanted: Boolean, isTarget: Boolean) = if (wanted && isTarget) id else null
+        return SavingsGoalLinkEventEntity(
+            goalId = goalId,
+            fromAssetId = side(!added, target is LinkTarget.Asset),
+            toAssetId = side(added, target is LinkTarget.Asset),
+            kind = (if (added) SavingsGoalLinkEventKind.LINK else SavingsGoalLinkEventKind.UNLINK).name,
+            timestampEpochMs = timestampEpochMs,
+            fromGroupId = side(!added, target is LinkTarget.Group),
+            toGroupId = side(added, target is LinkTarget.Group),
+            fromHoldingId = side(!added, target is LinkTarget.Holding),
+            toHoldingId = side(added, target is LinkTarget.Holding),
+        )
+    }
 }
 
 @OptIn(ExperimentalUuidApi::class)
@@ -267,7 +304,8 @@ private fun toDomain(row: SavingsGoalRelations): SavingsGoal {
         linkedAssetIds = row.linkedAssetIds,
         lifecycle = SavingsGoalLifecycle.valueOf(row.goal.lifecycle),
         progress = checkedSavingsGoalProgress(events),
-        linkedGroupId = row.goal.linkedGroupId,
+        linkedHoldingIds = row.linkedHoldingIds,
+        linkedGroupIds = row.linkedGroupIds,
     )
 }
 
@@ -283,4 +321,6 @@ private fun toDomain(entity: SavingsGoalLinkEventEntity) = SavingsGoalLinkEvent(
     timestampEpochMs = entity.timestampEpochMs,
     fromGroupId = entity.fromGroupId,
     toGroupId = entity.toGroupId,
+    fromHoldingId = entity.fromHoldingId,
+    toHoldingId = entity.toHoldingId,
 )

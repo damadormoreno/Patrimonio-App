@@ -15,6 +15,8 @@ import com.denebapps.patrimonio.domain.model.YearMonth
 import com.denebapps.patrimonio.testing.FakeAccountGroupRepository
 import com.denebapps.patrimonio.testing.FakeAssetRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
+import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
+import com.denebapps.patrimonio.testing.FakePortfolioRepository
 import com.denebapps.patrimonio.testing.FakeSavingsGoalRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -71,7 +73,7 @@ class SavingsGoalsViewModelTest {
         linkedAssetIds = linkedAssetIds,
         lifecycle = lifecycle,
         progress = Money(progressMinor),
-        linkedGroupId = linkedGroupId,
+        linkedGroupIds = setOfNotNull(linkedGroupId),
     )
 
     private fun group(id: String, vararg memberIds: String) = AccountGroup(
@@ -87,12 +89,16 @@ class SavingsGoalsViewModelTest {
         assets: FakeAssetRepository = FakeAssetRepository(),
         groups: FakeAccountGroupRepository = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts())),
         fx: FakeFxRepository = FakeFxRepository(),
+        portfolio: FakePortfolioRepository = FakePortfolioRepository(),
+        portfolios: FakePortfolioCollectionRepository = FakePortfolioCollectionRepository(),
         initialGoalId: String? = null,
         initialWithdraw: Boolean = false,
     ) = SavingsGoalsViewModel(
         savingsGoalRepository = goals,
         assetRepository = assets,
         accountGroupRepository = groups,
+        portfolioRepository = portfolio,
+        portfolios = portfolios,
         fxRepository = fx,
         clock = fixedClock("2026-10-09T10:00:00Z"),
         zoneProvider = { TimeZone.UTC },
@@ -283,7 +289,6 @@ class SavingsGoalsViewModelTest {
         targetReached = false,
         closed = false,
         linkedAssetIds = emptySet(),
-        linkedGroupId = null,
         pace = pace,
     )
 
@@ -461,7 +466,7 @@ class SavingsGoalsViewModelTest {
     }
 
     @Test
-    fun `picking a group replaces the picked accounts and vice versa`() = runTest(dispatcher) {
+    fun `picking a group keeps the picked accounts and each kind toggles on its own`() = runTest(dispatcher) {
         val vm = viewModel(
             assets = FakeAssetRepository(listOf(asset("eur-1"), asset("eur-2"))),
             groups = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts(), group("g1", "eur-1"))),
@@ -471,20 +476,20 @@ class SavingsGoalsViewModelTest {
 
         vm.onNewGoalAssetToggle("eur-1")
         vm.onNewGoalAssetToggle("eur-2")
-        vm.onNewGoalGroupLinkChange("g1")
+        vm.onNewGoalGroupToggle("g1")
         advanceUntilIdle()
-        assertEquals(emptySet(), vm.state.value.newGoalLinkedAssetIds)
-        assertEquals("g1", vm.state.value.newGoalLinkedGroupId)
+        assertEquals(setOf("eur-1", "eur-2"), vm.state.value.newGoalLinkedAssetIds)
+        assertEquals(setOf("g1"), vm.state.value.newGoalLinkedGroupIds)
 
         vm.onNewGoalAssetToggle("eur-1")
         advanceUntilIdle()
-        assertEquals(setOf("eur-1"), vm.state.value.newGoalLinkedAssetIds)
-        assertNull(vm.state.value.newGoalLinkedGroupId)
+        assertEquals(setOf("eur-2"), vm.state.value.newGoalLinkedAssetIds)
+        assertEquals(setOf("g1"), vm.state.value.newGoalLinkedGroupIds)
 
-        vm.onNewGoalUnlink()
+        vm.onNewGoalGroupToggle("g1")
         advanceUntilIdle()
-        assertEquals(emptySet(), vm.state.value.newGoalLinkedAssetIds)
-        assertNull(vm.state.value.newGoalLinkedGroupId)
+        assertEquals(setOf("eur-2"), vm.state.value.newGoalLinkedAssetIds)
+        assertEquals(emptySet(), vm.state.value.newGoalLinkedGroupIds)
         job.cancel()
     }
 
@@ -494,11 +499,11 @@ class SavingsGoalsViewModelTest {
         val job = launch { vm.state.collect {} }
         advanceUntilIdle()
 
-        vm.onNewGoalGroupLinkChange("g1")
+        vm.onNewGoalGroupToggle("g1")
         vm.onNewGoalCurrencyChange(Currency.USD)
         advanceUntilIdle()
 
-        assertEquals("g1", vm.state.value.newGoalLinkedGroupId)
+        assertEquals(setOf("g1"), vm.state.value.newGoalLinkedGroupIds)
         job.cancel()
     }
 
@@ -514,13 +519,13 @@ class SavingsGoalsViewModelTest {
 
         vm.onNewGoalNameChange("Colchón")
         vm.onNewGoalTargetChange("500,00")
-        vm.onNewGoalGroupLinkChange("g1")
+        vm.onNewGoalGroupToggle("g1")
         advanceUntilIdle()
         vm.onSaveNewGoal()
         advanceUntilIdle()
 
         val saved = vm.state.value.goals.single()
-        assertEquals("g1", saved.linkedGroupId)
+        assertEquals(setOf("g1"), saved.linkedGroupIds)
         assertEquals(emptySet(), saved.linkedAssetIds)
         job.cancel()
     }
@@ -553,7 +558,8 @@ class SavingsGoalsViewModelTest {
         vm.onNewGoalNameChange("Viaje a Japón")
         vm.onNewGoalTargetChange("3000")
         vm.onNewGoalDateChange(LocalDate(2027, 6, 1))
-        vm.onNewGoalGroupLinkChange("g1")
+        vm.onNewGoalAssetToggle("a1")
+        vm.onNewGoalGroupToggle("g1")
         // Starting the edit again (e.g. after rotation) must not reset what was typed.
         vm.onStartEditing("goal-1")
         advanceUntilIdle()
@@ -564,7 +570,7 @@ class SavingsGoalsViewModelTest {
         assertEquals("goal-1", saved.id)
         assertEquals("Viaje a Japón", saved.name)
         assertEquals(Money(3_000_00), saved.target.amount)
-        assertEquals("g1", saved.linkedGroupId)
+        assertEquals(setOf("g1"), saved.linkedGroupIds)
         assertEquals(emptySet(), saved.linkedAssetIds)
         assertEquals(
             listOf(SavingsGoalLinkEventKind.UNLINK, SavingsGoalLinkEventKind.LINK),
@@ -689,7 +695,7 @@ class SavingsGoalsViewModelTest {
     }
 
     @Test
-    fun `goals following the same balance get one notice naming them`() = runTest(dispatcher) {
+    fun `goals following the same balance directly or through a group get one notice`() = runTest(dispatcher) {
         val vm = viewModel(
             goals = FakeSavingsGoalRepository(
                 listOf(
@@ -706,7 +712,10 @@ class SavingsGoalsViewModelTest {
 
         assertEquals(
             listOf(
-                SharedBalanceNoticeUi(targetLabel = "«Asset a1»", goalNames = listOf("Goal goal-1", "Goal goal-2")),
+                SharedBalanceNoticeUi(
+                    targetLabel = "«Asset a1»",
+                    goalNames = listOf("Goal goal-1", "Goal goal-2", "Goal goal-3"),
+                ),
             ),
             vm.state.value.sharedBalanceNotices,
         )
@@ -742,8 +751,8 @@ class SavingsGoalsViewModelTest {
         advanceUntilIdle()
 
         val assets = vm.state.value.linkableAssets.associateBy { it.id }
-        // The goal being edited does not tag its own account.
-        assertEquals(listOf("Goal goal-2"), assets.getValue("a1").goalNames)
+        // The goal being edited does not tag its own account; goal-3 reaches it through the group that holds it.
+        assertEquals(listOf("Goal goal-2", "Goal goal-3"), assets.getValue("a1").goalNames)
         assertEquals(listOf("Group g1"), assets.getValue("a1").groupNames)
         assertEquals(emptyList(), assets.getValue("a2").goalNames)
         assertEquals(listOf("Goal goal-3"), vm.state.value.linkableGroups.single().goalNames)

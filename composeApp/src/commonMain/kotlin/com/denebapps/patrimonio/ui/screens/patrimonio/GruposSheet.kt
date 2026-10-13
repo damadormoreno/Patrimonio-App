@@ -51,7 +51,8 @@ import org.koin.compose.viewmodel.koinViewModel
  *  `design-reference/grupos.jsx`'s `GruposSheet`. Expand/edit/popover states are purely local Compose
  *  state (the JSX component's `expanded`/`editing`/`plusOpen` `useState`s) — [GruposViewModel] only
  *  owns repository-derived data plus the NuevoGrupo form (design.md Decision 1). Tapping or long-pressing
- *  an account of an expanded group, or its pencil while editing, calls [onEditAsset] with its id.
+ *  an account of an expanded group, or its pencil while editing, calls [onEditAsset] with its id; on a portfolio
+ *  product it calls [onOpenHolding], which opens the product's detail.
  */
 @Composable
 fun GruposSheet(
@@ -61,6 +62,7 @@ fun GruposSheet(
     onEditGroup: (String) -> Unit = {},
     onNewAsset: () -> Unit = {},
     onEditAsset: (String) -> Unit = {},
+    onOpenHolding: (String) -> Unit = {},
     viewModel: GruposViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -119,7 +121,7 @@ fun GruposSheet(
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("Nuevo grupo de cuentas") },
+                                text = { Text("Nuevo grupo") },
                                 leadingIcon = { Icon(AppIcons.folder, contentDescription = null) },
                                 onClick = {
                                     plusOpen = false
@@ -158,6 +160,7 @@ fun GruposSheet(
                         onDelete = { viewModel.onDeleteGroup(group.id) },
                         onMove = { up -> viewModel.onMoveGroup(group.id, up) },
                         onEditMember = onEditAsset,
+                        onOpenHolding = onOpenHolding,
                     )
                 }
             }
@@ -179,7 +182,7 @@ fun GruposSheet(
                 Icon(AppIcons.plus, contentDescription = null, tint = colors.ink2, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "Nuevo grupo de cuentas",
+                    text = "Nuevo grupo",
                     color = colors.ink2,
                     fontSize = 13.5.sp,
                     fontWeight = FontWeight.Medium,
@@ -187,7 +190,7 @@ fun GruposSheet(
             }
 
             Text(
-                text = "Los grupos son vistas: una cuenta puede estar\nen varios grupos a la vez.",
+                text = "Los grupos son vistas: una cuenta o un producto\nde la cartera puede estar en varios grupos.",
                 color = colors.muted2,
                 fontSize = 11.sp,
                 textAlign = TextAlign.Center,
@@ -272,10 +275,14 @@ private fun GrupoRow(
     onDelete: () -> Unit,
     onMove: (up: Boolean) -> Unit,
     onEditMember: (String) -> Unit,
+    onOpenHolding: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAppColors.current
     val highlight = group.builtin
+    val openMember = { member: GruposMemberUi ->
+        if (member.isHolding) onOpenHolding(member.id) else onEditMember(member.id)
+    }
 
     Column(
         modifier = modifier
@@ -374,7 +381,7 @@ private fun GrupoRow(
             ) {
                 if (group.members.isEmpty()) {
                     Text(
-                        text = "Este grupo no tiene cuentas todavía.",
+                        text = "Este grupo está vacío todavía.",
                         color = colors.muted,
                         fontSize = 12.5.sp,
                         modifier = Modifier.padding(vertical = 12.dp),
@@ -385,20 +392,24 @@ private fun GrupoRow(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .combinedClickable(
-                                    onClickLabel = "Editar",
-                                    onLongClick = { onEditMember(member.id) },
-                                    onClick = { onEditMember(member.id) },
+                                    onClickLabel = if (member.isHolding) "Abrir" else "Editar",
+                                    onLongClick = { openMember(member) },
+                                    onClick = { openMember(member) },
                                 )
                                 .padding(vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            TypeBadge(
-                                member.type,
-                                emoji = member.emoji ?: member.type.emoji,
-                                size = 26.dp,
-                                cornerRadius = 8.dp,
-                            )
+                            if (member.isHolding) {
+                                PortfolioBadge(size = 26.dp, cornerRadius = 8.dp)
+                            } else {
+                                TypeBadge(
+                                    member.type,
+                                    emoji = member.emoji ?: member.type.emoji,
+                                    size = 26.dp,
+                                    cornerRadius = 8.dp,
+                                )
+                            }
                             Text(
                                 text = member.name,
                                 color = colors.ink,
@@ -408,7 +419,7 @@ private fun GrupoRow(
                                 maxLines = 1,
                             )
                             Text(
-                                text = formatMoneyEsGrupos(member.amountEur),
+                                text = if (member.priced) formatMoneyEsGrupos(member.amountEur) else "Sin precio",
                                 color = colors.muted,
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Medium,
@@ -418,7 +429,7 @@ private fun GrupoRow(
                                     icon = AppIcons.pencil,
                                     contentDescription = "Editar ${member.name}",
                                     tint = colors.ink2,
-                                    onClick = { onEditMember(member.id) },
+                                    onClick = { openMember(member) },
                                 )
                             }
                         }

@@ -6,6 +6,7 @@ import com.denebapps.patrimonio.domain.calc.TargetsError
 import com.denebapps.patrimonio.domain.calc.checkedSavingsGoalAdd
 import com.denebapps.patrimonio.domain.calc.movementValidationError
 import com.denebapps.patrimonio.domain.calc.validateTargets
+import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.AccountKind
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.AssetClass
@@ -49,7 +50,7 @@ import kotlin.uuid.Uuid
  * hand-edited or corrupted file is rejected with a readable reason instead of failing half-way
  * through an import or crashing a later read.
  *
- * Writes [VERSION] (14). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
+ * Writes [VERSION] (16). Reads every version from 1 up to [VERSION]: a v1 file simply lacks the
  * group-link fields, which default to null, v1–v3 files have numeric goal ids, which
  * [upgradeLegacyGoalIds] replaces before decoding, v1–v4 files link a goal to one `linkedAssetId`,
  * which [upgradeSingleLinkedAsset] turns into a list, v1–v5 files have no custom account types nor
@@ -60,11 +61,13 @@ import kotlin.uuid.Uuid
  * [upgradeToSinglePortfolio] answers with one new "Mi cartera" that holds every holding, and v1–v11 holdings have no
  * asset class, which defaults to null (the class is inferred when read), and v1–v12 files have no movements, which
  * default to empty, and v1–v13 files have no allocation targets, which default to empty, nor portfolio rebalance
- * tolerances, which default to 500.
+ * tolerances, which default to 500, and v1–v14 files have no holding members of groups, which default to empty, and v1–v15 goals follow at most one group,
+ * `linkedGroupId`, which [upgradeSingleLinkedGroup] turns into a list (and have no linked products, which default to
+ * empty).
  */
 object BackupCodec {
     const val FORMAT = "patrimonio-backup"
-    const val VERSION = 14
+    const val VERSION = 16
 
     private val json = Json {
         prettyPrint = true
@@ -84,7 +87,8 @@ object BackupCodec {
         val version = checkEnvelope(root)
         val withGoalIds = if (version < 4) upgradeLegacyGoalIds(root) else root
         val withLinkedAssets = if (version < 5) upgradeSingleLinkedAsset(withGoalIds) else withGoalIds
-        val upgraded = if (version < 11) upgradeToSinglePortfolio(withLinkedAssets) else withLinkedAssets
+        val withPortfolio = if (version < 11) upgradeToSinglePortfolio(withLinkedAssets) else withLinkedAssets
+        val upgraded = if (version < 16) upgradeSingleLinkedGroup(withPortfolio) else withPortfolio
         val document = try {
             json.decodeFromJsonElement(BackupDocument.serializer(), upgraded)
         } catch (error: IllegalArgumentException) {
@@ -146,6 +150,17 @@ private fun upgradeSingleLinkedAsset(root: JsonObject): JsonObject {
         val assetId = goal["linkedAssetId"] as? JsonPrimitive
         val assetIds = if (assetId == null || assetId is JsonNull) emptyList() else listOf(assetId)
         JsonObject(goal - "linkedAssetId" + ("linkedAssetIds" to JsonArray(assetIds)))
+    }
+    return JsonObject(root + ("savingsGoals" to JsonArray(goals)))
+}
+
+/** Up to version 15 a goal followed at most one group, `linkedGroupId`; now it is `linkedGroupIds`. */
+private fun upgradeSingleLinkedGroup(root: JsonObject): JsonObject {
+    val goals = root.arrayOrEmpty("savingsGoals").map { element ->
+        val goal = element as? JsonObject ?: return@map element
+        val groupId = goal["linkedGroupId"] as? JsonPrimitive
+        val groupIds = if (groupId == null || groupId is JsonNull) emptyList() else listOf(groupId)
+        JsonObject(goal - "linkedGroupId" + ("linkedGroupIds" to JsonArray(groupIds)))
     }
     return JsonObject(root + ("savingsGoals" to JsonArray(goals)))
 }
@@ -256,11 +271,14 @@ private fun BackupDocument.validate() {
         if (goal.linkedAssetIds.size != goal.linkedAssetIds.toSet().size) {
             invalid("La meta '${goal.name}' repite un activo vinculado.")
         }
-        if (goal.linkedGroupId != null && goal.linkedGroupId !in groupIds) {
+        if (AccountGroup.ALL_ACCOUNTS_ID in goal.linkedGroupIds) {
+            invalid("La meta '${goal.name}' está vinculada al grupo de todas las cuentas, que no se puede vincular.")
+        }
+        if (goal.linkedGroupIds.any { it !in groupIds }) {
             invalid("La meta '${goal.name}' está vinculada a un grupo que no existe.")
         }
-        if (goal.linkedAssetIds.isNotEmpty() && goal.linkedGroupId != null) {
-            invalid("La meta '${goal.name}' está vinculada a un activo y a un grupo a la vez.")
+        if (goal.linkedGroupIds.size != goal.linkedGroupIds.toSet().size) {
+            invalid("La meta '${goal.name}' repite un grupo vinculado.")
         }
     }
 
@@ -288,6 +306,25 @@ private fun BackupDocument.validate() {
     portfolioHoldings.forEach { validateHolding(it, portfolioIds) }
     validateMovements(movements, portfolioHoldings)
     validateAllocationTargets(allocationTargets, portfolios)
+
+    val holdingIds = portfolioHoldings.map { it.id }.toSet()
+    savingsGoals.forEach { goal ->
+        if (goal.linkedHoldingIds.any { it !in holdingIds }) {
+            invalid("La meta '${goal.name}' está vinculada a un producto de la cartera que no existe.")
+        }
+        if (goal.linkedHoldingIds.size != goal.linkedHoldingIds.toSet().size) {
+            invalid("La meta '${goal.name}' repite un producto vinculado.")
+        }
+    }
+    requireUnique("valor de cartera en un grupo", accountGroupHoldingMembers.map { "${it.groupId}/${it.holdingId}" })
+    accountGroupHoldingMembers.forEach { member ->
+        if (member.groupId !in groupIds) {
+            invalid("Un valor de cartera apunta a un grupo que no existe: ${member.groupId}.")
+        }
+        if (member.holdingId !in holdingIds) {
+            invalid("Un grupo incluye un valor de cartera que no existe: ${member.holdingId}.")
+        }
+    }
 }
 
 /**

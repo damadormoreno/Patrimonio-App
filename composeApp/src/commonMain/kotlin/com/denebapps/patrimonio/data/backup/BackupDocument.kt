@@ -19,7 +19,10 @@ import kotlinx.serialization.Serializable
  * version 11 added the [portfolios] and each holding's `portfolioId`, which older files lack (one "Mi cartera" is made
  * for them); version 12 added each holding's optional `assetClass`, null in older files; version 13 added the
  * [movements] of the positions, empty in older files; version 14 added each portfolio's `rebalanceToleranceBp`, the
- * default 500 in older files, and the [allocationTargets], empty in older files. [BackupCodec] upgrades older files on
+ * default 500 in older files, and the [allocationTargets], empty in older files; version 15 added the
+ * [accountGroupHoldingMembers], the portfolio holdings in account groups, empty in older files; version 16 replaced a
+ * goal's single `linkedGroupId` with [SavingsGoalBackup.linkedGroupIds], added its [SavingsGoalBackup.linkedHoldingIds]
+ * and the link events' `fromHoldingId`/`toHoldingId` (kind `HOLDING_DELETED`). [BackupCodec] upgrades older files on
  * read.
  *
  * Enum-like fields hold the domain enum `name`s and currencies their ISO code; amounts are minor
@@ -43,6 +46,7 @@ data class BackupDocument(
     val portfolioHoldings: List<PortfolioHoldingBackup> = emptyList(),
     val movements: List<MovementBackup> = emptyList(),
     val allocationTargets: List<AllocationTargetBackup> = emptyList(),
+    val accountGroupHoldingMembers: List<AccountGroupHoldingMemberBackup> = emptyList(),
 )
 
 /**
@@ -117,6 +121,13 @@ data class AccountGroupMemberBackup(
     val assetId: String,
 )
 
+/** A portfolio holding ([holdingId]) that is a member of the account group [groupId], next to its accounts. */
+@Serializable
+data class AccountGroupHoldingMemberBackup(
+    val groupId: String,
+    val holdingId: String,
+)
+
 @Serializable
 data class NetWorthSnapshotBackup(
     val yearMonth: String,
@@ -133,8 +144,9 @@ data class SavingsGoalBackup(
     val targetDateEpochDay: Long? = null,
     val linkedAssetIds: List<String> = emptyList(),
     val lifecycle: String,
-    val linkedGroupId: String? = null,
+    val linkedGroupIds: List<String> = emptyList(),
     val createdAtEpochMs: Long,
+    val linkedHoldingIds: List<String> = emptyList(),
 )
 
 @Serializable
@@ -155,6 +167,8 @@ data class SavingsGoalLinkEventBackup(
     val timestampEpochMs: Long,
     val fromGroupId: String? = null,
     val toGroupId: String? = null,
+    val fromHoldingId: String? = null,
+    val toHoldingId: String? = null,
 )
 
 /**

@@ -162,3 +162,47 @@ private val MIGRATION_10_11_STATEMENTS = listOf(
     "ALTER TABLE `_new_portfolio_holdings` RENAME TO `portfolio_holdings`",
     "CREATE INDEX IF NOT EXISTS `index_portfolio_holdings_portfolioId` ON `portfolio_holdings` (`portfolioId`)",
 )
+
+/**
+ * 15 -> 16: a goal follows any mix of accounts, portfolio products and groups, so the group stops being a column of
+ * the goal. Creates `savings_goal_holdings` and `savings_goal_groups`, moves every `savings_goals.linkedGroupId` into
+ * the second (a one-row list; only groups that exist), then drops the column by rebuilding the table, which also drops
+ * its group foreign key and index (SQLite cannot drop an indexed, referenced column). Link events gain nullable
+ * `fromHoldingId`/`toHoldingId`. Every other goal column, the ledgers and the existing history are copied as they are.
+ * Same rebuild pattern and final check as [MIGRATION_3_4].
+ */
+val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(connection: SQLiteConnection) {
+        MIGRATION_15_16_STATEMENTS.forEach(connection::execSQL)
+        connection.prepare("PRAGMA foreign_key_check").use { violations ->
+            check(!violations.step()) { "Migration 15 -> 16 left foreign key violations" }
+        }
+    }
+}
+
+private val MIGRATION_15_16_STATEMENTS = listOf(
+    "CREATE TABLE IF NOT EXISTS `savings_goal_holdings` (`goalId` TEXT NOT NULL, `holdingId` TEXT NOT NULL, " +
+        "PRIMARY KEY(`goalId`, `holdingId`), " +
+        "FOREIGN KEY(`goalId`) REFERENCES `savings_goals`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
+        "FOREIGN KEY(`holdingId`) REFERENCES `portfolio_holdings`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+    "CREATE INDEX IF NOT EXISTS `index_savings_goal_holdings_holdingId` ON `savings_goal_holdings` (`holdingId`)",
+    "CREATE TABLE IF NOT EXISTS `savings_goal_groups` (`goalId` TEXT NOT NULL, `groupId` TEXT NOT NULL, " +
+        "PRIMARY KEY(`goalId`, `groupId`), " +
+        "FOREIGN KEY(`goalId`) REFERENCES `savings_goals`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
+        "FOREIGN KEY(`groupId`) REFERENCES `account_groups`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+    "CREATE INDEX IF NOT EXISTS `index_savings_goal_groups_groupId` ON `savings_goal_groups` (`groupId`)",
+    "INSERT INTO `savings_goal_groups` (`goalId`, `groupId`) " +
+        "SELECT g.`id`, g.`linkedGroupId` FROM `savings_goals` g " +
+        "JOIN `account_groups` a ON a.`id` = g.`linkedGroupId`",
+    "CREATE TABLE `_new_savings_goals` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, " +
+        "`targetMinor` INTEGER NOT NULL, `currency` TEXT NOT NULL, `targetDateEpochDay` INTEGER, " +
+        "`lifecycle` TEXT NOT NULL, `createdAtEpochMs` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+    "INSERT INTO `_new_savings_goals` (`id`, `name`, `targetMinor`, `currency`, `targetDateEpochDay`, " +
+        "`lifecycle`, `createdAtEpochMs`) " +
+        "SELECT `id`, `name`, `targetMinor`, `currency`, `targetDateEpochDay`, `lifecycle`, `createdAtEpochMs` " +
+        "FROM `savings_goals`",
+    "DROP TABLE `savings_goals`",
+    "ALTER TABLE `_new_savings_goals` RENAME TO `savings_goals`",
+    "ALTER TABLE `savings_goal_link_events` ADD COLUMN `fromHoldingId` TEXT",
+    "ALTER TABLE `savings_goal_link_events` ADD COLUMN `toHoldingId` TEXT",
+)

@@ -6,7 +6,8 @@ import androidx.room.Index
 
 /**
  * Junction row: [assetId] is one of the accounts whose combined balance the goal follows. A goal links
- * to any number of assets XOR one group (`SavingsGoalEntity.linkedGroupId`) XOR nothing.
+ * to any number of assets, products ([SavingsGoalHoldingEntity]) and groups ([SavingsGoalGroupEntity]), in any
+ * combination.
  *
  * Both foreign keys cascade so the row never dangles, but deleting an asset goes through
  * `AssetRepositoryImpl.deleteById`, which records an `ASSET_DELETED` link event first.

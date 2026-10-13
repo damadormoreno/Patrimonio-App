@@ -1,5 +1,6 @@
 package com.denebapps.patrimonio.data.backup
 
+import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.repository.InvalidBackupException
 import kotlin.test.Test
@@ -16,7 +17,9 @@ class BackupCodecTest {
     private val goal =
         SavingsGoalBackup("goal-1", "Viaje", 300_000, "EUR", null, listOf("a1", "a2"), "OPEN", createdAtEpochMs = 1)
     private val groupGoal =
-        SavingsGoalBackup("goal-2", "Colchón", 100_000, "EUR", null, emptyList(), "OPEN", "g1", createdAtEpochMs = 2)
+        SavingsGoalBackup(
+            "goal-2", "Colchón", 100_000, "EUR", null, emptyList(), "OPEN", listOf("g1"), createdAtEpochMs = 2,
+        )
 
     private val watches = AccountTypeBackup("t1", "ASSET", "Relojes", "⌚", "GOLD", 0)
     private val watch = AssetBackup("a3", "t1", "Rolex", null, 900_000, "EUR", emoji = "⌚")
@@ -146,7 +149,7 @@ class BackupCodecTest {
 
         assertEquals(1, document.version)
         assertEquals(listOf("a1"), document.savingsGoals.single().linkedAssetIds)
-        assertNull(document.savingsGoals.single().linkedGroupId)
+        assertEquals(emptyList(), document.savingsGoals.single().linkedGroupIds)
         assertNull(document.savingsGoalLinkEvents.single().fromGroupId)
         assertNull(document.savingsGoalLinkEvents.single().toGroupId)
     }
@@ -203,7 +206,7 @@ class BackupCodecTest {
     fun `a version 2 backup keeps the group link on goals and link events`() {
         val decoded = BackupCodec.decode(BackupCodec.encode(full))
 
-        assertEquals("g1", decoded.savingsGoals.single { it.id == "goal-2" }.linkedGroupId)
+        assertEquals(listOf("g1"), decoded.savingsGoals.single { it.id == "goal-2" }.linkedGroupIds)
         assertEquals("g1", decoded.savingsGoalLinkEvents.single { it.kind == "GROUP_DELETED" }.fromGroupId)
     }
 
@@ -306,7 +309,8 @@ class BackupCodecTest {
         reasonFor(full.copy(accountGroupMembers = listOf(AccountGroupMemberBackup("g1", "missing"))))
         reasonFor(full.copy(accountGroupMembers = listOf(AccountGroupMemberBackup("missing", "a1"))))
         reasonFor(full.copy(savingsGoals = listOf(goal.copy(linkedAssetIds = listOf("a1", "missing")))))
-        assertTrue("grupo" in reasonFor(full.copy(savingsGoals = listOf(groupGoal.copy(linkedGroupId = "missing")))))
+        val missingGroup = groupGoal.copy(linkedGroupIds = listOf("missing"))
+        assertTrue("grupo" in reasonFor(full.copy(savingsGoals = listOf(missingGroup))))
         reasonFor(full.copy(savingsGoalAllocationEvents = listOf(SavingsGoalAllocationEventBackup(9, "missing", 1, 1))))
     }
 
@@ -339,11 +343,105 @@ class BackupCodecTest {
         assertEquals(listOf(listOf("a1"), emptyList()), document.savingsGoals.map { it.linkedAssetIds })
     }
 
-    @Test
-    fun `a goal linked to both an asset and a group is rejected`() {
-        val both = goal.copy(linkedGroupId = "g1")
+    private val mixedGoal = SavingsGoalBackup(
+        id = "goal-3",
+        name = "Mixta",
+        targetMinor = 500_000,
+        currency = "EUR",
+        linkedAssetIds = listOf("a1", "a2"),
+        lifecycle = "OPEN",
+        linkedGroupIds = listOf("g1", "g2"),
+        createdAtEpochMs = 3,
+        linkedHoldingIds = listOf("p1", "p3"),
+    )
 
-        assertTrue("a la vez" in reasonFor(full.copy(savingsGoals = listOf(both))))
+    private val mixed = full.copy(
+        accountGroups = full.accountGroups + AccountGroupBackup("g2", "Viaje", showBalance = true, sortOrder = 1),
+        savingsGoals = full.savingsGoals + mixedGoal,
+        savingsGoalLinkEvents = full.savingsGoalLinkEvents + listOf(
+            SavingsGoalLinkEventBackup(4, "goal-3", null, null, "LINK", 3_000, toHoldingId = "p1"),
+            SavingsGoalLinkEventBackup(5, "goal-3", null, null, "HOLDING_DELETED", 4_000, fromHoldingId = "p3"),
+        ),
+    )
+
+    @Test
+    fun `a goal following accounts products and several groups round-trips with its link events`() {
+        val decoded = BackupCodec.decode(BackupCodec.encode(mixed))
+
+        assertEquals(mixed, decoded)
+        val goal = decoded.savingsGoals.single { it.id == "goal-3" }
+        assertEquals(listOf("a1", "a2"), goal.linkedAssetIds)
+        assertEquals(listOf("p1", "p3"), goal.linkedHoldingIds)
+        assertEquals(listOf("g1", "g2"), goal.linkedGroupIds)
+        assertEquals("p3", decoded.savingsGoalLinkEvents.single { it.kind == "HOLDING_DELETED" }.fromHoldingId)
+    }
+
+    @Test
+    fun `a version 15 backup turns the single linked group of a goal into a one element list`() {
+        val document = BackupCodec.decode(
+            """
+            {
+              "format": "patrimonio-backup",
+              "version": 15,
+              "exportedAt": "2026-10-06T10:00:00Z",
+              "accountGroups": [{"id": "g1", "name": "Casa", "showBalance": true, "sortOrder": 0}],
+              "savingsGoals": [
+                {"id": "u1", "name": "Casa", "targetMinor": 300000, "currency": "EUR",
+                 "linkedAssetIds": [], "linkedGroupId": "g1", "lifecycle": "OPEN", "createdAtEpochMs": 1},
+                {"id": "u2", "name": "Libre", "targetMinor": 100, "currency": "EUR",
+                 "linkedAssetIds": [], "linkedGroupId": null, "lifecycle": "OPEN", "createdAtEpochMs": 2},
+                {"id": "u3", "name": "Sin campo", "targetMinor": 100, "currency": "EUR",
+                 "linkedAssetIds": [], "lifecycle": "OPEN", "createdAtEpochMs": 3}
+              ],
+              "savingsGoalLinkEvents": [
+                {"id": 1, "goalId": "u1", "kind": "LINK", "timestampEpochMs": 1000, "toGroupId": "g1"}
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(listOf(listOf("g1"), emptyList(), emptyList()), document.savingsGoals.map { it.linkedGroupIds })
+        assertEquals(listOf(emptyList(), emptyList(), emptyList()), document.savingsGoals.map { it.linkedHoldingIds })
+        assertNull(document.savingsGoalLinkEvents.single().toHoldingId)
+        assertNull(document.savingsGoalLinkEvents.single().fromHoldingId)
+    }
+
+    @Test
+    fun `a version 15 backup whose goal links a group that does not exist is still rejected`() {
+        val error = assertFailsWith<InvalidBackupException> {
+            BackupCodec.decode(
+                """
+                {"format": "patrimonio-backup", "version": 15, "exportedAt": "x",
+                 "savingsGoals": [{"id": "u1", "name": "Casa", "targetMinor": 1, "currency": "EUR",
+                   "linkedGroupId": "ghost", "lifecycle": "OPEN", "createdAtEpochMs": 1}]}
+                """.trimIndent(),
+            )
+        }
+
+        assertTrue("grupo" in error.message.orEmpty(), error.message)
+    }
+
+    @Test
+    fun `a goal may follow accounts products and groups together`() {
+        // Not rejected any more: the old rule allowed assets or one group, never both.
+        BackupCodec.decode(BackupCodec.encode(mixed))
+    }
+
+    @Test
+    fun `goal links to missing repeated or builtin targets are rejected`() {
+        fun reason(goal: SavingsGoalBackup) = reasonFor(mixed.copy(savingsGoals = full.savingsGoals + goal))
+
+        assertTrue("producto" in reason(mixedGoal.copy(linkedHoldingIds = listOf("p1", "ghost"))))
+        assertTrue("repite" in reason(mixedGoal.copy(linkedHoldingIds = listOf("p1", "p1"))))
+        assertTrue("grupo" in reason(mixedGoal.copy(linkedGroupIds = listOf("g1", "ghost"))))
+        assertTrue("repite" in reason(mixedGoal.copy(linkedGroupIds = listOf("g1", "g1"))))
+        assertTrue("activo" in reason(mixedGoal.copy(linkedAssetIds = listOf("a1", "ghost"))))
+        assertTrue("todas las cuentas" in reason(mixedGoal.copy(linkedGroupIds = listOf(AccountGroup.ALL_ACCOUNTS_ID))))
+    }
+
+    @Test
+    fun `a goal cannot follow a product that is not in the file`() {
+        assertTrue("producto" in reasonFor(mixed.copy(portfolioHoldings = emptyList(), movements = emptyList())))
     }
 
     @Test

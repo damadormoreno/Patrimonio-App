@@ -85,7 +85,7 @@ fun NuevoGrupoSheet(
         )
 
         NuevoGrupoTopBar(
-            title = if (state.isEditing) "Editar grupo" else "Nuevo grupo de cuentas",
+            title = if (state.isEditing) "Editar grupo" else "Nuevo grupo",
             canSave = state.canSaveNewGroup,
             onCancel = onNavigateBack,
             onSave = viewModel::onSaveNewGroup,
@@ -104,45 +104,76 @@ fun NuevoGrupoSheet(
 
             ShowBalanceToggle(showBalance = state.showBalance, onToggle = viewModel::onShowBalanceToggle)
 
-            Text(
-                text = "QUÉ CUENTAS INCLUIR EN ESTE GRUPO",
-                color = colors.muted,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.06.sp,
-                modifier = Modifier.padding(bottom = 10.dp),
-            )
+            val hasProducts = state.holdingChecklist.isNotEmpty()
+            // Hidden rows keep their selection: the count and total below still include them.
+            val visible = state.assetChecklist.filter { matchesSearch(query, it.name, it.subtitle) }
+            val visibleProducts = state.holdingChecklist.filter { matchesSearch(query, it.name, it.portfolioName) }
+            // A portfolio with products and no accounts has no accounts section to show.
+            val showAccounts = state.assetChecklist.isNotEmpty() || !hasProducts
 
-            if (state.assetChecklist.size >= SEARCH_THRESHOLD) {
-                SearchField(
-                    query = query,
-                    onQueryChange = { query = it },
-                    placeholder = "Buscar cuenta",
+            if (showAccounts) {
+                Text(
+                    text = "QUÉ CUENTAS INCLUIR EN ESTE GRUPO",
+                    color = colors.muted,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.06.sp,
                     modifier = Modifier.padding(bottom = 10.dp),
                 )
             }
-            // Hidden rows keep their selection: the count and total below still include them.
-            val visible = state.assetChecklist.filter { matchesSearch(query, it.name, it.subtitle) }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(colors.surface, RoundedCornerShape(16.dp))
-                    .border(1.dp, colors.line, RoundedCornerShape(16.dp))
-                    .padding(horizontal = 14.dp),
-            ) {
-                visible.forEach { item ->
-                    AssetChecklistRow(item = item, onToggle = { viewModel.onAssetToggle(item.id) })
+            if (state.assetChecklist.size + state.holdingChecklist.size >= SEARCH_THRESHOLD) {
+                SearchField(
+                    query = query,
+                    onQueryChange = { query = it },
+                    placeholder = if (hasProducts) "Buscar cuenta o producto" else "Buscar cuenta",
+                    modifier = Modifier.padding(bottom = 10.dp),
+                )
+            }
+            if (showAccounts && (visible.isNotEmpty() || visibleProducts.isEmpty())) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(colors.surface, RoundedCornerShape(16.dp))
+                        .border(1.dp, colors.line, RoundedCornerShape(16.dp))
+                        .padding(horizontal = 14.dp),
+                ) {
+                    visible.forEach { item ->
+                        AssetChecklistRow(item = item, onToggle = { viewModel.onAssetToggle(item.id) })
+                    }
+                    if (visible.isEmpty()) NoSearchResults(query)
                 }
-                if (visible.isEmpty()) NoSearchResults(query)
+            }
+
+            if (visibleProducts.isNotEmpty()) {
+                Text(
+                    text = "CARTERA · QUÉ PRODUCTOS INCLUIR",
+                    color = colors.muted,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.06.sp,
+                    modifier = Modifier.padding(top = if (showAccounts) 22.dp else 0.dp, bottom = 10.dp),
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(colors.surface, RoundedCornerShape(16.dp))
+                        .border(1.dp, colors.line, RoundedCornerShape(16.dp))
+                        .padding(horizontal = 14.dp),
+                ) {
+                    visibleProducts.forEach { item ->
+                        HoldingChecklistRow(item = item, onToggle = { viewModel.onHoldingToggle(item.id) })
+                    }
+                }
+            } else if (!showAccounts) {
+                NoSearchResults(query)
             }
 
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 20.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                val label = if (state.selectedCount == 1) "cuenta seleccionada" else "cuentas seleccionadas"
                 Text(
-                    text = "${state.selectedCount} $label",
+                    text = state.selectionLabel,
                     color = colors.muted,
                     fontSize = 12.5.sp,
                     fontWeight = FontWeight.Medium,
@@ -336,19 +367,64 @@ private fun AssetChecklistRow(item: AssetChecklistItemUi, onToggle: () -> Unit) 
                 modifier = Modifier.padding(top = 4.dp),
             )
         }
-        Box(
-            modifier = Modifier
-                .size(24.dp)
-                .background(
-                    color = if (item.selected) colors.ink else Color.Transparent,
-                    shape = CircleShape,
-                )
-                .border(1.5.dp, if (item.selected) colors.ink else colors.line, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (item.selected) {
-                Icon(AppIcons.check, contentDescription = null, tint = colors.bg, modifier = Modifier.size(14.dp))
-            }
+        ChecklistCheck(selected = item.selected)
+    }
+}
+
+/** A portfolio product in the form: the Cartera badge, its name, portfolio and EUR value, and the same check. */
+@Composable
+private fun HoldingChecklistRow(item: HoldingChecklistItemUi, onToggle: () -> Unit) {
+    val colors = LocalAppColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onToggle,
+            )
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        PortfolioBadge(size = 30.dp)
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = item.name,
+                color = colors.ink,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+            Text(
+                text = item.subtitle,
+                color = colors.muted,
+                fontSize = 11.5.sp,
+                modifier = Modifier.padding(top = 1.dp),
+                maxLines = 1,
+            )
+            AccountUsageTags(
+                goalNames = item.goalNames,
+                groupNames = item.groupNames,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+        ChecklistCheck(selected = item.selected)
+    }
+}
+
+@Composable
+private fun ChecklistCheck(selected: Boolean) {
+    val colors = LocalAppColors.current
+    Box(
+        modifier = Modifier
+            .size(24.dp)
+            .background(color = if (selected) colors.ink else Color.Transparent, shape = CircleShape)
+            .border(1.5.dp, if (selected) colors.ink else colors.line, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) {
+            Icon(AppIcons.check, contentDescription = null, tint = colors.bg, modifier = Modifier.size(14.dp))
         }
     }
 }

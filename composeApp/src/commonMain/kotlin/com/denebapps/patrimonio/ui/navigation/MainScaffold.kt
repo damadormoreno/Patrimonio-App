@@ -152,6 +152,7 @@ fun MainScaffold() {
                     onNewGoal = { mainNavController.navigate(NewGoal()) },
                     onGoalTap = { goalId -> mainNavController.navigate(GoalAllocate(goalId = goalId)) },
                     onOpenCartera = { selectTab(TabKey.CARTERA) },
+                    onOpenHolding = { holdingId -> mainNavController.navigate(PositionDetail(holdingId)) },
                 )
             }
             composable<Cartera> {
@@ -267,6 +268,7 @@ fun MainScaffold() {
                     onEditGroup = { groupId -> mainNavController.navigate(NuevoGrupo(groupId = groupId)) },
                     onNewAsset = { mainNavController.navigate(AddPatrimonio(isLiability = false, groupId = null)) },
                     onEditAsset = { assetId -> mainNavController.navigate(AddPatrimonio(itemId = assetId)) },
+                    onOpenHolding = { holdingId -> mainNavController.navigate(PositionDetail(holdingId)) },
                 )
             }
             composable<NuevoGrupo> { backStackEntry ->

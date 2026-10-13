@@ -1,6 +1,7 @@
 package com.denebapps.patrimonio.data.backup
 
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
+import com.denebapps.patrimonio.data.db.entity.AccountGroupHoldingMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AccountTypeEntity
 import com.denebapps.patrimonio.data.db.entity.AllocationTargetEntity
@@ -13,6 +14,8 @@ import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalGroupEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 
 // Entity <-> backup DTO mapping. 1:1 today; this is where a future schema or format change gets
@@ -38,11 +41,19 @@ internal fun AccountGroupMemberEntity.toBackup() = AccountGroupMemberBackup(grou
 
 internal fun AccountGroupMemberBackup.toEntity() = AccountGroupMemberEntity(groupId, assetId)
 
+internal fun AccountGroupHoldingMemberEntity.toBackup() = AccountGroupHoldingMemberBackup(groupId, holdingId)
+
+internal fun AccountGroupHoldingMemberBackup.toEntity() = AccountGroupHoldingMemberEntity(groupId, holdingId)
+
 internal fun NetWorthSnapshotEntity.toBackup() = NetWorthSnapshotBackup(yearMonth, assetsMinor, liabsMinor)
 
 internal fun NetWorthSnapshotBackup.toEntity() = NetWorthSnapshotEntity(yearMonth, assetsMinor, liabsMinor)
 
-internal fun SavingsGoalEntity.toBackup(linkedAssetIds: List<String>) = SavingsGoalBackup(
+internal fun SavingsGoalEntity.toBackup(
+    linkedAssetIds: List<String>,
+    linkedHoldingIds: List<String>,
+    linkedGroupIds: List<String>,
+) = SavingsGoalBackup(
     id,
     name,
     targetMinor,
@@ -50,8 +61,9 @@ internal fun SavingsGoalEntity.toBackup(linkedAssetIds: List<String>) = SavingsG
     targetDateEpochDay,
     linkedAssetIds,
     lifecycle,
-    linkedGroupId,
+    linkedGroupIds,
     createdAtEpochMs,
+    linkedHoldingIds,
 )
 
 internal fun SavingsGoalBackup.toEntity() = SavingsGoalEntity(
@@ -61,11 +73,14 @@ internal fun SavingsGoalBackup.toEntity() = SavingsGoalEntity(
     currency,
     targetDateEpochDay,
     lifecycle,
-    linkedGroupId,
     createdAtEpochMs,
 )
 
 internal fun SavingsGoalBackup.toLinkedAssetEntities() = linkedAssetIds.map { SavingsGoalAssetEntity(id, it) }
+
+internal fun SavingsGoalBackup.toLinkedHoldingEntities() = linkedHoldingIds.map { SavingsGoalHoldingEntity(id, it) }
+
+internal fun SavingsGoalBackup.toLinkedGroupEntities() = linkedGroupIds.map { SavingsGoalGroupEntity(id, it) }
 
 internal fun SavingsGoalAllocationEventEntity.toBackup() =
     SavingsGoalAllocationEventBackup(id, goalId, deltaMinor, timestampEpochMs)
@@ -73,11 +88,31 @@ internal fun SavingsGoalAllocationEventEntity.toBackup() =
 internal fun SavingsGoalAllocationEventBackup.toEntity() =
     SavingsGoalAllocationEventEntity(id, goalId, deltaMinor, timestampEpochMs)
 
-internal fun SavingsGoalLinkEventEntity.toBackup() =
-    SavingsGoalLinkEventBackup(id, goalId, fromAssetId, toAssetId, kind, timestampEpochMs, fromGroupId, toGroupId)
+internal fun SavingsGoalLinkEventEntity.toBackup() = SavingsGoalLinkEventBackup(
+    id,
+    goalId,
+    fromAssetId,
+    toAssetId,
+    kind,
+    timestampEpochMs,
+    fromGroupId,
+    toGroupId,
+    fromHoldingId,
+    toHoldingId,
+)
 
-internal fun SavingsGoalLinkEventBackup.toEntity() =
-    SavingsGoalLinkEventEntity(id, goalId, fromAssetId, toAssetId, kind, timestampEpochMs, fromGroupId, toGroupId)
+internal fun SavingsGoalLinkEventBackup.toEntity() = SavingsGoalLinkEventEntity(
+    id,
+    goalId,
+    fromAssetId,
+    toAssetId,
+    kind,
+    timestampEpochMs,
+    fromGroupId,
+    toGroupId,
+    fromHoldingId,
+    toHoldingId,
+)
 
 internal fun PortfolioEntity.toBackup() = PortfolioBackup(id, name, sortOrder, rebalanceToleranceBp)
 

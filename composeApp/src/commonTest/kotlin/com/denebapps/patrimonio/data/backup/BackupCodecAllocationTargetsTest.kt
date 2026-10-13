@@ -30,7 +30,7 @@ class BackupCodecAllocationTargetsTest {
         val decoded = BackupCodec.decode(BackupCodec.encode(document))
 
         assertEquals(document, decoded)
-        assertEquals(14, decoded.version)
+        assertEquals(BackupCodec.VERSION, decoded.version)
         assertEquals(listOf(300, 500), decoded.portfolios.map { it.rebalanceToleranceBp })
     }
 
@@ -59,9 +59,9 @@ class BackupCodecAllocationTargetsTest {
 
     @Test
     fun `a file newer than this version is still refused`() {
-        val v15 = """{"format":"patrimonio-backup","version":15,"exportedAt":"2026-10-06T10:00:00Z"}"""
+        val newer = """{"format":"patrimonio-backup","version":${BackupCodec.VERSION + 1},"exportedAt":"x"}"""
 
-        assertFailsWith<InvalidBackupException> { BackupCodec.decode(v15) }
+        assertFailsWith<InvalidBackupException> { BackupCodec.decode(newer) }
     }
 
     @Test

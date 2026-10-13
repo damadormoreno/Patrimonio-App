@@ -147,7 +147,7 @@ internal fun HoldingDetailContent(
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
             title = { Text("Eliminar «${state.name}»") },
-            text = { Text("Se quitará de tu cartera.") },
+            text = { Text(listOfNotNull("Se quitará de tu cartera.", state.deleteWarning).joinToString(" ")) },
             confirmButton = {
                 TextButton(
                     onClick = {

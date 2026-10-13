@@ -5,14 +5,17 @@ import androidx.lifecycle.viewModelScope
 import com.denebapps.patrimonio.domain.calc.AccountAssignment
 import com.denebapps.patrimonio.domain.calc.AccountFilter
 import com.denebapps.patrimonio.domain.calc.AccountUsage
+import com.denebapps.patrimonio.domain.calc.HoldingUsage
 import com.denebapps.patrimonio.domain.calc.accountUsage
 import com.denebapps.patrimonio.domain.calc.assetsByGroup
+import com.denebapps.patrimonio.domain.calc.holdingUsage
 import com.denebapps.patrimonio.domain.calc.liabilitiesByGroup
 import com.denebapps.patrimonio.domain.calc.monthDelta
 import com.denebapps.patrimonio.domain.calc.monthLabelEs
 import com.denebapps.patrimonio.domain.calc.netWorth
 import com.denebapps.patrimonio.domain.calc.portfolioTotalEur
 import com.denebapps.patrimonio.domain.calc.toEur
+import com.denebapps.patrimonio.domain.calc.value
 import com.denebapps.patrimonio.domain.model.AccountGroup
 import com.denebapps.patrimonio.domain.model.AccountKind
 import com.denebapps.patrimonio.domain.model.Asset
@@ -38,6 +41,7 @@ import com.denebapps.patrimonio.ui.components.PORTFOLIO_TYPE_ID
 import com.denebapps.patrimonio.ui.components.TypeLook
 import com.denebapps.patrimonio.ui.components.typeLook
 import com.denebapps.patrimonio.ui.components.typeOptions
+import com.denebapps.patrimonio.ui.screens.portfolio.instrumentTypeLabel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -113,12 +117,36 @@ data class PatrimonioGroupUi(
 /** One asset-type chip of the account filter. */
 data class TypeFilterOptionUi(val group: String, val label: String, val selected: Boolean)
 
-/** Total (EUR) and number of the accounts the active filter shows. */
-data class FilterSummaryUi(val total: Money, val count: Int)
+/** Total (EUR) of what the active filter shows, with the number of accounts ([count]) and of portfolio products
+ *  ([productCount]) it is made of. */
+data class FilterSummaryUi(val total: Money, val count: Int, val productCount: Int = 0)
 
-/** The investment portfolio as a block of the assets view: [total] in EUR (holdings with no value yet count as
- *  zero) and how many [holdingCount] positions it has, with or without a value. */
-data class PortfolioSummaryUi(val total: Money, val holdingCount: Int)
+/**
+ * One product of the portfolio inside the Cartera card. [valueEur] is `null` for one with no price yet; a [closed]
+ * position is worth zero. [inGoal]/[inGroup] are the usage icons: the product is in a group, and a goal follows it.
+ */
+data class PatrimonioHoldingUi(
+    val id: String,
+    val name: String,
+    val subtitle: String,
+    val valueEur: Money?,
+    val closed: Boolean = false,
+    val inGoal: Boolean = false,
+    val inGroup: Boolean = false,
+)
+
+/**
+ * The investment portfolio as a block of the assets view: [total] in EUR (holdings with no value yet count as zero)
+ * and how many [holdingCount] positions it shows, with or without a value, as [items] (open ones first). While the
+ * account filter narrows the list it covers only the products that match ([filtered], out of [totalCount]).
+ */
+data class PortfolioSummaryUi(
+    val total: Money,
+    val holdingCount: Int,
+    val items: List<PatrimonioHoldingUi> = emptyList(),
+    val filtered: Boolean = false,
+    val totalCount: Int = holdingCount,
+)
 
 data class PatrimonioUiState(
     val monthLabel: String,
@@ -290,6 +318,13 @@ class PatrimonioViewModel(
         val usage = accountUsage(goals, accountGroups)
         val filtering = selectedView == PatrimonioView.ACTIVOS && accountFilter.isActive
         val visibleAssets = if (filtering) assets.filter { accountFilter.matches(it, usage[it.id]) } else assets
+        val holdingUse = holdingUsage(goals, accountGroups)
+        val visibleHoldings = if (filtering) {
+            data.portfolio.filter { accountFilter.matchesProduct(holdingUse[it.id]) }
+        } else {
+            data.portfolio
+        }
+        val portfolioSummary = portfolioSummary(data.portfolio, visibleHoldings, holdingUse, rates)
         val groups = when (selectedView) {
             PatrimonioView.ACTIVOS -> assetsByGroup(assets, rates).mapNotNull { groupTotal ->
                 val items = assets.filter { it.group == groupTotal.group }
@@ -346,11 +381,50 @@ class PatrimonioViewModel(
             },
             filter = accountFilter,
             typeFilterOptions = typeFilterOptions(assets, accountFilter, customTypes),
-            filterSummary = FilterSummaryUi(eurTotal(visibleAssets, rates), visibleAssets.size).takeIf { filtering },
-            portfolio = PortfolioSummaryUi(portfolioTotal, data.portfolio.size).takeIf { data.portfolio.isNotEmpty() },
+            filterSummary = FilterSummaryUi(
+                total = eurTotal(visibleAssets, rates) + portfolioTotalEur(visibleHoldings, rates),
+                count = visibleAssets.size,
+                productCount = visibleHoldings.size,
+            ).takeIf { filtering },
+            portfolio = portfolioSummary,
         )
     }
 }
+
+/**
+ * The Cartera card for the [visible] products out of all the [holdings] (the same unless the account filter narrows
+ * them), or `null` when there are none to show.
+ */
+private fun portfolioSummary(
+    holdings: List<PortfolioHolding>,
+    visible: List<PortfolioHolding>,
+    usage: Map<String, HoldingUsage>,
+    rates: FxRates,
+): PortfolioSummaryUi? {
+    if (visible.isEmpty()) return null
+    return PortfolioSummaryUi(
+        total = portfolioTotalEur(visible, rates),
+        holdingCount = visible.size,
+        items = visible.closedLast().map { it.toItemUi(usage[it.id], rates) },
+        filtered = visible.size < holdings.size,
+        totalCount = holdings.size,
+    )
+}
+
+private fun PortfolioHolding.toItemUi(usage: HoldingUsage?, rates: FxRates): PatrimonioHoldingUi {
+    val closed = isClosedPosition
+    return PatrimonioHoldingUi(
+        id = id,
+        name = name,
+        subtitle = if (closed) CLOSED_LABEL else instrumentTypeLabel(type),
+        valueEur = if (closed) Money.ZERO else value()?.toEur(rates),
+        closed = closed,
+        inGoal = usage?.goalNames.orEmpty().isNotEmpty(),
+        inGroup = usage?.groupNames.orEmpty().isNotEmpty(),
+    )
+}
+
+private const val CLOSED_LABEL = "Cerrada"
 
 private fun Asset.toItemUi(usage: AccountUsage?) = PatrimonioItemUi(
     id = id,

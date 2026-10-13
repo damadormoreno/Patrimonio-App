@@ -1,5 +1,7 @@
 package com.denebapps.patrimonio.data.db
 
+import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
+import com.denebapps.patrimonio.data.db.entity.AccountGroupHoldingMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AllocationTargetEntity
 import com.denebapps.patrimonio.data.db.entity.FxHistoryEntity
 import com.denebapps.patrimonio.data.db.entity.FxHistorySyncEntity
@@ -64,6 +66,29 @@ class RoomLocalDataChangesTest {
         signals.awaitAtLeast(1)
 
         db.allocationTargetDao().insertAll(listOf(AllocationTargetEntity(TEST_PORTFOLIO_ID, "EQUITY", 10_000)))
+        signals.awaitAtLeast(2)
+
+        collector.cancel()
+        db.close()
+    }
+
+    @Test
+    fun `a holding joining a group signals a backup change`() = runBlocking {
+        val db = buildInMemoryTestDatabase()
+        db.insertTestPortfolio()
+        db.portfolioHoldingDao().insert(
+            PortfolioHoldingEntity(
+                "h", TEST_PORTFOLIO_ID, "Cuadro", "OTHER", null, null, "MANUAL", null, null, "EUR",
+                null, null, null, null, 250_000, 1L,
+            ),
+        )
+        db.accountGroupDao().insertGroup(AccountGroupEntity("g", "Casa", true, 0))
+        val signals = AtomicInteger()
+        val collector =
+            launch(Dispatchers.Default) { RoomLocalDataChanges(db).observe().collect { signals.incrementAndGet() } }
+        signals.awaitAtLeast(1)
+
+        db.accountGroupDao().insertHoldingMember(AccountGroupHoldingMemberEntity("g", "h"))
         signals.awaitAtLeast(2)
 
         collector.cancel()

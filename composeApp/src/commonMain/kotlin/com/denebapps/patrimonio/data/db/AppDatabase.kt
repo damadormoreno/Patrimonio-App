@@ -19,6 +19,7 @@ import com.denebapps.patrimonio.data.db.dao.PortfolioDao
 import com.denebapps.patrimonio.data.db.dao.PortfolioHoldingDao
 import com.denebapps.patrimonio.data.db.dao.SavingsGoalDao
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
+import com.denebapps.patrimonio.data.db.entity.AccountGroupHoldingMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AccountTypeEntity
 import com.denebapps.patrimonio.data.db.entity.AllocationTargetEntity
@@ -36,6 +37,8 @@ import com.denebapps.patrimonio.data.db.entity.PortfolioHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalGroupEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 
 @Database(
@@ -44,12 +47,15 @@ import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
         LiabilityEntity::class,
         AccountGroupEntity::class,
         AccountGroupMemberEntity::class,
+        AccountGroupHoldingMemberEntity::class,
         NetWorthSnapshotEntity::class,
         FxRateEntity::class,
         SavingsGoalEntity::class,
         SavingsGoalAllocationEventEntity::class,
         SavingsGoalLinkEventEntity::class,
         SavingsGoalAssetEntity::class,
+        SavingsGoalHoldingEntity::class,
+        SavingsGoalGroupEntity::class,
         AccountTypeEntity::class,
         PortfolioEntity::class,
         PortfolioHoldingEntity::class,
@@ -60,7 +66,7 @@ import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
         MovementEntity::class,
         AllocationTargetEntity::class,
     ],
-    version = 14,
+    version = 16,
     exportSchema = true,
     // 5 -> 6 only adds the custom account types table and the accounts' nullable emoji column. 6 -> 7 (drops
     // the subscriptions table) is the hand-written MIGRATION_6_7. 7 -> 8 only adds the portfolio holdings table.
@@ -68,7 +74,9 @@ import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
     // holdings and the four re-downloadable history caches. 10 -> 11 (the portfolios, with a required foreign key on
     // the holdings) is the hand-written MIGRATION_10_11. 11 -> 12 only adds the nullable asset class column of the
     // holdings. 12 -> 13 only adds the movements table of the positions. 13 -> 14 only adds the portfolios' tolerance
-    // column (NOT NULL, with its database default) and the allocation targets table.
+    // column (NOT NULL, with its database default) and the allocation targets table. 14 -> 15 only adds the
+    // table of the portfolio holdings that are members of account groups. 15 -> 16 (goals follow any mix of accounts,
+    // products and groups, so the goals lose their single group column) is the hand-written MIGRATION_15_16.
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -79,6 +87,7 @@ import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
         AutoMigration(from = 11, to = 12),
         AutoMigration(from = 12, to = 13),
         AutoMigration(from = 13, to = 14),
+        AutoMigration(from = 14, to = 15),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)

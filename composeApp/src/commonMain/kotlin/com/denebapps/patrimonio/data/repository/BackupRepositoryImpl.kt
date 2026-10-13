@@ -5,6 +5,8 @@ import com.denebapps.patrimonio.data.backup.BackupDocument
 import com.denebapps.patrimonio.data.backup.toBackup
 import com.denebapps.patrimonio.data.backup.toEntity
 import com.denebapps.patrimonio.data.backup.toLinkedAssetEntities
+import com.denebapps.patrimonio.data.backup.toLinkedGroupEntities
+import com.denebapps.patrimonio.data.backup.toLinkedHoldingEntities
 import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.SeedingGate
 import com.denebapps.patrimonio.data.db.deleteFinancialRows
@@ -21,7 +23,8 @@ import kotlinx.datetime.Clock
  * re-inserts parents before children in a single transaction, preserving ids (savings-goal ids
  * included, so ledgers and links keep pointing at the right goal; portfolios, with their allocation targets, before the
  * holdings in them, and those
- * before their movements, whose units replace the holdings' own). Whatever the
+ * before their movements, whose units replace the holdings' own; the holdings' memberships of the groups and the goals'
+ * links to products go last, once both exist). Whatever the
  * file holds, the database ends with at least one portfolio. The current month's net-worth
  * snapshot is recomputed from the imported assets, like after any other asset write.
  */
@@ -36,6 +39,8 @@ class BackupRepositoryImpl(
         val document = appDatabase.writeTransaction {
             val goals = appDatabase.savingsGoalDao()
             val linkedAssetIds = goals.listAllLinkedAssets().groupBy({ it.goalId }, { it.assetId })
+            val linkedHoldingIds = goals.listAllLinkedHoldings().groupBy({ it.goalId }, { it.holdingId })
+            val linkedGroupIds = goals.listAllLinkedGroups().groupBy({ it.goalId }, { it.groupId })
             BackupDocument(
                 exportedAt = clock.now().toString(),
                 assets = appDatabase.assetDao().list().map { it.toBackup() },
@@ -43,7 +48,13 @@ class BackupRepositoryImpl(
                 accountGroups = appDatabase.accountGroupDao().listGroups().map { it.toBackup() },
                 accountGroupMembers = appDatabase.accountGroupDao().listMembers().map { it.toBackup() },
                 netWorthSnapshots = appDatabase.netWorthDao().list().map { it.toBackup() },
-                savingsGoals = goals.listAllGoals().map { it.toBackup(linkedAssetIds[it.id].orEmpty()) },
+                savingsGoals = goals.listAllGoals().map {
+                    it.toBackup(
+                        linkedAssetIds[it.id].orEmpty(),
+                        linkedHoldingIds[it.id].orEmpty(),
+                        linkedGroupIds[it.id].orEmpty(),
+                    )
+                },
                 savingsGoalAllocationEvents = goals.listAllAllocationEvents().map { it.toBackup() },
                 savingsGoalLinkEvents = goals.listAllLinkEvents().map { it.toBackup() },
                 accountTypes = appDatabase.accountTypeDao().list().map { it.toBackup() },
@@ -51,6 +62,7 @@ class BackupRepositoryImpl(
                 portfolioHoldings = appDatabase.portfolioHoldingDao().list().map { it.toBackup() },
                 movements = appDatabase.movementDao().list().map { it.toBackup() },
                 allocationTargets = appDatabase.allocationTargetDao().list().map { it.toBackup() },
+                accountGroupHoldingMembers = appDatabase.accountGroupDao().listHoldingMembers().map { it.toBackup() },
             )
         }
         return BackupCodec.encode(document)
@@ -71,6 +83,7 @@ class BackupRepositoryImpl(
             document.savingsGoals.forEach { goal ->
                 goals.insertGoal(goal.toEntity())
                 goals.insertLinkedAssets(goal.toLinkedAssetEntities())
+                goals.insertLinkedGroups(goal.toLinkedGroupEntities())
             }
             document.savingsGoalAllocationEvents.forEach { goals.insertAllocationEvent(it.toEntity()) }
             document.savingsGoalLinkEvents.forEach { goals.insertLinkEvent(it.toEntity()) }
@@ -86,6 +99,12 @@ class BackupRepositoryImpl(
                 appDatabase.portfolioHoldingDao().insert(stored)
             }
             document.movements.forEach { appDatabase.movementDao().insert(it.toEntity()) }
+            // The goals follow products too: those links can only go in once the holdings exist.
+            document.savingsGoals.forEach { goals.insertLinkedHoldings(it.toLinkedHoldingEntities()) }
+            // The groups hold holdings too: their memberships can only go in once the holdings exist.
+            document.accountGroupHoldingMembers.forEach {
+                appDatabase.accountGroupDao().insertHoldingMember(it.toEntity())
+            }
             // A file without portfolios (and so without holdings) still leaves the database with its "Mi cartera".
             appDatabase.ensureDefaultPortfolio()
             snapshotUpserter.refreshCurrentMonth()

@@ -5,6 +5,7 @@ import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
 import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalGroupEntity
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -14,7 +15,7 @@ import kotlin.test.assertFails
 
 /**
  * A group row is never deleted and re-inserted: SQLite's REPLACE does exactly that, which fires the
- * `ON DELETE SET NULL` of `savings_goals.linkedGroupId` and the CASCADE of the members, unlinking goals silently.
+ * CASCADE of `savings_goal_groups` and of the members, unlinking goals silently.
  */
 @RunWith(RobolectricTestRunner::class)
 class AccountGroupConflictTest {
@@ -33,16 +34,16 @@ class AccountGroupConflictTest {
                 currency = "EUR",
                 targetDateEpochDay = null,
                 lifecycle = "OPEN",
-                linkedGroupId = "g1",
                 createdAtEpochMs = 0,
             ),
         )
+        db.savingsGoalDao().insertLinkedGroups(listOf(SavingsGoalGroupEntity("goal-1", "g1")))
 
         assertFails { dao.insertGroup(AccountGroupEntity("g1", "Renamed", false, 5)) }
 
         assertEquals(AccountGroupEntity("g1", "Savings", true, 0), dao.findGroup("g1"))
         assertEquals(listOf(AccountGroupMemberEntity("g1", "a1")), dao.listMembers())
-        assertEquals("g1", db.savingsGoalDao().findGoal("goal-1")?.linkedGroupId)
+        assertEquals(listOf("g1"), db.savingsGoalDao().listLinkedGroupIds("goal-1"))
         db.close()
     }
 
@@ -61,16 +62,16 @@ class AccountGroupConflictTest {
                 currency = "EUR",
                 targetDateEpochDay = null,
                 lifecycle = "OPEN",
-                linkedGroupId = "g1",
                 createdAtEpochMs = 0,
             ),
         )
+        db.savingsGoalDao().insertLinkedGroups(listOf(SavingsGoalGroupEntity("goal-1", "g1")))
 
         assertEquals(1, dao.updateGroup("g1", "Colchón", showBalance = false))
 
         assertEquals(AccountGroupEntity("g1", "Colchón", false, 2), dao.findGroup("g1"))
         assertEquals(listOf(AccountGroupMemberEntity("g1", "a1")), dao.listMembers())
-        assertEquals("g1", db.savingsGoalDao().findGoal("goal-1")?.linkedGroupId)
+        assertEquals(listOf("g1"), db.savingsGoalDao().listLinkedGroupIds("goal-1"))
         db.close()
     }
 }

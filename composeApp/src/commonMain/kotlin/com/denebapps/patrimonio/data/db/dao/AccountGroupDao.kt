@@ -8,6 +8,7 @@ import androidx.room.Query
 import androidx.room.Relation
 import androidx.room.Transaction
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
+import com.denebapps.patrimonio.data.db.entity.AccountGroupHoldingMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -15,6 +16,8 @@ data class AccountGroupWithMembers(
     @Embedded val group: AccountGroupEntity,
     @Relation(parentColumn = "id", entityColumn = "groupId")
     val members: List<AccountGroupMemberEntity>,
+    @Relation(parentColumn = "id", entityColumn = "groupId")
+    val holdingMembers: List<AccountGroupHoldingMemberEntity>,
 )
 
 @Dao
@@ -31,6 +34,17 @@ interface AccountGroupDao {
 
     @Query("SELECT * FROM account_group_members ORDER BY groupId, assetId")
     suspend fun listMembers(): List<AccountGroupMemberEntity>
+
+    @Query("SELECT * FROM account_group_holding_members ORDER BY groupId, holdingId")
+    suspend fun listHoldingMembers(): List<AccountGroupHoldingMemberEntity>
+
+    /** The groups [holdingId] is a member of, in the user's order (the builtin group is never a row). */
+    @Query(
+        "SELECT g.* FROM account_groups AS g " +
+            "INNER JOIN account_group_holding_members AS m ON m.groupId = g.id " +
+            "WHERE m.holdingId = :holdingId ORDER BY g.sortOrder, g.id",
+    )
+    suspend fun listGroupsContainingHolding(holdingId: String): List<AccountGroupEntity>
 
     /** Adds a new group; an id that already exists fails (ABORT) instead of replacing the row. REPLACE would delete
      *  the old row first, and that fires `ON DELETE SET NULL` on the goals linked to it and the members' CASCADE. */
@@ -54,6 +68,14 @@ interface AccountGroupDao {
     @Query("DELETE FROM account_group_members WHERE groupId = :groupId")
     suspend fun deleteMembers(groupId: String)
 
+    /** Fails when the group or the holding does not exist (foreign keys); a repeated pair is ignored. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertHoldingMember(member: AccountGroupHoldingMemberEntity)
+
+    /** Same as [deleteMembers], for the portfolio holdings of the group. */
+    @Query("DELETE FROM account_group_holding_members WHERE groupId = :groupId")
+    suspend fun deleteHoldingMembers(groupId: String)
+
     @Query("DELETE FROM account_groups WHERE id = :id")
     suspend fun deleteGroup(id: String)
 
@@ -61,6 +83,10 @@ interface AccountGroupDao {
      *  FK-ordered clear-all transaction, BEFORE the groups themselves. */
     @Query("DELETE FROM account_group_members")
     suspend fun deleteAllMembers()
+
+    /** Same for the holdings' memberships: before the groups AND before the holdings they point at. */
+    @Query("DELETE FROM account_group_holding_members")
+    suspend fun deleteAllHoldingMembers()
 
     /** Wipes every group — only called by `clearFinancialTables` inside its FK-ordered
      *  clear-all transaction, AFTER [deleteAllMembers]. */

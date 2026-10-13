@@ -10,6 +10,8 @@ import androidx.room.Transaction
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalGroupEntity
+import com.denebapps.patrimonio.data.db.entity.SavingsGoalHoldingEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalLinkEventEntity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -22,6 +24,10 @@ data class SavingsGoalRelationRow(
     val linkEvents: List<SavingsGoalLinkEventEntity>,
     @Relation(parentColumn = "id", entityColumn = "goalId")
     val linkedAssets: List<SavingsGoalAssetEntity>,
+    @Relation(parentColumn = "id", entityColumn = "goalId")
+    val linkedHoldings: List<SavingsGoalHoldingEntity>,
+    @Relation(parentColumn = "id", entityColumn = "goalId")
+    val linkedGroups: List<SavingsGoalGroupEntity>,
 )
 
 data class SavingsGoalRelations(
@@ -29,6 +35,8 @@ data class SavingsGoalRelations(
     val allocationEvents: List<SavingsGoalAllocationEventEntity>,
     val linkEvents: List<SavingsGoalLinkEventEntity>,
     val linkedAssetIds: Set<String>,
+    val linkedHoldingIds: Set<String>,
+    val linkedGroupIds: Set<String>,
 )
 
 interface SavingsGoalDataSource {
@@ -46,6 +54,12 @@ interface SavingsGoalDataSource {
 
     suspend fun listGoalsLinkedToAsset(assetId: String): List<SavingsGoalEntity>
 
+    suspend fun listLinkedHoldingIds(goalId: String): List<String>
+
+    suspend fun listLinkedGroupIds(goalId: String): List<String>
+
+    suspend fun listGoalsLinkedToHolding(holdingId: String): List<SavingsGoalEntity>
+
     suspend fun listGoalsLinkedToGroup(groupId: String): List<SavingsGoalEntity>
 
     suspend fun insertGoal(goal: SavingsGoalEntity)
@@ -58,19 +72,28 @@ interface SavingsGoalDataSource {
 
     suspend fun deleteLinkedAssets(goalId: String, assetIds: List<String>): Int
 
-    /** Sets (or, with null, clears) the group link. The caller keeps it exclusive with the asset rows. */
-    suspend fun updateLinkedGroup(goalId: String, linkedGroupId: String?): Int
+    suspend fun insertLinkedHoldings(rows: List<SavingsGoalHoldingEntity>)
+
+    suspend fun deleteLinkedHoldings(goalId: String, holdingIds: List<String>): Int
+
+    suspend fun insertLinkedGroups(rows: List<SavingsGoalGroupEntity>)
+
+    suspend fun deleteLinkedGroups(goalId: String, groupIds: List<String>): Int
 
     /** Removes [assetId] from every goal following it. */
     suspend fun clearLinkedAsset(assetId: String): Int
 
+    /** Removes [holdingId] from every goal following it directly. */
+    suspend fun clearLinkedHolding(holdingId: String): Int
+
+    /** Removes [groupId] from every goal following it. */
     suspend fun clearLinkedGroup(groupId: String): Int
 
     suspend fun updateLifecycle(goalId: String, lifecycle: String): Int
 
     suspend fun updateDetails(goalId: String, name: String, targetMinor: Long, targetDateEpochDay: Long?): Int
 
-    /** Deletes the goal; its events and linked-asset rows go with it (ON DELETE CASCADE). */
+    /** Deletes the goal; its events and linked account, product and group rows go with it (ON DELETE CASCADE). */
     suspend fun deleteGoal(goalId: String): Int
 }
 
@@ -113,7 +136,22 @@ abstract class SavingsGoalDao : SavingsGoalDataSource {
     )
     abstract override suspend fun listGoalsLinkedToAsset(assetId: String): List<SavingsGoalEntity>
 
-    @Query("SELECT * FROM savings_goals WHERE linkedGroupId = :groupId ORDER BY createdAtEpochMs, id")
+    @Query("SELECT holdingId FROM savings_goal_holdings WHERE goalId = :goalId ORDER BY holdingId")
+    abstract override suspend fun listLinkedHoldingIds(goalId: String): List<String>
+
+    @Query("SELECT groupId FROM savings_goal_groups WHERE goalId = :goalId ORDER BY groupId")
+    abstract override suspend fun listLinkedGroupIds(goalId: String): List<String>
+
+    @Query(
+        "SELECT g.* FROM savings_goals g JOIN savings_goal_holdings l ON l.goalId = g.id " +
+            "WHERE l.holdingId = :holdingId ORDER BY g.createdAtEpochMs, g.id",
+    )
+    abstract override suspend fun listGoalsLinkedToHolding(holdingId: String): List<SavingsGoalEntity>
+
+    @Query(
+        "SELECT g.* FROM savings_goals g JOIN savings_goal_groups l ON l.goalId = g.id " +
+            "WHERE l.groupId = :groupId ORDER BY g.createdAtEpochMs, g.id",
+    )
     abstract override suspend fun listGoalsLinkedToGroup(groupId: String): List<SavingsGoalEntity>
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
@@ -131,13 +169,25 @@ abstract class SavingsGoalDao : SavingsGoalDataSource {
     @Query("DELETE FROM savings_goal_assets WHERE goalId = :goalId AND assetId IN (:assetIds)")
     abstract override suspend fun deleteLinkedAssets(goalId: String, assetIds: List<String>): Int
 
-    @Query("UPDATE savings_goals SET linkedGroupId = :linkedGroupId WHERE id = :goalId")
-    abstract override suspend fun updateLinkedGroup(goalId: String, linkedGroupId: String?): Int
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract override suspend fun insertLinkedHoldings(rows: List<SavingsGoalHoldingEntity>)
+
+    @Query("DELETE FROM savings_goal_holdings WHERE goalId = :goalId AND holdingId IN (:holdingIds)")
+    abstract override suspend fun deleteLinkedHoldings(goalId: String, holdingIds: List<String>): Int
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract override suspend fun insertLinkedGroups(rows: List<SavingsGoalGroupEntity>)
+
+    @Query("DELETE FROM savings_goal_groups WHERE goalId = :goalId AND groupId IN (:groupIds)")
+    abstract override suspend fun deleteLinkedGroups(goalId: String, groupIds: List<String>): Int
 
     @Query("DELETE FROM savings_goal_assets WHERE assetId = :assetId")
     abstract override suspend fun clearLinkedAsset(assetId: String): Int
 
-    @Query("UPDATE savings_goals SET linkedGroupId = NULL WHERE linkedGroupId = :groupId")
+    @Query("DELETE FROM savings_goal_holdings WHERE holdingId = :holdingId")
+    abstract override suspend fun clearLinkedHolding(holdingId: String): Int
+
+    @Query("DELETE FROM savings_goal_groups WHERE groupId = :groupId")
     abstract override suspend fun clearLinkedGroup(groupId: String): Int
 
     @Query("UPDATE savings_goals SET lifecycle = :lifecycle WHERE id = :goalId")
@@ -170,6 +220,12 @@ abstract class SavingsGoalDao : SavingsGoalDataSource {
     @Query("SELECT * FROM savings_goal_assets ORDER BY goalId, assetId")
     abstract suspend fun listAllLinkedAssets(): List<SavingsGoalAssetEntity>
 
+    @Query("SELECT * FROM savings_goal_holdings ORDER BY goalId, holdingId")
+    abstract suspend fun listAllLinkedHoldings(): List<SavingsGoalHoldingEntity>
+
+    @Query("SELECT * FROM savings_goal_groups ORDER BY goalId, groupId")
+    abstract suspend fun listAllLinkedGroups(): List<SavingsGoalGroupEntity>
+
     /** Wipes every allocation event — only called by `clearFinancialTables` inside its
      *  FK-ordered clear-all transaction, BEFORE the goals themselves. NOT part of
      *  [SavingsGoalDataSource]: the destructive command reaches the concrete DAO directly. */
@@ -186,6 +242,16 @@ abstract class SavingsGoalDao : SavingsGoalDataSource {
     @Query("DELETE FROM savings_goal_assets")
     abstract suspend fun deleteAllLinkedAssets()
 
+    /** Wipes every goal-product row — only called by `clearFinancialTables`, BEFORE the goals and the holdings they
+     *  reference. */
+    @Query("DELETE FROM savings_goal_holdings")
+    abstract suspend fun deleteAllLinkedHoldings()
+
+    /** Wipes every goal-group row — only called by `clearFinancialTables`, BEFORE the goals and the groups they
+     *  reference. */
+    @Query("DELETE FROM savings_goal_groups")
+    abstract suspend fun deleteAllLinkedGroups()
+
     /** Wipes every goal — only called by `clearFinancialTables` inside its FK-ordered
      *  clear-all transaction, AFTER its child tables and BEFORE the linked assets. */
     @Query("DELETE FROM savings_goals")
@@ -197,4 +263,6 @@ private fun SavingsGoalRelationRow.toOrderedRelations() = SavingsGoalRelations(
     allocationEvents = allocationEvents.sortedWith(compareBy({ it.timestampEpochMs }, { it.id })),
     linkEvents = linkEvents.sortedWith(compareBy({ it.timestampEpochMs }, { it.id })),
     linkedAssetIds = linkedAssets.mapTo(mutableSetOf()) { it.assetId },
+    linkedHoldingIds = linkedHoldings.mapTo(mutableSetOf()) { it.holdingId },
+    linkedGroupIds = linkedGroups.mapTo(mutableSetOf()) { it.groupId },
 )

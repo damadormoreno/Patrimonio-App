@@ -17,7 +17,7 @@ class AccountUsageTest {
     )
 
     @Test
-    fun `accounts list the open goals that follow them and the groups that hold them`() {
+    fun `accounts list the open goals that follow them directly or through a group and the groups that hold them`() {
         val goals = listOf(
             goal("viaje", linkedAssetIds = setOf("a1", "a3")),
             goal("coche", linkedAssetIds = setOf("a1")),
@@ -27,9 +27,10 @@ class AccountUsageTest {
 
         val usage = accountUsage(goals, groups)
 
-        assertEquals(AccountUsage(listOf("viaje", "coche"), listOf("Ahorro", "Día a día")), usage["a1"])
-        // Followed by a cancelled goal and, through its group, by "colchon": neither counts as a goal.
-        assertEquals(AccountUsage(groupNames = listOf("Ahorro")), usage["a2"])
+        // "colchon" follows the group that holds a1 and a2, so it counts for both.
+        assertEquals(AccountUsage(listOf("viaje", "coche", "colchon"), listOf("Ahorro", "Día a día")), usage["a1"])
+        // Followed by a cancelled goal (not counted) and, through its group, by "colchon".
+        assertEquals(AccountUsage(listOf("colchon"), listOf("Ahorro")), usage["a2"])
         assertEquals(AccountUsage(goalNames = listOf("viaje")), usage["a3"])
         assertEquals(setOf("a1", "a2", "a3"), usage.keys)
     }
@@ -70,6 +71,6 @@ class AccountUsageTest {
         linkedAssetIds = linkedAssetIds,
         lifecycle = lifecycle,
         progress = Money.ZERO,
-        linkedGroupId = linkedGroupId,
+        linkedGroupIds = setOfNotNull(linkedGroupId),
     )
 }

@@ -14,9 +14,9 @@ internal suspend fun AppDatabase.clearFinancialTables() {
  * Deletes every financial row in FK-safe child→parent order, portfolios included, so a caller that is about to
  * re-insert a whole data set (the backup import) can start from nothing:
  *
- * 1. Savings-goal ledgers, link history and linked accounts, then goals (the linked accounts reference
- *    assets; goals reference groups).
- * 2. Group members, then groups (members reference both groups and assets).
+ * 1. Savings-goal ledgers, link history and the accounts, products and groups they follow, then goals (those links
+ *    reference assets, holdings and groups).
+ * 2. Group members, the holdings' memberships, then groups (memberships reference groups, and assets or holdings).
  * 3. Net-worth snapshots, assets, liabilities (no outbound FKs once the above are gone), and the
  *    custom account types they used.
  * 4. Movements, the allocation targets, then portfolio holdings (movements follow their holding), then the
@@ -30,8 +30,11 @@ internal suspend fun AppDatabase.deleteFinancialRows() {
     savingsGoalDao().deleteAllAllocationEvents()
     savingsGoalDao().deleteAllLinkEvents()
     savingsGoalDao().deleteAllLinkedAssets()
+    savingsGoalDao().deleteAllLinkedHoldings()
+    savingsGoalDao().deleteAllLinkedGroups()
     savingsGoalDao().deleteAllGoals()
     accountGroupDao().deleteAllMembers()
+    accountGroupDao().deleteAllHoldingMembers()
     accountGroupDao().deleteAllGroups()
     netWorthDao().deleteAll()
     assetDao().deleteAll()
