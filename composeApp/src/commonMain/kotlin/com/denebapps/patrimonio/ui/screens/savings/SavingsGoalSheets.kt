@@ -57,6 +57,7 @@ import com.denebapps.patrimonio.ui.components.SEARCH_THRESHOLD
 import com.denebapps.patrimonio.ui.components.SearchField
 import com.denebapps.patrimonio.ui.components.matchesSearch
 import com.denebapps.patrimonio.ui.icons.AppIcons
+import com.denebapps.patrimonio.ui.screens.patrimonio.PortfolioBadge
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 import kotlinx.datetime.Clock
 import kotlinx.datetime.LocalDate
@@ -67,10 +68,10 @@ import org.koin.core.parameter.parametersOf
 
 /**
  * Goal form for the `NewGoal` destination (spec: Create Goal Form); with [goalId] it edits that goal
- * (name, target, date and link; the currency stays). Ports the same full-
+ * (name, target, date and links; the currency stays). Ports the same full-
  * pushed-destination sheet chrome as [com.denebapps.patrimonio.ui.screens.patrimonio.AddPatrimonioSheet]
- * (design.md Decision: sheets as full pushed destinations). The goal can follow several accounts
- * (checkboxes, any currency: the balance is converted) or one group, never both.
+ * (design.md Decision: sheets as full pushed destinations). The goal can follow any mix of accounts (any currency:
+ * the balance is converted), portfolio products and groups, each picked with its own checkboxes.
  */
 @Composable
 fun NewGoalSheet(
@@ -131,16 +132,21 @@ fun NewGoalSheet(
 
             TargetDateSection(date = state.newGoalTargetDate, onDateChange = viewModel::onNewGoalDateChange)
 
-            if (state.linkableAssets.isNotEmpty() || state.linkableGroups.isNotEmpty()) {
+            if (state.linkableAssets.isNotEmpty() || state.linkableHoldings.isNotEmpty() ||
+                state.linkableGroups.isNotEmpty()
+            ) {
                 LinkTargetSection(
                     assets = state.linkableAssets,
+                    holdings = state.linkableHoldings,
                     groups = state.linkableGroups,
                     goalCurrency = state.newGoalCurrency,
                     selectedAssetIds = state.newGoalLinkedAssetIds,
-                    selectedGroupId = state.newGoalLinkedGroupId,
-                    onUnlink = viewModel::onNewGoalUnlink,
+                    selectedHoldingIds = state.newGoalLinkedHoldingIds,
+                    selectedGroupIds = state.newGoalLinkedGroupIds,
+                    summary = state.newGoalLinkSummary,
                     onToggleAsset = viewModel::onNewGoalAssetToggle,
-                    onSelectGroup = viewModel::onNewGoalGroupLinkChange,
+                    onToggleHolding = viewModel::onNewGoalHoldingToggle,
+                    onToggleGroup = viewModel::onNewGoalGroupToggle,
                 )
             }
 
@@ -800,31 +806,31 @@ private fun TargetDateSection(date: LocalDate?, onDateChange: (LocalDate?) -> Un
 @Composable
 private fun LinkTargetSection(
     assets: List<LinkableAssetUi>,
+    holdings: List<LinkableHoldingUi>,
     groups: List<LinkableGroupUi>,
     goalCurrency: Currency,
     selectedAssetIds: Set<String>,
-    selectedGroupId: String?,
-    onUnlink: () -> Unit,
+    selectedHoldingIds: Set<String>,
+    selectedGroupIds: Set<String>,
+    summary: GoalLinkSummaryUi?,
     onToggleAsset: (String) -> Unit,
-    onSelectGroup: (String) -> Unit,
+    onToggleHolding: (String) -> Unit,
+    onToggleGroup: (String) -> Unit,
 ) {
+    val colors = LocalAppColors.current
     var query by rememberSaveable { mutableStateOf("") }
-    // Hidden options keep their selection; "Sin vincular" is always there.
+    // Hidden options keep their selection, and the footer below still counts it.
     val visibleAssets = assets.filter { matchesSearch(query, it.name) }
+    val visibleHoldings = holdings.filter { matchesSearch(query, it.name) }
     val visibleGroups = groups.filter { matchesSearch(query, it.name) }
-    SheetSectionLabel("Seguir el saldo de cuentas o de un grupo (opcional)")
+    SheetSectionLabel("Seguir el saldo de (opcional)")
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (assets.size + groups.size >= SEARCH_THRESHOLD) {
-            SearchField(query = query, onQueryChange = { query = it }, placeholder = "Buscar cuenta o grupo")
+        if (assets.size + holdings.size + groups.size >= SEARCH_THRESHOLD) {
+            SearchField(query = query, onQueryChange = { query = it }, placeholder = "Buscar cuenta, producto o grupo")
         }
-        LinkOptionRow(
-            label = "Sin vincular",
-            selected = selectedAssetIds.isEmpty() && selectedGroupId == null,
-            onClick = onUnlink,
-        )
-        if (visibleAssets.isEmpty() && visibleGroups.isEmpty()) NoSearchResults(query)
+        if (visibleAssets.isEmpty() && visibleHoldings.isEmpty() && visibleGroups.isEmpty()) NoSearchResults(query)
         if (visibleAssets.isNotEmpty()) {
-            LinkSubheader("Cuentas · puedes marcar varias")
+            LinkSubheader("Cuentas")
             visibleAssets.forEach { option ->
                 LinkOptionRow(
                     label = option.name,
@@ -837,19 +843,40 @@ private fun LinkTargetSection(
                 )
             }
         }
+        if (visibleHoldings.isNotEmpty()) {
+            LinkSubheader("Cartera")
+            visibleHoldings.forEach { option ->
+                LinkOptionRow(
+                    label = option.name,
+                    selected = option.id in selectedHoldingIds,
+                    onClick = { onToggleHolding(option.id) },
+                    kind = LinkOptionKind.Product,
+                    subtitle = option.subtitle,
+                    goalNames = option.goalNames,
+                    groupNames = option.groupNames,
+                )
+            }
+        }
         if (visibleGroups.isNotEmpty()) {
             LinkSubheader("Grupos")
             visibleGroups.forEach { option ->
                 LinkOptionRow(
                     label = option.name,
-                    selected = option.id == selectedGroupId,
-                    onClick = { onSelectGroup(option.id) },
+                    selected = option.id in selectedGroupIds,
+                    onClick = { onToggleGroup(option.id) },
                     kind = LinkOptionKind.Group,
                     goalNames = option.goalNames,
                 )
             }
         }
     }
+    Text(
+        text = summary?.text ?: "Si no marcas nada, irás asignando el dinero a mano.",
+        color = colors.muted,
+        fontSize = 12.sp,
+        lineHeight = 17.sp,
+        modifier = Modifier.padding(top = 10.dp),
+    )
     Spacer(modifier = Modifier.height(22.dp))
 }
 
@@ -864,19 +891,20 @@ private fun LinkSubheader(text: String) {
     )
 }
 
-/** [Account] rows are checkboxes (several can be picked); the rest pick one option. */
-private enum class LinkOptionKind { None, Account, Group }
+/** The three kinds of link, each picked with checkboxes of its own. */
+private enum class LinkOptionKind { Account, Product, Group }
 
-/** One row of the link picker. Account rows get a checkbox and, when it differs from the goal's, their
- *  currency; group rows a folder icon and a "Grupo" pill so they read apart from account rows. Under
- *  the name, the other goals and groups already using it ([AccountUsageTags]). */
+/** One row of the link picker, always a checkbox. Account rows show their currency when it differs from the goal's;
+ *  product rows the Cartera badge and their value; group rows a folder icon and a "Grupo" pill so they read apart.
+ *  Under the name, the other goals and groups already using it ([AccountUsageTags]). */
 @Composable
 private fun LinkOptionRow(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
-    kind: LinkOptionKind = LinkOptionKind.None,
+    kind: LinkOptionKind,
     currencyTag: String? = null,
+    subtitle: String? = null,
     goalNames: List<String> = emptyList(),
     groupNames: List<String> = emptyList(),
 ) {
@@ -902,15 +930,19 @@ private fun LinkOptionRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        CheckMark(checked = selected)
         when (kind) {
-            LinkOptionKind.Account -> CheckMark(checked = selected)
+            LinkOptionKind.Account -> Unit
+            LinkOptionKind.Product -> PortfolioBadge(size = 24.dp, cornerRadius = 7.dp)
             LinkOptionKind.Group ->
                 Icon(AppIcons.folder, contentDescription = null, tint = colors.brand, modifier = Modifier.size(16.dp))
-            LinkOptionKind.None -> Unit
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(text = label, color = colors.ink, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-            // Another goal on the same account counts its balance twice, hence the warning tone.
+            subtitle?.let {
+                Text(text = it, color = colors.muted, fontSize = 11.5.sp, modifier = Modifier.padding(top = 1.dp))
+            }
+            // Another goal on the same account or product counts its balance twice, hence the warning tone.
             AccountUsageTags(
                 goalNames = goalNames,
                 groupNames = groupNames,
@@ -921,9 +953,6 @@ private fun LinkOptionRow(
         currencyTag?.let { Pill(text = it, tone = PillTone.Neutral) }
         if (kind == LinkOptionKind.Group) {
             Pill(text = "Grupo", tone = PillTone.Brand)
-        }
-        if (selected && kind != LinkOptionKind.Account) {
-            Icon(AppIcons.check, contentDescription = null, tint = colors.brand, modifier = Modifier.size(16.dp))
         }
     }
 }
@@ -977,7 +1006,7 @@ private fun currencySymbolSavings(currency: Currency): String = when (currency) 
 
 /** Formats [money] in its own [currency] (not EUR-converted) — duplicated per-file
  *  (`PatrimonioScreen.formatItemAmount` precedent). */
-private fun formatSavingsAmount(money: Money, currency: Currency): String {
+internal fun formatSavingsAmount(money: Money, currency: Currency): String {
     val decimals = currency.decimals
     var factor = 1L
     repeat(decimals) { factor *= 10 }
@@ -1004,7 +1033,7 @@ private val MONTHS_ES_LONG_SAVINGS = listOf(
     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
 )
 
-/** Square checkbox for the multi-select account rows (group rows pick a single option). */
+/** Square checkbox of the link picker rows (every kind of link is multi-select). */
 @Composable
 private fun CheckMark(checked: Boolean) {
     val colors = LocalAppColors.current

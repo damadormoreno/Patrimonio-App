@@ -113,6 +113,7 @@ val presentationModule = module {
             assetRepository = get(),
             accountGroupRepository = get(),
             portfolioRepository = get(),
+            portfolios = get(),
             fxRepository = get(),
             clock = get(),
             zoneProvider = get(),

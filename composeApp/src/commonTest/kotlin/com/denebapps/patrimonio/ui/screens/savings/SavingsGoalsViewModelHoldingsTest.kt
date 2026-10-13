@@ -12,6 +12,7 @@ import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
 import com.denebapps.patrimonio.testing.FakeAccountGroupRepository
 import com.denebapps.patrimonio.testing.FakeAssetRepository
 import com.denebapps.patrimonio.testing.FakeFxRepository
+import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
 import com.denebapps.patrimonio.testing.FakeSavingsGoalRepository
 import com.denebapps.patrimonio.testing.manualTestHolding
@@ -69,6 +70,7 @@ class SavingsGoalsViewModelHoldingsTest {
         assetRepository = FakeAssetRepository(listOf(account)),
         accountGroupRepository = FakeAccountGroupRepository(listOf(AccountGroup.allAccounts(), casa)),
         portfolioRepository = portfolio,
+        portfolios = FakePortfolioCollectionRepository(),
         fxRepository = fx,
         clock = fixedClock("2026-10-09T10:00:00Z"),
         zoneProvider = { TimeZone.UTC },

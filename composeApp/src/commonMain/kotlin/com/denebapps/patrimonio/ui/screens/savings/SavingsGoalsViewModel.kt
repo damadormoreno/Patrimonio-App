@@ -3,10 +3,12 @@ package com.denebapps.patrimonio.ui.screens.savings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.denebapps.patrimonio.domain.calc.AccountUsage
+import com.denebapps.patrimonio.domain.calc.HoldingUsage
 import com.denebapps.patrimonio.domain.calc.SavingsGoalPace
 import com.denebapps.patrimonio.domain.calc.accountUsage
 import com.denebapps.patrimonio.domain.calc.goalNamesByLinkedGroup
 import com.denebapps.patrimonio.domain.calc.goalsSharingLinkedBalance
+import com.denebapps.patrimonio.domain.calc.holdingUsage
 import com.denebapps.patrimonio.domain.calc.monthOfYearLabelEs
 import com.denebapps.patrimonio.domain.calc.parseAmountToMinor
 import com.denebapps.patrimonio.domain.calc.savingsGoalPace
@@ -18,6 +20,7 @@ import com.denebapps.patrimonio.domain.model.Currency
 import com.denebapps.patrimonio.domain.model.CurrencyAmount
 import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.SavingsGoal
 import com.denebapps.patrimonio.domain.model.SavingsGoalLifecycle
@@ -25,11 +28,16 @@ import com.denebapps.patrimonio.domain.repository.AccountGroupRepository
 import com.denebapps.patrimonio.domain.repository.AssetRepository
 import com.denebapps.patrimonio.domain.repository.CreateSavingsGoal
 import com.denebapps.patrimonio.domain.repository.FxRepository
+import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
 import com.denebapps.patrimonio.domain.repository.SavingsGoalRepository
 import com.denebapps.patrimonio.domain.repository.UpdateSavingsGoal
 import com.denebapps.patrimonio.ui.components.amountInputText
 import com.denebapps.patrimonio.ui.components.currencySymbol
+import com.denebapps.patrimonio.ui.screens.patrimonio.checklistValueEur
+import com.denebapps.patrimonio.ui.screens.patrimonio.closedLast
+import com.denebapps.patrimonio.ui.screens.patrimonio.holdingSubtitle
+import com.denebapps.patrimonio.ui.screens.portfolio.MIN_PORTFOLIOS_TO_CHOOSE
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,6 +47,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import kotlinx.datetime.LocalDate
@@ -62,11 +71,12 @@ data class SavingsGoalRowUi(
     val targetReached: Boolean,
     val closed: Boolean,
     val linkedAssetIds: Set<String>,
-    val linkedGroupId: String?,
-    /** [progress] is the balance of the linked assets or group ([linkedTargetLabel]), not allocations:
-     *  allocate and withdraw do not apply. */
+    val linkedHoldingIds: Set<String> = emptySet(),
+    val linkedGroupIds: Set<String> = emptySet(),
+    /** [progress] is the balance of the linked accounts, products and groups ([linkedTargetLabel]), not
+     *  allocations: allocate and withdraw do not apply. */
     val tracksBalance: Boolean = false,
-    /** What the goal follows, ready to read after "de": «Cuenta», «A» y «B», or "4 cuentas". */
+    /** What the goal follows, ready to read after "de": «Cuenta», «A» y «B», or "2 cuentas, 1 producto y 1 grupo". */
     val linkedTargetLabel: String? = null,
     /** The tracked balance needs an exchange rate that is not available; [progress] shows zero. */
     val balanceUnavailable: Boolean = false,
@@ -75,7 +85,7 @@ data class SavingsGoalRowUi(
     val pace: SavingsGoalPace? = null,
 )
 
-/** Several open goals follow the balance of the same assets or group ([targetLabel], as in
+/** Several open goals follow the balance of the same accounts, products or groups ([targetLabel], as in
  *  [SavingsGoalRowUi.linkedTargetLabel]); each one counts it in full. */
 data class SharedBalanceNoticeUi(val targetLabel: String, val goalNames: List<String>)
 
@@ -90,9 +100,21 @@ data class LinkableAssetUi(
     val groupNames: List<String> = emptyList(),
 )
 
+/** One portfolio product offered by the goal form's link picker. [subtitle] is its EUR value (or "sin precio"),
+ *  after the portfolio name when there are several. [goalNames]/[groupNames]: the other open goals that already
+ *  follow it, directly or through a group, and the groups that hold it. */
+data class LinkableHoldingUi(
+    val id: String,
+    val name: String,
+    val subtitle: String,
+    val goalNames: List<String> = emptyList(),
+    val groupNames: List<String> = emptyList(),
+)
+
 /** One persisted account group offered by the create form's optional link picker. Groups carry no
  *  currency restriction (their balance is converted at the current rate) and the builtin "all
- *  accounts" group is never offered: it is synthesized, not a row, so it cannot be linked. */
+ *  accounts" group is never offered: it is synthesized, not a row, so it cannot be linked. [goalNames] are the
+ *  other open goals that already follow it. */
 data class LinkableGroupUi(val id: String, val name: String, val goalNames: List<String> = emptyList())
 
 data class SavingsGoalsUiState(
@@ -104,9 +126,13 @@ data class SavingsGoalsUiState(
     val newGoalCurrency: Currency,
     val newGoalTargetDate: LocalDate?,
     val newGoalLinkedAssetIds: Set<String>,
-    val newGoalLinkedGroupId: String?,
+    val newGoalLinkedHoldingIds: Set<String>,
+    val newGoalLinkedGroupIds: Set<String>,
     val linkableAssets: List<LinkableAssetUi>,
+    val linkableHoldings: List<LinkableHoldingUi>,
     val linkableGroups: List<LinkableGroupUi>,
+    /** The form's footer for what is picked; null when nothing is (the goal is then filled in by hand). */
+    val newGoalLinkSummary: GoalLinkSummaryUi?,
     val canSaveNewGoal: Boolean,
     val selectedGoal: SavingsGoalRowUi?,
     val withdraw: Boolean,
@@ -121,6 +147,7 @@ private data class SavingsGoalsData(
     val groups: List<AccountGroup>,
     val rates: FxRates,
     val holdings: List<PortfolioHolding> = emptyList(),
+    val portfolios: List<Portfolio> = emptyList(),
 )
 
 /** NewGoal form fields, kept separate from repo-derived [SavingsGoalsData] (design.md Decision 1:
@@ -161,14 +188,16 @@ private data class Forms(
  * [SavingsGoalsUiState.withdraw] for the `GoalAllocate` destination; both default to `null`/`false`
  * for the section and `NewGoal` instances, where they are unused.
  *
- * A goal follows any number of assets XOR one persisted group XOR nothing: [onNewGoalAssetToggle]
- * drops a picked group and [onNewGoalGroupLinkChange] drops the picked assets.
+ * A goal follows any mix of accounts, portfolio products and persisted groups, several of each, or nothing (it is
+ * then filled in by hand): [onNewGoalAssetToggle], [onNewGoalHoldingToggle] and [onNewGoalGroupToggle] pick each kind
+ * on its own, and [SavingsGoalsUiState.newGoalLinkSummary] totals what is picked counting everything once.
  */
 class SavingsGoalsViewModel(
     private val savingsGoalRepository: SavingsGoalRepository,
     private val assetRepository: AssetRepository,
     accountGroupRepository: AccountGroupRepository,
     portfolioRepository: PortfolioRepository,
+    portfolios: PortfolioCollectionRepository,
     fxRepository: FxRepository,
     private val clock: Clock,
     private val zoneProvider: () -> TimeZone,
@@ -195,6 +224,7 @@ class SavingsGoalsViewModel(
         fxRepository.observeRates(),
         portfolioRepository.observeAll(),
     ) { goals, assets, groups, rates, holdings -> SavingsGoalsData(goals, assets, groups, rates, holdings) }
+        .combine(portfolios.observePortfolios()) { data, allPortfolios -> data.copy(portfolios = allPortfolios) }
 
     private val formsFlow = combine(
         selectedGoalId,
@@ -232,35 +262,19 @@ class SavingsGoalsViewModel(
         newGoalForm.value = newGoalForm.value.copy(targetDate = date)
     }
 
-    /** Adds or removes one asset from the picked ones, dropping any picked product or group (this form still offers
-     *  one kind of link at a time). */
+    /** Adds the account to the picked ones, or removes it when it was picked. The other kinds stay as they are. */
     fun onNewGoalAssetToggle(assetId: String) {
-        val form = newGoalForm.value
-        val picked = assetId in form.linkedAssetIds
-        val assetIds = if (picked) form.linkedAssetIds - assetId else form.linkedAssetIds + assetId
-        newGoalForm.value = form.copy(
-            linkedAssetIds = assetIds,
-            linkedHoldingIds = emptySet(),
-            linkedGroupIds = emptySet(),
-        )
+        newGoalForm.update { it.copy(linkedAssetIds = it.linkedAssetIds.toggled(assetId)) }
     }
 
-    /** Picks a group, dropping any picked asset or product (this form still offers one kind of link at a time). */
-    fun onNewGoalGroupLinkChange(groupId: String) {
-        newGoalForm.value = newGoalForm.value.copy(
-            linkedAssetIds = emptySet(),
-            linkedHoldingIds = emptySet(),
-            linkedGroupIds = setOf(groupId),
-        )
+    /** Adds the portfolio product to the picked ones, or removes it when it was picked. */
+    fun onNewGoalHoldingToggle(holdingId: String) {
+        newGoalForm.update { it.copy(linkedHoldingIds = it.linkedHoldingIds.toggled(holdingId)) }
     }
 
-    /** Leaves the goal unlinked: it takes allocations instead of following a balance. */
-    fun onNewGoalUnlink() {
-        newGoalForm.value = newGoalForm.value.copy(
-            linkedAssetIds = emptySet(),
-            linkedHoldingIds = emptySet(),
-            linkedGroupIds = emptySet(),
-        )
+    /** Adds the group to the picked ones, or removes it when it was picked. */
+    fun onNewGoalGroupToggle(groupId: String) {
+        newGoalForm.update { it.copy(linkedGroupIds = it.linkedGroupIds.toggled(groupId)) }
     }
 
     /** Fills the form with an existing open goal so saving edits it. Calling it again for the same goal
@@ -307,7 +321,7 @@ class SavingsGoalsViewModel(
                 errorMessage.value = null
                 navigateBackChannel.send(Unit)
             } catch (e: RuntimeException) {
-                errorMessage.value = "No se pudo crear la meta. Revisa el importe y la divisa."
+                errorMessage.value = goalSaveErrorMessage(e, editing = false)
             }
         }
     }
@@ -329,7 +343,7 @@ class SavingsGoalsViewModel(
                 errorMessage.value = null
                 navigateBackChannel.send(Unit)
             } catch (e: RuntimeException) {
-                errorMessage.value = "No se pudo guardar la meta."
+                errorMessage.value = goalSaveErrorMessage(e, editing = true)
             }
         }
     }
@@ -398,13 +412,16 @@ class SavingsGoalsViewModel(
     private fun buildState(data: SavingsGoalsData, forms: Forms): SavingsGoalsUiState {
         val (goals, assets, groups, rates, holdings) = data
 
-        val targetNames = assets.associate { it.id to it.name } + holdings.associate { it.id to it.name } +
-            groups.associate { it.id to it.name }
+        val targetNames = LinkTargetNames(
+            assets = assets.associate { it.id to it.name },
+            holdings = holdings.associate { it.id to it.name },
+            groups = groups.associate { it.id to it.name },
+        )
         val today = clock.todayIn(zoneProvider())
         val rows = goals.map { goal -> goal.toRowUi(assets, groups, holdings, rates, targetNames, today) }
         val sharedBalanceNotices = goalsSharingLinkedBalance(goals, groups).map { sharing ->
             SharedBalanceNoticeUi(
-                targetLabel = linkedTargetLabel(sharing.targetIds.mapNotNull(targetNames::get).sorted()).orEmpty(),
+                targetLabel = targetNames.label(sharing.targetIds).orEmpty(),
                 goalNames = sharing.goals.map { it.name },
             )
         }
@@ -416,12 +433,27 @@ class SavingsGoalsViewModel(
             LinkableAssetUi(asset.id, asset.name, asset.amount.currency, assetUsage.goalNames, assetUsage.groupNames)
         }
 
+        val productUsage = holdingUsage(goals, groups, excludeGoalId = editingGoalId)
+        val portfolioNames = data.portfolios.associate { it.id to it.name }
+            .takeIf { data.portfolios.size >= MIN_PORTFOLIOS_TO_CHOOSE }
+        val linkableHoldings = holdings.closedLast().map { holding ->
+            val holdingUse = productUsage[holding.id] ?: HoldingUsage()
+            LinkableHoldingUi(
+                id = holding.id,
+                name = holding.name,
+                subtitle = holdingSubtitle(portfolioNames?.get(holding.portfolioId), holding.checklistValueEur(rates)),
+                goalNames = holdingUse.goalNames,
+                groupNames = holdingUse.groupNames,
+            )
+        }
+
         val goalsByGroup = goalNamesByLinkedGroup(goals, excludeGoalId = editingGoalId)
         val linkableGroups = groups
             .filter { it.id != AccountGroup.ALL_ACCOUNTS_ID }
             .map { LinkableGroupUi(it.id, it.name, goalsByGroup[it.id].orEmpty()) }
 
-        val newGoalTargetMinor = parseAmountToMinor(forms.newGoal.targetText, forms.newGoal.currency)
+        val newGoal = forms.newGoal
+        val newGoalTargetMinor = parseAmountToMinor(newGoal.targetText, newGoal.currency)
 
         val selectedGoal = rows.firstOrNull { it.id == forms.selectedGoalId }
         val allocateAmountMinor = selectedGoal?.let {
@@ -432,15 +464,27 @@ class SavingsGoalsViewModel(
             goals = rows,
             isEmpty = rows.isEmpty(),
             sharedBalanceNotices = sharedBalanceNotices,
-            newGoalName = forms.newGoal.name,
-            newGoalTargetText = forms.newGoal.targetText,
-            newGoalCurrency = forms.newGoal.currency,
-            newGoalTargetDate = forms.newGoal.targetDate,
-            newGoalLinkedAssetIds = forms.newGoal.linkedAssetIds,
-            newGoalLinkedGroupId = forms.newGoal.linkedGroupIds.firstOrNull(),
+            newGoalName = newGoal.name,
+            newGoalTargetText = newGoal.targetText,
+            newGoalCurrency = newGoal.currency,
+            newGoalTargetDate = newGoal.targetDate,
+            newGoalLinkedAssetIds = newGoal.linkedAssetIds,
+            newGoalLinkedHoldingIds = newGoal.linkedHoldingIds,
+            newGoalLinkedGroupIds = newGoal.linkedGroupIds,
             linkableAssets = linkableAssets,
+            linkableHoldings = linkableHoldings,
             linkableGroups = linkableGroups,
-            canSaveNewGoal = forms.newGoal.name.isNotBlank() && newGoalTargetMinor != null && newGoalTargetMinor > 0,
+            newGoalLinkSummary = goalLinkSummary(
+                assetIds = newGoal.linkedAssetIds,
+                holdingIds = newGoal.linkedHoldingIds,
+                groupIds = newGoal.linkedGroupIds,
+                currency = newGoal.currency,
+                assets = assets,
+                groups = groups,
+                holdings = holdings,
+                rates = rates,
+            ),
+            canSaveNewGoal = newGoal.name.isNotBlank() && newGoalTargetMinor != null && newGoalTargetMinor > 0,
             selectedGoal = selectedGoal,
             withdraw = forms.allocate.withdraw,
             allocateAmountText = forms.allocate.amountText,
@@ -462,11 +506,10 @@ private fun SavingsGoal.toRowUi(
     groups: List<AccountGroup>,
     holdings: List<PortfolioHolding>,
     rates: FxRates,
-    targetNames: Map<String, String>,
+    targetNames: LinkTargetNames,
     today: LocalDate,
 ): SavingsGoalRowUi {
     val balance = trackedBalance(this, assets, groups, rates, holdings)
-    val linkedTargetIds = linkedAssetIds + linkedHoldingIds + linkedGroupIds
     val shown = if (tracksLinkedBalance) balance ?: Money.ZERO else progress
     val balanceUnavailable = tracksLinkedBalance && balance == null
     val closed = lifecycle != SavingsGoalLifecycle.OPEN
@@ -490,9 +533,10 @@ private fun SavingsGoal.toRowUi(
         targetReached = shown >= target.amount,
         closed = closed,
         linkedAssetIds = linkedAssetIds,
-        linkedGroupId = linkedGroupIds.firstOrNull(),
+        linkedHoldingIds = linkedHoldingIds,
+        linkedGroupIds = linkedGroupIds,
         tracksBalance = tracksLinkedBalance,
-        linkedTargetLabel = linkedTargetLabel(linkedTargetIds.mapNotNull(targetNames::get).sorted()),
+        linkedTargetLabel = targetNames.label(linkedAssetIds, linkedHoldingIds, linkedGroupIds),
         balanceUnavailable = balanceUnavailable,
         pace = pace,
     )
@@ -503,15 +547,7 @@ private fun progressPercentage(progress: Money, target: Money): Int {
     return (progress.minorUnits.toDouble() * 100.0 / target.minorUnits.toDouble()).roundToInt()
 }
 
-/** «A»; «A» y «B»; «A», «B» y «C»; from [MAX_NAMED_TARGETS] + 1 names on, "N cuentas". Null when empty. */
-internal fun linkedTargetLabel(names: List<String>): String? {
-    if (names.isEmpty()) return null
-    if (names.size > MAX_NAMED_TARGETS) return "${names.size} cuentas"
-    val quoted = names.map { "«$it»" }
-    return if (quoted.size == 1) quoted.single() else quoted.dropLast(1).joinToString(", ") + " y " + quoted.last()
-}
-
-private const val MAX_NAMED_TARGETS = 3
+private fun Set<String>.toggled(id: String): Set<String> = if (id in this) this - id else this + id
 
 /** Where a linked goal's progress comes from, or null for goals that take allocations. */
 fun trackedBalanceCaption(goal: SavingsGoalRowUi): String? = when {

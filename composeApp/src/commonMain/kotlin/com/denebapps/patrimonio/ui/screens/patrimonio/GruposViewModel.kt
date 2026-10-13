@@ -107,10 +107,8 @@ data class HoldingChecklistItemUi(
 ) {
     /** "Mi cartera · 1.234,56 €", or "sin precio" in place of the value. */
     val subtitle: String
-        get() = listOfNotNull(portfolioName, valueEur?.let(::formatMoneyEsGrupos) ?: NO_PRICE_LABEL).joinToString(" · ")
+        get() = holdingSubtitle(portfolioName, valueEur)
 }
-
-private const val NO_PRICE_LABEL = "sin precio"
 
 data class GruposUiState(
     val groups: List<AccountGroupRowUi>,
@@ -391,7 +389,7 @@ class GruposViewModel(
                 id = holding.id,
                 name = holding.name,
                 portfolioName = portfolioNames?.get(holding.portfolioId),
-                valueEur = holding.value()?.toEur(rates) ?: Money.ZERO.takeIf { holding.isClosedPosition },
+                valueEur = holding.checklistValueEur(rates),
                 selected = holding.id in form.selectedHoldingIds,
                 goalNames = holdingUse[holding.id]?.goalNames.orEmpty(),
                 groupNames = holdingUse[holding.id]?.groupNames.orEmpty(),

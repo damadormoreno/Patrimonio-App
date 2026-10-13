@@ -3,7 +3,11 @@ package com.denebapps.patrimonio.ui.screens.patrimonio
 import com.denebapps.patrimonio.domain.calc.AccountAssignment
 import com.denebapps.patrimonio.domain.calc.AccountFilter
 import com.denebapps.patrimonio.domain.calc.HoldingUsage
+import com.denebapps.patrimonio.domain.calc.toEur
+import com.denebapps.patrimonio.domain.calc.value
+import com.denebapps.patrimonio.domain.model.FxRates
 import com.denebapps.patrimonio.domain.model.HoldingValuation
+import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 
 /** A position that sold everything: it stays listed, worth nothing, after the open ones. */
@@ -35,3 +39,16 @@ fun productCountLabel(shown: Int, total: Int): String = when {
     total == 1 -> "1 producto"
     else -> "$total productos"
 }
+
+private const val NO_PRICE_SUBTITLE = "sin precio"
+
+/**
+ * The EUR value a product shows in a checklist: its value at [rates], zero for a closed position, and `null` for one
+ * with no price yet.
+ */
+internal fun PortfolioHolding.checklistValueEur(rates: FxRates): Money? =
+    value()?.toEur(rates) ?: Money.ZERO.takeIf { isClosedPosition }
+
+/** "Mi cartera · 1.234,56 €", or "sin precio" in place of the value; [portfolioName] is null with one portfolio. */
+internal fun holdingSubtitle(portfolioName: String?, valueEur: Money?): String =
+    listOfNotNull(portfolioName, valueEur?.let(::formatMoneyEsGrupos) ?: NO_PRICE_SUBTITLE).joinToString(" · ")

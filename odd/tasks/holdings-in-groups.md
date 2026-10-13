@@ -70,7 +70,7 @@ fund). Also show the portfolio's products in Patrimonio like the other categorie
   tables, migrate `linkedGroupId` into the groups table, link events for holdings/groups, `trackedBalance` as a
   deduplicated union, sharing notices on effective overlap, usage (direct + via groups), deletes write events,
   backup v16 (route: delegated writer).
-- [ ] **T6 — Goals with mixed links: UI**: goal form with Cuentas / Cartera / Grupos sections, captions, delete
+- [x] **T6 — Goals with mixed links: UI**: goal form with Cuentas / Cartera / Grupos sections, captions, delete
   warnings (route: delegated writer).
 - [ ] **T7 — Docs + manual test** (route: inline).
 
@@ -125,7 +125,15 @@ fund). Also show the portfolio's products in Patrimonio like the other categorie
   `linkedGroupId` to one group). RED not observed by running (tests written first); GREEN: check.sh (2062 tests),
   iOS compile. Parent mutation check: dropping the dedup (`distinctBy`) fails 2 tests; parent re-run of goal,
   migration and backup suites green.
+- **T6** (commit below, `feat(goals): pick accounts, products and groups for a goal`): goal form section «Seguir el
+  saldo de (opcional)» with independent Cuentas / Cartera / Grupos checklists (product rows reuse the Cartera
+  badge; usage tags exclude the edited goal), hint when nothing is picked (manual goal), live footer «Sigue N
+  cuentas, M productos y K grupos · total X € (sin contar dos veces lo que se repite)» using `trackedBalance` on a
+  probe goal; captions name up to 3 targets, else counts per kind; sharing notices classify ids; Spanish save
+  errors. No UI renders link history today, so no history texts were needed. RED not observed by running; writer
+  mutations (overlap flag forced false; group toggle clearing accounts) fail 7 tests; GREEN: check.sh (2079
+  tests), iOS compile.
 
 ## Next step
 
-T6 (goal form UI), then T7; same PR #42. Then the Cartera tab redesign (separate feature).
+T7 (docs + manual test), then update PR #42. Then the Cartera tab redesign (separate feature).
