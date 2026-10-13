@@ -72,7 +72,7 @@ fund). Also show the portfolio's products in Patrimonio like the other categorie
   backup v16 (route: delegated writer).
 - [x] **T6 — Goals with mixed links: UI**: goal form with Cuentas / Cartera / Grupos sections, captions, delete
   warnings (route: delegated writer).
-- [ ] **T7 — Docs + manual test** (route: inline).
+- [x] **T7 — Docs + manual test** (route: inline).
 
 ## Acceptance criteria
 
@@ -133,7 +133,15 @@ fund). Also show the portfolio's products in Patrimonio like the other categorie
   errors. No UI renders link history today, so no history texts were needed. RED not observed by running; writer
   mutations (overlap flag forced false; group toggle clearing accounts) fail 7 tests; GREEN: check.sh (2079
   tests), iOS compile.
+- **T7** (commit below, `docs: document goals with mixed links`): README (*Grupos y metas*, backup v16). Manual
+  test: the emulator had reverted to an old snapshot (app not installed); installed this build (fresh DB v16) and
+  restored the user's data from `pre-grupos.json` (a v14 backup) → user tables identical to the pre-test snapshot.
+  Recreated group «Casa» (26.484,22 €); new goal form shows Cuentas / Cartera / Grupos with usage tags; ticking the
+  account → «Sigue 1 cuenta · total 12.500,00 €»; + Vanguard + group «Casa» → «Sigue 1 cuenta, 1 producto y 1 grupo
+  · total 39.436,42 € (sin contar dos veces lo que se repite)» (= 12.500 + 9.325,87 + 4.658,35 + 12.952,20, account
+  counted once); saved goal 39.436,42 € of 60.000 € with the caption naming the three targets. Restored the backup
+  again: user tables identical.
 
 ## Next step
 
-T7 (docs + manual test), then update PR #42. Then the Cartera tab redesign (separate feature).
+Update PR #42; then the Cartera tab redesign (separate feature). Then the Cartera tab redesign (separate feature).
