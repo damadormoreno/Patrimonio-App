@@ -15,6 +15,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -33,7 +34,8 @@ import org.koin.core.parameter.parametersOf
 /**
  * Pushed screen (`PortfolioDetail`) for one portfolio ([portfolioId]) or for all of them (`null`): its total, the value
  * of today's holdings over time, the correlation between the products, how the portfolio splits, its average cost and
- * risk, and its largest holding. [onBack] returns to Cartera.
+ * risk, and its largest holding; for one portfolio (or the only one) it ends with "Gestionar cartera" (rename, delete).
+ * [onBack] returns to Cartera, which also happens by itself once the portfolio is deleted.
  */
 @Composable
 fun PortfolioDetailScreen(
@@ -57,6 +59,21 @@ fun PortfolioDetailScreen(
         )
     }
 
+    LaunchedEffect(viewModel) { viewModel.navigateBack.collect { onBack() } }
+
+    val managementActions = remember(viewModel) {
+        ManagementActions(
+            onRename = viewModel::onRenamePortfolio,
+            onDelete = viewModel::onDeletePortfolio,
+            dialog = PortfolioDialogActions(
+                onNameChange = viewModel::onDialogNameChange,
+                onTargetChange = viewModel::onDeleteTargetChange,
+                onConfirm = viewModel::onDialogConfirm,
+                onDismiss = viewModel::onDialogDismiss,
+            ),
+        )
+    }
+
     PortfolioDetailContent(
         state = state,
         onBack = onBack,
@@ -64,6 +81,7 @@ fun PortfolioDetailScreen(
         onRefresh = viewModel::onRefresh,
         onDismissSyncError = viewModel::onSyncErrorDismiss,
         targetsActions = targetsActions,
+        managementActions = managementActions,
         modifier = modifier,
     )
 }
@@ -84,6 +102,7 @@ internal fun PortfolioDetailContent(
     onRefresh: () -> Unit,
     onDismissSyncError: () -> Unit,
     targetsActions: TargetsActions,
+    managementActions: ManagementActions,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAppColors.current
@@ -103,13 +122,21 @@ internal fun PortfolioDetailContent(
         ) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
                 if (state.loaded) {
-                    LoadedSections(state, onRangeSelect, onRefresh, onDismissSyncError, targetsActions)
+                    LoadedSections(
+                        state,
+                        onRangeSelect,
+                        onRefresh,
+                        onDismissSyncError,
+                        targetsActions,
+                        managementActions,
+                    )
                 }
                 Spacer(Modifier.height(32.dp))
             }
         }
     }
     state.targetsEditor?.let { TargetsEditorSheet(it, targetsActions.editor) }
+    state.dialog?.let { PortfolioDialog(dialog = it, actions = managementActions.dialog) }
 }
 
 @Composable
@@ -119,6 +146,7 @@ private fun LoadedSections(
     onRetry: () -> Unit,
     onDismissSyncError: () -> Unit,
     targetsActions: TargetsActions,
+    managementActions: ManagementActions,
 ) {
     val colors = LocalAppColors.current
     val available = state.historyStatus == HistoryStatus.AVAILABLE
@@ -145,6 +173,7 @@ private fun LoadedSections(
     if (state.allocations.isNotEmpty()) AllocationSection(state.allocations)
     state.costsRisk?.let { CostsRiskSection(it) }
     state.concentration?.let { ConcentrationSection(it) }
+    state.management?.let { ManagementSection(it, managementActions) }
     state.note?.let {
         Text(
             text = it,

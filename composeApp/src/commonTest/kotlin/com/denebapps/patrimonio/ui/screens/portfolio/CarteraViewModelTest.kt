@@ -10,6 +10,7 @@ import com.denebapps.patrimonio.domain.model.InstrumentRef
 import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.LastQuote
 import com.denebapps.patrimonio.domain.model.Money
+import com.denebapps.patrimonio.domain.model.Portfolio
 import com.denebapps.patrimonio.domain.model.PortfolioHolding
 import com.denebapps.patrimonio.domain.model.Price
 import com.denebapps.patrimonio.domain.model.QuoteProvider
@@ -122,7 +123,7 @@ class CarteraViewModelTest {
     }
 
     @Test
-    fun `a quoted row shows units, price and price date, and its value in the holding currency`() =
+    fun `a quoted row shows its units in the second line and its value in the holding currency`() =
         runTest(dispatcher) {
             val vm = viewModel(FakePortfolioRepository(listOf(fund)))
             val job = launch { vm.state.collect {} }
@@ -132,7 +133,7 @@ class CarteraViewModelTest {
             assertEquals("fund", row.id)
             assertEquals("Fondo Global", row.name)
             assertEquals("Fondo", row.typeLabel)
-            assertEquals("12,345678 part. · 100,00 € · 10/10/2026", row.detail)
+            assertEquals("Fondo · 12,345678 part.", row.meta)
             assertEquals("1.234,57 €", row.valueText)
             assertNull(row.valueEurText)
             job.cancel()
@@ -146,7 +147,7 @@ class CarteraViewModelTest {
 
         val row = vm.state.value.rows.single()
         assertEquals("Acción", row.typeLabel)
-        assertEquals("10,00 part. · 200,00 $ · 10/10/2026", row.detail)
+        assertEquals("Acción · Renta variable · 10,00 part.", row.meta)
         assertEquals("2.000,00 $", row.valueText)
         assertEquals("≈ 1.840,00 €", row.valueEurText)
         job.cancel()
@@ -159,7 +160,7 @@ class CarteraViewModelTest {
         advanceUntilIdle()
 
         val row = vm.state.value.rows.single()
-        assertEquals("5,00 part.", row.detail)
+        assertEquals("Fondo · 5,00 part.", row.meta)
         assertEquals("Sin precio", row.valueText)
         assertNull(row.valueEurText)
         job.cancel()
@@ -173,8 +174,53 @@ class CarteraViewModelTest {
 
         val row = vm.state.value.rows.single()
         assertEquals("Otro", row.typeLabel)
-        assertEquals("Valor manual · 10/10/2026", row.detail)
+        assertEquals("Otro · Valor manual · 10/10/2026", row.meta)
         assertEquals("2.500,00 €", row.valueText)
+        job.cancel()
+    }
+
+    @Test
+    fun `the second line joins type, class, units and broker and drops what is missing`() = runTest(dispatcher) {
+        val full = fund.copy(broker = "Openbank", assetClass = AssetClass.MIXED)
+        val noBroker = fund.copy(id = "fund2", assetClass = AssetClass.FIXED_INCOME)
+        val bare = unpriced.copy(id = "bare")
+        val vm = viewModel(FakePortfolioRepository(listOf(full, noBroker, bare)))
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(
+                "Fondo · Mixto · 12,345678 part. · Openbank",
+                "Fondo · Renta fija · 12,345678 part.",
+                "Fondo · 5,00 part.",
+            ),
+            vm.state.value.rows.map { it.meta },
+        )
+        job.cancel()
+    }
+
+    @Test
+    fun `the second line names the portfolio while all of them are shown`() = runTest(dispatcher) {
+        val other = fund.copy(id = "other", portfolioId = "pf-hijos")
+        val repository = FakePortfolioRepository(listOf(fund.copy(portfolioId = "pf-jub"), other))
+        val vm = CarteraViewModel(
+            portfolioRepository = repository,
+            portfolios = FakePortfolioCollectionRepository(
+                listOf(Portfolio("pf-jub", "Jubilación", 0), Portfolio("pf-hijos", "Hijos", 1)),
+                repository,
+            ),
+            allocationTargets = FakeAllocationTargetRepository(),
+            preferences = FakePreferencesRepository(),
+            fxRepository = FakeFxRepository(rates),
+            zoneProvider = { TimeZone.UTC },
+        )
+        val job = launch { vm.state.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf("Fondo · 12,345678 part. · Jubilación", "Fondo · 12,345678 part. · Hijos"),
+            vm.state.value.rows.map { it.meta },
+        )
         job.cancel()
     }
 

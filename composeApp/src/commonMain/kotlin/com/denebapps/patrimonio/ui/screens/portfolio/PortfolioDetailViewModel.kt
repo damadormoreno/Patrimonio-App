@@ -18,6 +18,7 @@ import com.denebapps.patrimonio.domain.repository.InstrumentHistoryRepository
 import com.denebapps.patrimonio.domain.repository.MovementRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioCollectionRepository
 import com.denebapps.patrimonio.domain.repository.PortfolioRepository
+import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.ui.components.filterAmountInput
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -25,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +39,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -64,6 +67,9 @@ private data class PortfolioSyncState(val running: Boolean, val failed: Boolean 
  * portfolios shown it asks to pick one, unless there is only one, which is then the one it is about. The editor of the
  * targets and the calculator ("¿Cuánto vas a aportar?") keep their state here; the section is computed from the
  * holdings and the targets alone, apart from the heavy analysis.
+ *
+ * "Gestionar cartera" renames or deletes the portfolio the screen is about (see [PortfolioManagement]); deleting it
+ * fires [navigateBack].
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class PortfolioDetailViewModel(
@@ -75,6 +81,7 @@ class PortfolioDetailViewModel(
     private val fxRepository: FxRepository,
     private val fxHistoryRepository: FxHistoryRepository,
     private val historyRepository: InstrumentHistoryRepository,
+    preferences: PreferencesRepository,
     private val clock: Clock,
     private val zoneProvider: () -> TimeZone,
     computationDispatcher: CoroutineDispatcher = Dispatchers.Default,
@@ -148,14 +155,31 @@ class PortfolioDetailViewModel(
         targetsPanel(scope, split, targets, calculator, draft)
     }
 
+    // ---- management ----------------------------------------------------------------------------------------------
+
+    private val management = PortfolioManagement(portfolioId, portfolios, portfolioRepository, preferences)
+
+    private val navigateBackChannel = Channel<Unit>(Channel.BUFFERED)
+
+    /** One-shot signal to leave the screen: the portfolio it is about was deleted. */
+    val navigateBack: Flow<Unit> = navigateBackChannel.receiveAsFlow()
+
+    private val panels: Flow<Pair<TargetsPanel, ManagementPanel>> = combine(targetsPanel, management.panel, ::Pair)
+
     val state: StateFlow<PortfolioDetailUiState> = combine(
         analysis,
         selectedRange,
         sync,
         title,
-        targetsPanel,
-    ) { data, range, syncState, screenTitle, targetsState ->
-        buildState(data.copy(header = data.header.copy(title = screenTitle)), range, syncState, targetsState)
+        panels,
+    ) { data, range, syncState, screenTitle, (targetsState, managementState) ->
+        buildState(
+            data.copy(header = data.header.copy(title = screenTitle)),
+            range,
+            syncState,
+            targetsState,
+            managementState,
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(PORTFOLIO_DETAIL_STOP_TIMEOUT_MS),
@@ -246,6 +270,36 @@ class PortfolioDetailViewModel(
         }
     }
 
+    // ---- management: rename and delete ---------------------------------------------------------------------------
+
+    /** Opens the dialog that renames the portfolio; ignored while several portfolios are shown together. */
+    fun onRenamePortfolio() {
+        viewModelScope.launch { management.openRename() }
+    }
+
+    /** Opens the confirmation to delete the portfolio; ignored for the last portfolio and for the detail of all. */
+    fun onDeletePortfolio() {
+        viewModelScope.launch { management.openDelete() }
+    }
+
+    /** What the name field of the rename dialog holds; a refused name's error goes away. */
+    fun onDialogNameChange(text: String) = management.changeName(text)
+
+    /** The portfolio that receives the products of the one being deleted. */
+    fun onDeleteTargetChange(portfolioId: String) = management.changeTarget(portfolioId)
+
+    fun onDialogDismiss() = management.dismiss()
+
+    /**
+     * Does what the open dialog asks; a refusal keeps it open with its reason in [PortfolioDetailUiState.dialog]. Once
+     * the portfolio is deleted [navigateBack] fires, since the screen is about something that no longer exists.
+     */
+    fun onDialogConfirm() {
+        viewModelScope.launch {
+            if (management.confirm()) navigateBackChannel.trySend(Unit)
+        }
+    }
+
     private fun today(): LocalDate = clock.todayIn(zoneProvider())
 
     private fun startSync(force: Boolean) {
@@ -306,6 +360,7 @@ class PortfolioDetailViewModel(
         range: HistoryRange,
         syncState: PortfolioSyncState,
         targets: TargetsPanel,
+        managementPanel: ManagementPanel,
     ): PortfolioDetailUiState {
         val status = when {
             !analysis.hasQuoted -> HistoryStatus.NOT_APPLICABLE
@@ -330,6 +385,8 @@ class PortfolioDetailViewModel(
             syncError = syncState.failed,
             targetSection = targets.section,
             targetsEditor = targets.editor,
+            management = managementPanel.management,
+            dialog = managementPanel.dialog,
         )
     }
 

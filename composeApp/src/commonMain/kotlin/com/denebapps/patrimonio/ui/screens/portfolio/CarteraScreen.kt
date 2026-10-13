@@ -18,7 +18,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -35,7 +34,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
@@ -47,8 +45,10 @@ import androidx.compose.ui.unit.sp
 import com.denebapps.patrimonio.domain.model.Money
 import com.denebapps.patrimonio.ui.components.EmptyState
 import com.denebapps.patrimonio.ui.components.FabContentBottomSpacing
+import com.denebapps.patrimonio.ui.components.HeaderIconBtn
 import com.denebapps.patrimonio.ui.components.Pill
 import com.denebapps.patrimonio.ui.components.PrimaryButton
+import com.denebapps.patrimonio.ui.components.RefreshIcon
 import com.denebapps.patrimonio.ui.components.ScreenHeader
 import com.denebapps.patrimonio.ui.components.formatEur
 import com.denebapps.patrimonio.ui.icons.AppIcons
@@ -58,15 +58,30 @@ import com.denebapps.patrimonio.ui.theme.LocalAppShapes
 import com.denebapps.patrimonio.ui.theme.instrumentSerifItalicFontFamily
 import org.koin.compose.viewmodel.koinViewModel
 
+/** Side gutter of the whole tab, the same as the header's. */
+private val GUTTER = 20.dp
+
+/** Vertical gap between the blocks of the tab (scope row, total, notices, list header, list). */
+private val BLOCK_GAP = 12.dp
+
+/** Gap between a block and the line or chips that qualify it (the list header and its active filters). */
+private val INNER_GAP = 8.dp
+
+/** Space above and below the two lines of a product row. */
+private val ROW_PADDING = 13.dp
+
 /**
  * Cartera tab: the total of the selected portfolio (or of all), its holdings valued at their latest price, and a price
- * refresh (header button or pull down). Under the header, a selector switches between the portfolios and manages them.
- * [onAddHolding] opens the add form (the FAB does too, see `MainScaffold`); [onImport] the import of MyInvestor files
- * (header button); [onOpenHolding] opens one holding's detail and [onOpenPortfolio] (the total) the detail of the
- * selected portfolio, `null` for all of them (the detail and the net worth are never filtered).
+ * refresh (header button or pull down). Under the header, a row of chips switches between the portfolios (and creates
+ * one); renaming or deleting a portfolio is done from its detail. [onAddHolding] opens the add form (the FAB does too,
+ * see `MainScaffold`); [onImport] the import of MyInvestor files (header button); [onOpenHolding] opens one holding's
+ * detail and [onOpenPortfolio] (the total) the detail of the selected portfolio, `null` for all of them (the detail
+ * and the net worth are never filtered).
  *
- * `Filtrar` in the scope bar opens the filters (class, broker, type). While some are active, the total and the list
- * show only what passes them, a line says how many of the scope's products that is and a chip per filter removes it.
+ * The filter button above the list opens the filters (class, broker, type), with the number of active ones in a
+ * badge. While some are active, the total and the list show only what passes them, a line says how many of the
+ * scope's products that is and a chip per filter removes it. Each product takes two lines: its name and value, and a
+ * muted line with its type, class, bank or broker and units.
  *
  * When a portfolio drifted out of its target band, a notice under the total says so and opens that portfolio's detail
  * through [onOpenPortfolio] (with all of them shown, the first one that needs it); the filters do not affect it.
@@ -82,17 +97,13 @@ fun CarteraScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val scopeActions = remember(viewModel) {
-        PortfolioScopeActions(
-            onSelect = viewModel::onSelectPortfolio,
-            onNew = viewModel::onNewPortfolio,
-            onRename = viewModel::onRenamePortfolio,
-            onDelete = viewModel::onDeletePortfolio,
-        )
+        PortfolioScopeActions(onSelect = viewModel::onSelectPortfolio, onNew = viewModel::onNewPortfolio)
     }
     val dialogActions = remember(viewModel) {
         PortfolioDialogActions(
             onNameChange = viewModel::onDialogNameChange,
-            onTargetChange = viewModel::onDeleteTargetChange,
+            // Only the creation dialog lives here, and it has no portfolio to pick.
+            onTargetChange = {},
             onConfirm = viewModel::onDialogConfirm,
             onDismiss = viewModel::onDialogDismiss,
         )
@@ -144,49 +155,45 @@ internal fun CarteraContent(
             right = {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(INNER_GAP),
                 ) {
-                    // Hidden while the prices refresh: with "Actualizando…" both would not fit a narrow phone.
-                    if (!state.isRefreshing) {
-                        HeaderTextButton(text = "Importar", onClickLabel = "Importar de MyInvestor", onClick = onImport)
-                    }
-                    RefreshButton(refreshing = state.isRefreshing, onClick = onRefresh)
+                    HeaderIconBtn(icon = AppIcons.download, onClick = onImport, label = "Importar de MyInvestor")
+                    HeaderIconBtn(
+                        icon = RefreshIcon,
+                        onClick = onRefresh,
+                        label = "Actualizar precios",
+                        loading = state.isRefreshing,
+                    )
                 }
             },
         )
-        PortfolioScopeBar(state = state, actions = scopeActions, onFilter = { filterOpen = true })
+        PortfolioScopeBar(state = state, actions = scopeActions)
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = onRefresh,
             modifier = Modifier.weight(1f).fillMaxWidth(),
         ) {
             Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = GUTTER, end = GUTTER, top = BLOCK_GAP),
+                verticalArrangement = Arrangement.spacedBy(BLOCK_GAP),
             ) {
                 TotalCard(
                     total = state.total,
                     onClick = { onOpenPortfolio(state.selectedPortfolioId) }.takeUnless { state.isEmpty },
                 )
                 state.rebalanceBanner?.let {
-                    RebalanceBannerView(
-                        banner = it,
-                        onClick = { onOpenPortfolio(it.portfolioId) },
-                        modifier = Modifier.padding(top = 12.dp),
-                    )
+                    RebalanceBannerView(banner = it, onClick = { onOpenPortfolio(it.portfolioId) })
                 }
-                state.filterSummary?.let { FilterSummaryLine(text = it, modifier = Modifier.padding(top = 10.dp)) }
-                if (state.filter.active.isNotEmpty()) {
-                    ActiveFilterChips(
-                        active = state.filter.active,
+                state.refreshMessage?.let { RefreshNotice(message = it, onDismiss = onDismissMessage) }
+                if (state.filter.hasOptions) {
+                    ProductsHeader(
+                        summary = state.filterSummary,
+                        filter = state.filter,
+                        onFilter = { filterOpen = true },
                         onRemove = filterActions.onRemove,
-                        modifier = Modifier.padding(top = 10.dp),
-                    )
-                }
-                state.refreshMessage?.let { message ->
-                    RefreshNotice(
-                        message = message,
-                        onDismiss = onDismissMessage,
-                        modifier = Modifier.padding(top = 12.dp),
                     )
                 }
                 if (state.isEmpty) {
@@ -199,17 +206,12 @@ internal fun CarteraContent(
                         } else {
                             "Añade tu primer fondo, ETF o acción para ver cuánto vale tu cartera."
                         },
-                        modifier = Modifier.padding(top = 14.dp),
                     )
                     PrimaryButton(text = "Añadir producto", onClick = onAddHolding, icon = AppIcons.plus)
                 } else if (state.noMatches) {
-                    NoMatchesState(onClear = filterActions.onClear, modifier = Modifier.padding(top = 14.dp))
+                    NoMatchesState(onClear = filterActions.onClear)
                 } else {
-                    HoldingsCard(
-                        rows = state.rows,
-                        onOpenHolding = onOpenHolding,
-                        modifier = Modifier.padding(top = 14.dp),
-                    )
+                    HoldingsCard(rows = state.rows, onOpenHolding = onOpenHolding)
                 }
                 Spacer(Modifier.height(FabContentBottomSpacing))
             }
@@ -221,48 +223,25 @@ internal fun CarteraContent(
     }
 }
 
-/** Text button in the header: "Actualizar", or a spinner while the prices are being fetched. */
+/**
+ * The line above the list: "Productos" (or, while some filters are on, how many of the scope's products pass them) and
+ * the filter button at the end, with the active filters as removable chips right under it.
+ */
 @Composable
-private fun RefreshButton(refreshing: Boolean, onClick: () -> Unit) {
-    HeaderTextButton(
-        text = if (refreshing) "Actualizando…" else "Actualizar",
-        onClickLabel = "Actualizar precios",
-        onClick = onClick,
-        enabled = !refreshing,
-        loading = refreshing,
-    )
-}
-
-/** The pill-shaped text button of the Cartera header ("Importar", "Actualizar"); [loading] adds a spinner. */
-@Composable
-private fun HeaderTextButton(
-    text: String,
-    onClickLabel: String,
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-    loading: Boolean = false,
+private fun ProductsHeader(
+    summary: String?,
+    filter: CarteraFilterUi,
+    onFilter: () -> Unit,
+    onRemove: (FilterDimension, String) -> Unit,
 ) {
-    val colors = LocalAppColors.current
-    val shape = RoundedCornerShape(LocalAppShapes.current.full)
-    Row(
-        modifier = Modifier
-            .background(colors.surface, shape)
-            .border(1.dp, colors.line, shape)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                enabled = enabled,
-                onClickLabel = onClickLabel,
-                onClick = onClick,
-            )
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        if (loading) {
-            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = colors.ink2)
+    Column(verticalArrangement = Arrangement.spacedBy(INNER_GAP)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            FilterSummaryLine(text = summary ?: "Productos", modifier = Modifier.weight(1f))
+            FilterButton(activeCount = filter.activeCount, onClick = onFilter)
         }
-        Text(text = text, color = colors.ink2, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        if (filter.active.isNotEmpty()) {
+            ActiveFilterChips(active = filter.active, onRemove = onRemove)
+        }
     }
 }
 
@@ -276,7 +255,6 @@ private fun TotalCard(total: Money, onClick: (() -> Unit)?, modifier: Modifier =
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = 8.dp)
             .then(AppShadows.sh2(shapes.xl))
             .background(
                 brush = Brush.verticalGradient(listOf(colors.surface2, colors.surface)),
@@ -388,27 +366,11 @@ private fun HoldingsCard(rows: List<HoldingRowUi>, onOpenHolding: (String) -> Un
     }
 }
 
-/** The class of a holding: its color dot, as in the class bars, and its name, muted and on one line. */
-@Composable
-private fun AssetClassTag(text: String, color: Color, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier.padding(top = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-        Box(Modifier.size(6.dp).background(color, CircleShape))
-        Text(
-            text = text,
-            color = LocalAppColors.current.muted,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-    }
-}
-
+/**
+ * A product in two lines. First its name (ellipsized) and its value, right-aligned (below it, in a euro line, what it
+ * is worth in euros when it is not quoted in them). Second, muted and on one line, [HoldingRowUi.meta] after the dot
+ * of its class color, when it has a class.
+ */
 @Composable
 private fun HoldingRow(row: HoldingRowUi, showDivider: Boolean, onClick: () -> Unit) {
     val colors = LocalAppColors.current
@@ -431,55 +393,34 @@ private fun HoldingRow(row: HoldingRowUi, showDivider: Boolean, onClick: () -> U
                 },
             )
             .clickable(onClickLabel = "Ver detalle", onClick = onClick)
-            .padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(vertical = ROW_PADDING),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                text = row.name,
+                color = if (row.isClosed) colors.muted else colors.ink,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Row(
+                modifier = Modifier.padding(top = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                row.assetClass?.let { Box(Modifier.size(6.dp).background(assetClassColor(it), CircleShape)) }
                 Text(
-                    text = row.name,
-                    color = if (row.isClosed) colors.muted else colors.ink,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                Pill(text = row.typeLabel)
-            }
-            row.assetClassText?.let { AssetClassTag(text = it, color = assetClassColor(row.assetClass)) }
-            row.portfolioName?.let {
-                Text(
-                    text = it,
+                    text = row.meta,
                     color = colors.muted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-            // Own line, ellipsized, so a long name never pushes the units and price of the detail line out.
-            row.broker?.let {
-                Text(
-                    text = it,
-                    color = colors.ink2,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
+                    modifier = Modifier.weight(1f, fill = false),
                 )
             }
-            Text(
-                text = row.detail,
-                color = colors.muted,
-                fontSize = 12.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp),
-            )
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(
@@ -487,9 +428,17 @@ private fun HoldingRow(row: HoldingRowUi, showDivider: Boolean, onClick: () -> U
                 color = if (row.valueText == NO_PRICE_TEXT || row.isClosed) colors.muted else colors.ink,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
             )
             row.valueEurText?.let {
-                Text(text = it, color = colors.muted, fontSize = 11.sp, modifier = Modifier.padding(top = 1.dp))
+                Text(
+                    text = it,
+                    color = colors.muted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    modifier = Modifier.padding(top = 3.dp),
+                )
             }
         }
     }

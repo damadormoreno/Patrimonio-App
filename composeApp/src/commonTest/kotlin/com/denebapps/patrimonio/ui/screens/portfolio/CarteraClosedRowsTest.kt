@@ -84,7 +84,7 @@ class CarteraClosedRowsTest {
 
         val row = state.rows.single()
         assertTrue(row.isClosed)
-        assertEquals("Cerrada", row.detail)
+        assertEquals("Fondo · Cerrada", row.meta)
         assertEquals("0,00 €", row.valueText)
         assertNull(row.valueEurText)
         assertEquals(Money.ZERO, state.total)

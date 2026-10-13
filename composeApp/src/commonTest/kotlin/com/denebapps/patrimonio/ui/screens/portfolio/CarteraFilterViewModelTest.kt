@@ -193,6 +193,7 @@ class CarteraFilterViewModelTest {
         val state = s.vm.state.value
         assertEquals(listOf("a", "b", "c", "d", "e", "f"), ids(state))
         assertTrue(state.filter.active.isEmpty())
+        assertEquals(0, state.filter.activeCount)
         assertNull(state.filterSummary)
         assertFalse(state.noMatches)
         assertEquals(Money(425_000), state.total)
@@ -397,6 +398,7 @@ class CarteraFilterViewModelTest {
         assertEquals(Money.ZERO, state.total)
         assertEquals("Filtrado · 0 de 6 productos", state.filterSummary)
         assertEquals(2, state.filter.active.size)
+        assertEquals(2, state.filter.activeCount)
         job.cancel()
     }
 
