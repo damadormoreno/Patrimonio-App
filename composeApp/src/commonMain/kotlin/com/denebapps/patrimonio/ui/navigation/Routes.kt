@@ -40,6 +40,10 @@ object Profile
 @Serializable
 object Account
 
+/** App info (version, data sources, licenses, privacy), opened from Ajustes → Información. */
+@Serializable
+object About
+
 /** Month-by-month net worth ("Evolución mensual"), opened from the Patrimonio header. */
 @Serializable
 object NetWorthHistory

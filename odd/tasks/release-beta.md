@@ -36,7 +36,7 @@ sources (Morningstar/Yahoo) would need a licensed source or a bring-your-own-key
   signed AAB, version from tag/env, CI job building the AAB on `v*` tags (artifact only), iOS Info.plist fixes,
   `PrivacyInfo.xcprivacy`, `docs/release.md` runbook (keystore, secrets, Play internal testing, Firebase SHA for
   Google sign-in, TestFlight) and `docs/privacy-policy.md` draft (route: delegated writer).
-- [ ] **T2 — In-app basics**: Settings footer honest about cloud backup, «Acerca de» (version, data sources with
+- [x] **T2 — In-app basics**: Settings footer honest about cloud backup, «Acerca de» (version, data sources with
   CoinGecko attribution, open-source/font licenses, privacy policy link when configured), CoinGecko attribution
   where crypto prices show (route: delegated writer).
 - [ ] **T3 — App icon**: chosen proposal as Android adaptive icon (vector foreground + background, monochrome for
@@ -69,7 +69,14 @@ sources (Morningstar/Yahoo) would need a licensed source or a bring-your-own-key
   Writer: check.sh green, iOS compile, bundleRelease without vars fails with a clear message, with a throwaway
   keystore → signed AAB verified (`jarsigner`). Parent: guard message confirmed; installed on the emulator →
   `targetSdk=36`, navigation and back work.
+- **T2** (commit below, `feat(settings): add an about screen and honest storage note`): `settingsFooterText`
+  (cloud wording only when the backup is Active); «Acerca de» row (with the version) → screen with data sources
+  (Morningstar/Yahoo «fuente pública no oficial», «Powered by CoinGecko», Frankfurter/BCE; links via
+  `LocalUriHandler`), 16 open-source licences incl. Manrope/Instrument Serif OFL and rumbo MIT notices, privacy and
+  contact rows hidden until `PRIVACY_POLICY_URL`/`CONTACT_EMAIL` are set (`AboutConfig.kt`); CoinGecko credit in
+  the crypto chart note. RED: compile failures; GREEN: check.sh (2141 tests), iOS compile. Parent: emulator shows
+  the row with «1.0.0-dev» and the screen sections.
 
 ## Next step
 
-T2 (writer) while the user picks the icon.
+T3 (icon) once the user picks A, B or C.

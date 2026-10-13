@@ -30,6 +30,7 @@ import com.denebapps.patrimonio.ui.components.Fab
 import com.denebapps.patrimonio.ui.components.TabBar
 import com.denebapps.patrimonio.ui.components.TabItem
 import com.denebapps.patrimonio.ui.icons.AppIcons
+import com.denebapps.patrimonio.ui.screens.about.AboutScreen
 import com.denebapps.patrimonio.ui.screens.account.AccountScreen
 import com.denebapps.patrimonio.ui.screens.history.NetWorthHistoryScreen
 import com.denebapps.patrimonio.ui.screens.importing.ImportMyInvestorScreen
@@ -167,10 +168,12 @@ fun MainScaffold() {
                 SettingsScreen(
                     onOpenProfile = { mainNavController.navigate(Profile) },
                     onOpenAccount = { mainNavController.navigate(Account) },
+                    onOpenAbout = { mainNavController.navigate(About) },
                 )
             }
             composable<Profile> { PerfilScreen(onBack = { mainNavController.popBackStack() }) }
             composable<Account> { AccountScreen(onBack = { mainNavController.popBackStack() }) }
+            composable<About> { AboutScreen(onBack = { mainNavController.popBackStack() }) }
             composable<NetWorthHistory> { NetWorthHistoryScreen(onBack = { mainNavController.popBackStack() }) }
             composable<AddPatrimonio> { backStackEntry ->
                 val route = backStackEntry.toRoute<AddPatrimonio>()

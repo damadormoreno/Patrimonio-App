@@ -167,7 +167,7 @@ class PositionDetailAssetClassTest {
             assertEquals("Cripto", state.header.typeLabel)
             assertEquals("Holding btc", state.header.name)
             assertNull(state.product)
-            assertEquals("Histórico del último año (límite de CoinGecko).", state.chartNote)
+            assertEquals("Histórico del último año (límite de la API). Powered by CoinGecko.", state.chartNote)
             job.cancel()
         }
 

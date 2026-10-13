@@ -42,6 +42,12 @@ fun providerLabel(provider: QuoteProvider): String = when (provider) {
     QuoteProvider.COINGECKO -> "CoinGecko"
 }
 
+/** The credit a provider asks for wherever its prices are shown; `null` when it asks for none. */
+fun priceAttribution(provider: QuoteProvider): String? = when (provider) {
+    QuoteProvider.COINGECKO -> "Powered by CoinGecko"
+    QuoteProvider.MORNINGSTAR, QuoteProvider.YAHOO -> null
+}
+
 /** "10/10/2026". */
 fun formatShortDate(date: LocalDate): String {
     val day = date.dayOfMonth.toString().padStart(TWO_DIGITS, '0')
