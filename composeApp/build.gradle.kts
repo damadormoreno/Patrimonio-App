@@ -128,6 +128,11 @@ ktlint {
     }
 }
 
+// Build inputs (version, release signing) come from an environment variable (CI) or, failing that, a Gradle
+// property (e.g. in ~/.gradle/gradle.properties for a local release build). Blank counts as unset.
+fun buildSetting(name: String): String? =
+    (providers.environmentVariable(name).orNull ?: providers.gradleProperty(name).orNull)?.takeIf { it.isNotBlank() }
+
 android {
     namespace = "com.denebapps.patrimonio"
     compileSdk = libs.versions.androidCompileSdk.get().toInt()
@@ -140,9 +145,36 @@ android {
         minSdk = libs.versions.androidMinSdk.get().toInt()
         targetSdk = libs.versions.androidTargetSdk.get().toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // CI passes its run number so every preview build installs over the previous one.
-        versionCode = providers.environmentVariable("VERSION_CODE").orNull?.toIntOrNull() ?: 1
-        versionName = "1.0"
+        // CI passes its run number so every build installs over the previous one (Play also requires it to
+        // grow with every upload). Scheme and workflow: docs/release.md.
+        versionCode = buildSetting("VERSION_CODE")?.toIntOrNull() ?: 1
+        versionName = buildSetting("VERSION_NAME") ?: "1.0.0-dev"
+    }
+
+    // Store build (Play App Bundle), signed with the upload key: docs/release.md. The four values come from
+    // env vars (CI decodes the keystore from a secret) or Gradle properties. When any is missing there is no
+    // release signing config, and the guard below stops bundleRelease/assembleRelease before they start: an
+    // unsigned bundle is useless to Play and easy to mistake for a good one. Debug, preview and
+    // scripts/check.sh never need the key.
+    val releaseSigningInputs = listOf(
+        "RELEASE_KEYSTORE_FILE",
+        "RELEASE_KEYSTORE_PASSWORD",
+        "RELEASE_KEY_ALIAS",
+        "RELEASE_KEY_PASSWORD",
+    ).associateWith { buildSetting(it) }
+    val releaseSigningMissing = releaseSigningInputs.filterValues { it == null }.keys
+
+    // Task names that produce a store artifact (the preview variant has its own, differently named tasks).
+    val releaseArtifactTasks = setOf("bundleRelease", "assembleRelease", "packageRelease", "packageReleaseBundle")
+    val releaseSigningReady = releaseSigningMissing.isEmpty()
+    gradle.taskGraph.whenReady {
+        if (!releaseSigningReady && allTasks.any { it.project == project && it.name in releaseArtifactTasks }) {
+            throw GradleException(
+                "Release signing is not configured: missing ${releaseSigningMissing.joinToString()}. " +
+                    "Set RELEASE_KEYSTORE_FILE, RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS and " +
+                    "RELEASE_KEY_PASSWORD as environment variables or Gradle properties (see docs/release.md).",
+            )
+        }
     }
 
     // Preview builds go to the phone through Firebase App Distribution (.github/workflows/preview.yml).
@@ -150,6 +182,14 @@ android {
     // builds) the preview build is signed with the debug key.
     val previewKeystore = providers.environmentVariable("PREVIEW_KEYSTORE_PATH").orNull
     signingConfigs {
+        if (releaseSigningReady) {
+            create("release") {
+                storeFile = file(releaseSigningInputs.getValue("RELEASE_KEYSTORE_FILE")!!)
+                storePassword = releaseSigningInputs.getValue("RELEASE_KEYSTORE_PASSWORD")
+                keyAlias = releaseSigningInputs.getValue("RELEASE_KEY_ALIAS")
+                keyPassword = releaseSigningInputs.getValue("RELEASE_KEY_PASSWORD")
+            }
+        }
         if (previewKeystore != null) {
             create("preview") {
                 storeFile = file(previewKeystore)
@@ -167,6 +207,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release")
         }
         // The release build installed next to the Android Studio one: own id, data and name (the
         // "Patrimonio β" label lives in src/androidPreview/res, the KMP folder for this build type).
