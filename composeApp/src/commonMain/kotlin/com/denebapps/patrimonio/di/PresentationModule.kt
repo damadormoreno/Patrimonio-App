@@ -180,6 +180,7 @@ val presentationModule = module {
             fxRepository = get(),
             fxHistoryRepository = get(),
             historyRepository = get(),
+            preferences = get(),
             clock = get(),
             zoneProvider = get<() -> TimeZone>(),
         )

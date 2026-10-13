@@ -31,6 +31,7 @@ import com.denebapps.patrimonio.testing.FakeInstrumentHistoryRepository
 import com.denebapps.patrimonio.testing.FakeMovementRepository
 import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
+import com.denebapps.patrimonio.testing.FakePreferencesRepository
 import com.denebapps.patrimonio.testing.FxSyncCall
 import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.CompletableDeferred
@@ -242,6 +243,7 @@ class PortfolioDetailViewModelTest {
             fxRepository = FakeFxRepository(rates),
             fxHistoryRepository = fx,
             historyRepository = history,
+            preferences = FakePreferencesRepository(),
             clock = clock,
             zoneProvider = { TimeZone.UTC },
             computationDispatcher = dispatcher,

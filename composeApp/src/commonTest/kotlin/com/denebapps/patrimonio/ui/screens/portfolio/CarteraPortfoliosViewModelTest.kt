@@ -34,7 +34,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** The portfolio-aware half of the Cartera tab: selection, filtering, selector flags and portfolio management. */
+/** The portfolio-aware half of the Cartera tab: selection, filtering, selector flags and creating portfolios. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class CarteraPortfoliosViewModelTest {
     private val dispatcher = StandardTestDispatcher()
@@ -211,33 +211,15 @@ class CarteraPortfoliosViewModelTest {
     }
 
     @Test
-    fun `with a single portfolio there is no selector and nothing but that portfolio to manage`() =
-        runTest(dispatcher) {
-            val s = setup(portfolios = listOf(jubilacion), holdings = listOf(a, b), selected = "pf-hijos")
-            val job = open(s)
-
-            val state = s.vm.state.value
-            assertFalse(state.showSelector)
-            assertNull(state.selectedPortfolioId)
-            assertNull(state.scopeLabel)
-            assertEquals("pf-jub", state.managedPortfolioId)
-            assertEquals(2, state.rows.size)
-            assertEquals("Necesitas al menos una cartera.", state.deleteBlockedReason)
-            job.cancel()
-        }
-
-    @Test
-    fun `there is nothing to manage while all the portfolios are shown`() = runTest(dispatcher) {
-        val s = setup()
+    fun `with a single portfolio there is no selector and the tab shows its products`() = runTest(dispatcher) {
+        val s = setup(portfolios = listOf(jubilacion), holdings = listOf(a, b), selected = "pf-hijos")
         val job = open(s)
 
-        assertNull(s.vm.state.value.managedPortfolioId)
-        assertNull(s.vm.state.value.deleteBlockedReason)
-
-        s.vm.onSelectPortfolio("pf-hijos")
-        advanceUntilIdle()
-        assertEquals("pf-hijos", s.vm.state.value.managedPortfolioId)
-        assertNull(s.vm.state.value.deleteBlockedReason)
+        val state = s.vm.state.value
+        assertFalse(state.showSelector)
+        assertNull(state.selectedPortfolioId)
+        assertNull(state.scopeLabel)
+        assertEquals(2, state.rows.size)
         job.cancel()
     }
 
@@ -374,220 +356,6 @@ class CarteraPortfoliosViewModelTest {
 
         s.vm.onDialogDismiss()
         advanceUntilIdle()
-        assertNull(s.vm.state.value.dialog)
-        job.cancel()
-    }
-
-    // ---- rename ---------------------------------------------------------------------------------------------------
-
-    @Test
-    fun `renaming starts from the current name and saves the new one`() = runTest(dispatcher) {
-        val s = setup(selected = "pf-hijos")
-        val job = open(s)
-
-        s.vm.onRenamePortfolio("pf-hijos")
-        advanceUntilIdle()
-        val dialog = assertIs<PortfolioDialogUi.Name>(s.vm.state.value.dialog)
-        assertEquals("Renombrar cartera", dialog.title)
-        assertEquals("Hijos", dialog.name)
-
-        s.vm.onDialogNameChange(" Los peques ")
-        s.vm.onDialogConfirm()
-        advanceUntilIdle()
-
-        assertNull(s.vm.state.value.dialog)
-        assertEquals("Los peques", s.portfolios.current.single { it.id == "pf-hijos" }.name)
-        assertEquals("Los peques", s.vm.state.value.scopeLabel)
-        job.cancel()
-    }
-
-    @Test
-    fun `renaming to the name of another portfolio is reported`() = runTest(dispatcher) {
-        val s = setup(selected = "pf-hijos")
-        val job = open(s)
-        s.vm.onRenamePortfolio("pf-hijos")
-        advanceUntilIdle()
-        s.vm.onDialogNameChange("JUBILACIÓN")
-
-        s.vm.onDialogConfirm()
-        advanceUntilIdle()
-
-        val dialog = assertIs<PortfolioDialogUi.Name>(s.vm.state.value.dialog)
-        assertEquals("Ya tienes una cartera con ese nombre.", dialog.error)
-        assertEquals("Hijos", s.portfolios.current.single { it.id == "pf-hijos" }.name)
-        job.cancel()
-    }
-
-    @Test
-    fun `renaming a portfolio that does not exist opens nothing`() = runTest(dispatcher) {
-        val s = setup()
-        val job = open(s)
-
-        s.vm.onRenamePortfolio("pf-deleted")
-        advanceUntilIdle()
-
-        assertNull(s.vm.state.value.dialog)
-        job.cancel()
-    }
-
-    // ---- delete ---------------------------------------------------------------------------------------------------
-
-    @Test
-    fun `deleting an empty portfolio asks for a plain confirmation`() = runTest(dispatcher) {
-        val s = setup(selected = "pf-ocio")
-        val job = open(s)
-
-        s.vm.onDeletePortfolio("pf-ocio")
-        advanceUntilIdle()
-        val dialog = assertIs<PortfolioDialogUi.Delete>(s.vm.state.value.dialog)
-        assertEquals("Eliminar «Ocio»", dialog.title)
-        assertEquals("Se eliminará la cartera.", dialog.message)
-        assertEquals("Eliminar", dialog.confirmLabel)
-        assertTrue(dialog.targets.isEmpty())
-        assertNull(dialog.targetId)
-
-        s.vm.onDialogConfirm()
-        advanceUntilIdle()
-
-        assertNull(s.vm.state.value.dialog)
-        assertEquals(listOf("pf-jub", "pf-hijos"), s.portfolios.current.map { it.id })
-        assertNull(s.vm.state.value.selectedPortfolioId)
-        assertNull(s.preferences.observeSelectedPortfolioId().value)
-        job.cancel()
-    }
-
-    @Test
-    fun `deleting a portfolio with holdings asks where they go, the first other one by default`() =
-        runTest(dispatcher) {
-            val s = setup(selected = "pf-jub")
-            val job = open(s)
-
-            s.vm.onDeletePortfolio("pf-jub")
-            advanceUntilIdle()
-
-            val dialog = assertIs<PortfolioDialogUi.Delete>(s.vm.state.value.dialog)
-            assertEquals("Eliminar «Jubilación»", dialog.title)
-            assertEquals("Sus 2 productos pasarán a:", dialog.message)
-            assertEquals("Mover y eliminar", dialog.confirmLabel)
-            assertEquals(listOf("Hijos", "Ocio"), dialog.targets.map { it.name })
-            assertEquals("pf-hijos", dialog.targetId)
-            job.cancel()
-        }
-
-    @Test
-    fun `a single product reads in the singular`() = runTest(dispatcher) {
-        val s = setup()
-        val job = open(s)
-
-        s.vm.onDeletePortfolio("pf-hijos")
-        advanceUntilIdle()
-
-        val dialog = assertIs<PortfolioDialogUi.Delete>(s.vm.state.value.dialog)
-        assertEquals("Su producto pasará a:", dialog.message)
-        job.cancel()
-    }
-
-    @Test
-    fun `confirming moves the holdings to the chosen portfolio and deletes the portfolio`() = runTest(dispatcher) {
-        val s = setup(selected = "pf-jub")
-        val job = open(s)
-        s.vm.onDeletePortfolio("pf-jub")
-        advanceUntilIdle()
-        s.vm.onDeleteTargetChange("pf-ocio")
-        advanceUntilIdle()
-        assertEquals("pf-ocio", assertIs<PortfolioDialogUi.Delete>(s.vm.state.value.dialog).targetId)
-
-        s.vm.onDialogConfirm()
-        advanceUntilIdle()
-
-        assertNull(s.vm.state.value.dialog)
-        assertEquals(listOf("pf-hijos", "pf-ocio"), s.portfolios.current.map { it.id })
-        assertEquals(
-            mapOf("a" to "pf-ocio", "b" to "pf-ocio", "c" to "pf-hijos"),
-            s.holdings.current.associate { it.id to it.portfolioId },
-        )
-        // The selected portfolio is gone: back to all of them, with nothing lost.
-        assertNull(s.vm.state.value.selectedPortfolioId)
-        assertEquals(3, s.vm.state.value.rows.size)
-        assertEquals(Money(350_000), s.vm.state.value.total)
-        job.cancel()
-    }
-
-    @Test
-    fun `deleting a portfolio that is not selected keeps the selection`() = runTest(dispatcher) {
-        val s = setup(selected = "pf-hijos")
-        val job = open(s)
-
-        s.vm.onDeletePortfolio("pf-ocio")
-        advanceUntilIdle()
-        s.vm.onDialogConfirm()
-        advanceUntilIdle()
-
-        assertEquals("pf-hijos", s.vm.state.value.selectedPortfolioId)
-        assertEquals("pf-hijos", s.preferences.observeSelectedPortfolioId().value)
-        job.cancel()
-    }
-
-    @Test
-    fun `a target that disappears is replaced by the first other portfolio`() = runTest(dispatcher) {
-        val s = setup()
-        val job = open(s)
-        s.vm.onDeletePortfolio("pf-jub")
-        advanceUntilIdle()
-        s.vm.onDeleteTargetChange("pf-ocio")
-        advanceUntilIdle()
-
-        s.portfolios.deletePortfolio("pf-ocio", null)
-        advanceUntilIdle()
-
-        val dialog = assertIs<PortfolioDialogUi.Delete>(s.vm.state.value.dialog)
-        assertEquals("pf-hijos", dialog.targetId)
-        job.cancel()
-    }
-
-    @Test
-    fun `the last portfolio cannot be deleted`() = runTest(dispatcher) {
-        val s = setup(portfolios = listOf(jubilacion), holdings = listOf(a))
-        val job = open(s)
-
-        s.vm.onDeletePortfolio("pf-jub")
-        advanceUntilIdle()
-
-        assertNull(s.vm.state.value.dialog)
-        assertEquals(1, s.portfolios.current.size)
-        job.cancel()
-    }
-
-    @Test
-    fun `a delete refused by the repository is reported in the dialog`() = runTest(dispatcher) {
-        val s = setup()
-        val job = open(s)
-        s.vm.onDeletePortfolio("pf-ocio")
-        advanceUntilIdle()
-
-        // Everything else disappears while the dialog is open: the only portfolio left cannot go.
-        s.portfolios.deletePortfolio("pf-jub", "pf-hijos")
-        s.portfolios.deletePortfolio("pf-hijos", "pf-ocio")
-        advanceUntilIdle()
-        s.vm.onDialogConfirm()
-        advanceUntilIdle()
-
-        val dialog = assertIs<PortfolioDialogUi.Delete>(s.vm.state.value.dialog)
-        assertEquals("Necesitas al menos una cartera.", dialog.error)
-        assertEquals(1, s.portfolios.current.size)
-        job.cancel()
-    }
-
-    @Test
-    fun `a dialog about a portfolio that disappears closes by itself`() = runTest(dispatcher) {
-        val s = setup()
-        val job = open(s)
-        s.vm.onRenamePortfolio("pf-ocio")
-        advanceUntilIdle()
-
-        s.portfolios.deletePortfolio("pf-ocio", null)
-        advanceUntilIdle()
-
         assertNull(s.vm.state.value.dialog)
         job.cancel()
     }

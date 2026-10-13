@@ -37,6 +37,9 @@ data class CarteraFilterUi(
 ) {
     /** Whether there is anything to filter by, which is when the scope has holdings. */
     val hasOptions: Boolean get() = assetClasses.isNotEmpty() || brokers.isNotEmpty() || types.isNotEmpty()
+
+    /** How many values are chosen: the badge of the filter button. */
+    val activeCount: Int get() = active.size
 }
 
 /** The key of the class of [this] holding: an `AssetClass` name, or [UNCLASSIFIED_FILTER_KEY]. */

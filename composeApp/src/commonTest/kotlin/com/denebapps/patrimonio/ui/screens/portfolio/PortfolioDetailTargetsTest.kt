@@ -19,6 +19,7 @@ import com.denebapps.patrimonio.testing.FakeInstrumentHistoryRepository
 import com.denebapps.patrimonio.testing.FakeMovementRepository
 import com.denebapps.patrimonio.testing.FakePortfolioCollectionRepository
 import com.denebapps.patrimonio.testing.FakePortfolioRepository
+import com.denebapps.patrimonio.testing.FakePreferencesRepository
 import com.denebapps.patrimonio.testing.TEST_PORTFOLIO_ID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -105,6 +106,7 @@ class PortfolioDetailTargetsTest {
             fxRepository = FakeFxRepository(FxRates(emptyMap())),
             fxHistoryRepository = FakeFxHistoryRepository(FxHistory(emptyMap())),
             historyRepository = FakeInstrumentHistoryRepository(),
+            preferences = FakePreferencesRepository(),
             clock = clock,
             zoneProvider = { TimeZone.UTC },
             computationDispatcher = dispatcher,

@@ -6,11 +6,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -26,6 +29,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -45,39 +51,57 @@ internal class CarteraFilterActions(
     val onClear: () -> Unit,
 )
 
-/** "Filtrar" in the scope bar: a pill with the filter icon, and the number of active filters once there are some. */
+/** Side of the round filter button; the same circle as the icon buttons of the headers, a bit smaller. */
+private val FILTER_BUTTON_SIZE = 36.dp
+private val FILTER_BADGE_SIZE = 16.dp
+
+/**
+ * The round filter button above the list: the filter icon, and the number of active filters in a badge once there are
+ * some (then the button is filled, like a chosen chip). It reads "Filtrar la cartera" and, with filters on, how many.
+ */
 @Composable
 internal fun FilterButton(activeCount: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = LocalAppColors.current
-    val shape = RoundedCornerShape(LocalAppShapes.current.full)
     val active = activeCount > 0
-    Row(
+    val description = if (active) "Filtrar la cartera, $activeCount activos" else "Filtrar la cartera"
+    Box(
         modifier = modifier
-            .background(if (active) colors.ink else colors.surface, shape)
-            .border(1.dp, if (active) colors.ink else colors.line, shape)
+            .size(FILTER_BUTTON_SIZE)
+            .background(if (active) colors.ink else colors.surface, CircleShape)
+            .border(1.dp, if (active) colors.ink else colors.line, CircleShape)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-                onClickLabel = "Filtrar la cartera",
                 onClick = onClick,
             )
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
     ) {
-        val tint = if (active) colors.bg else colors.ink2
-        Icon(AppIcons.filter, contentDescription = null, tint = tint, modifier = Modifier.size(13.dp))
-        Text(text = "Filtrar", color = tint, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Icon(
+            imageVector = AppIcons.filter,
+            contentDescription = null,
+            tint = if (active) colors.bg else colors.ink2,
+            modifier = Modifier.size(17.dp),
+        )
         if (active) {
-            Text(
-                text = activeCount.toString(),
-                color = colors.ink,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
+            Box(
                 modifier = Modifier
-                    .background(colors.bg, CircleShape)
-                    .padding(horizontal = 6.dp, vertical = 1.dp),
-            )
+                    .align(Alignment.TopEnd)
+                    .offset(x = 4.dp, y = (-4).dp)
+                    .defaultMinSize(minWidth = FILTER_BADGE_SIZE, minHeight = FILTER_BADGE_SIZE)
+                    .background(colors.brand, CircleShape)
+                    .border(1.5.dp, colors.bg, CircleShape)
+                    .padding(horizontal = 3.dp)
+                    .clearAndSetSemantics {},
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = activeCount.toString(),
+                    color = colors.brandInk,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
         }
     }
 }
@@ -127,7 +151,7 @@ internal fun ActiveFilterChips(
     }
 }
 
-/** "Filtrado · N de M productos", muted, under the total. */
+/** The muted start of the list header: "Filtrado · N de M productos" while filters are on, "Productos" otherwise. */
 @Composable
 internal fun FilterSummaryLine(text: String, modifier: Modifier = Modifier) {
     Text(
