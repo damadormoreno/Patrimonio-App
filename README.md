@@ -47,6 +47,10 @@ paso a paso: [`docs/release.md`](docs/release.md). Política de privacidad y pá
 y las licencias; la política de privacidad y el contacto aparecen al configurar `PRIVACY_POLICY_URL` y `CONTACT_EMAIL`
 en `ui/screens/about/AboutConfig.kt`.
 
+**Apoyo**: si la app te resulta útil, puedes [invitarme a un café](https://buymeacoffee.com/amadormore6). El enlace
+está solo aquí y en la web, nunca dentro de la app: las políticas de pago de Google Play y del App Store no permiten
+enlazar propinas al desarrollador fuera de su sistema de compras.
+
 ## Estructura
 
 ```

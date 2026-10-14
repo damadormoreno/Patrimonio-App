@@ -234,6 +234,7 @@ a:focus-visible {
   margin-bottom: 0;
 }
 
+.note > h2:first-child,
 .summary h2 {
   margin-top: 0;
 }
