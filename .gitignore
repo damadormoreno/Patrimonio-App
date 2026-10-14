@@ -37,3 +37,7 @@ Pods/
 
 # Claude Code local
 .claude/settings.local.json
+
+# Firebase Hosting
+.firebase/
+firebase-debug.log

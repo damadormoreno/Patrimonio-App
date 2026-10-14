@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Política de privacidad de Patrimonio</title>
+<meta name="description" content="Qué datos trata la app Patrimonio, para qué, durante cuánto tiempo y qué derechos tienes sobre ellos.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip-link" href="#contenido">Saltar al contenido</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="/">Patrimonio</a>
+    <nav class="site-nav" aria-label="Principal">
+      <a href="/privacidad" aria-current="page">Privacidad</a>
+      <a href="/borrar-cuenta">Borrar cuenta</a>
+    </nav>
+  </div>
+</header>
+
+<main id="contenido">
+<div class="wrap">
+  <h1>Política de privacidad de Patrimonio</h1>
+
+  <ul class="meta">
+    <li><strong>Última actualización:</strong> <time datetime="2026-10-14">14 de octubre de 2026</time></li>
+    <li><strong>Responsable:</strong> David Amador Moreno, España</li>
+    <li><strong>Contacto de privacidad:</strong> <a href="mailto:amador.moreno.david@gmail.com">amador.moreno.david@gmail.com</a></li>
+  </ul>
+
+  <p>Patrimonio es una app para llevar el seguimiento de tu patrimonio: cuentas, deudas, inversiones, metas y
+  movimientos. Esta política explica qué datos trata, para qué y qué derechos tienes.</p>
+
+  <section class="summary" aria-labelledby="resumen">
+    <h2 id="resumen">En resumen</h2>
+    <ul>
+      <li>Tus datos viven <strong>en tu móvil</strong>. Crear una cuenta es opcional.</li>
+      <li>La app <strong>no tiene anuncios, ni analítica, ni rastreo</strong>, y no vende datos.</li>
+      <li>Si activas la copia en la nube, se <strong>cifra en tu móvil</strong> antes de subirse, con una frase que solo
+      tú conoces: ni el desarrollador ni el proveedor de la nube pueden leerla.</li>
+      <li>Para actualizar precios, la app consulta servicios públicos y solo les envía <strong>identificadores de
+      instrumentos</strong> (o el texto que buscas), no tus datos personales ni tus cantidades.</li>
+    </ul>
+  </section>
+
+  <h2 id="dispositivo">Datos que se guardan en tu dispositivo</h2>
+  <p>Todo lo que introduces: cuentas, deudas, grupos, metas, posiciones de inversión, movimientos, comisiones y
+  ajustes (moneda, preferencias), además del nombre y la foto de tu perfil si los pones. Se guarda en una base de
+  datos local de la app. Nada de esto sale del móvil salvo lo que se explica en las secciones siguientes.</p>
+  <p>Si activas el bloqueo con PIN, se guarda en el dispositivo el PIN como huella irreversible (hash) y tus
+  ajustes de bloqueo. La biometría (huella, cara, Face ID) la gestiona el sistema operativo; la app solo recibe
+  «reconocido» o «no reconocido» y nunca accede a tus datos biométricos.</p>
+  <p><strong>Copia de seguridad del sistema.</strong> En Android, la copia automática del sistema (Google) puede
+  incluir los datos locales de la app en tu cuenta de Google, según tu configuración del móvil. En iOS, las copias
+  de iCloud o del ordenador pueden hacer lo mismo. Eso lo controlas tú en los ajustes del sistema. En Android, la
+  sesión de la cuenta y el vínculo con la copia en la nube se excluyen de esa copia automática.</p>
+
+  <h2 id="cuenta">Cuenta en la nube (opcional)</h2>
+  <p>Puedes crear una cuenta para guardar una copia de tus datos y recuperarla en otro dispositivo. Si lo
+  haces:</p>
+  <ul>
+    <li><strong>Autenticación.</strong> Usamos Firebase Authentication, un servicio de Google. Se tratan tu
+    <strong>correo electrónico</strong>, un <strong>identificador de usuario</strong> y, si usas contraseña, un
+    hash de ella gestionado por Firebase. Si inicias sesión con Google (disponible en Android), Google nos facilita
+    tu correo y, si los tienes, tu nombre y tu foto de perfil; la app los usa solo para rellenar un perfil que
+    estuviera vacío, y descarga la foto desde los servidores de Google a tu móvil. Finalidad: identificarte y que
+    solo tú accedas a tu copia.</li>
+    <li><strong>Copia de seguridad.</strong> Se guarda en Cloud Firestore (Google), en una sola copia por cuenta.
+    El contenido se <strong>cifra en tu dispositivo</strong> (AES-256-GCM) con una clave que se protege con una
+    frase de cifrado que tú eliges. La frase no se envía a ningún sitio. El desarrollador y Google solo ven datos
+    cifrados, más el momento de la última subida, el número de registros y los datos técnicos necesarios para
+    abrir la copia con tu frase. La copia contiene tus datos financieros, no tu perfil ni tus preferencias.
+    <strong>Si olvidas la frase y no tienes otro dispositivo con la sesión abierta, la copia no se puede
+    recuperar.</strong></li>
+    <li><strong>Dónde.</strong> La base de datos de Cloud Firestore está en Madrid (<code>europe-southwest1</code>).
+    Firebase Authentication, en cambio, es un servicio global de Google: no podemos fijarle una región, por lo que
+    los datos de la cuenta (correo, identificador, hash de la contraseña) pueden tratarse en los servidores de
+    Google donde este opere, también fuera de la Unión Europea, con las garantías contractuales que Google ofrece
+    para esas transferencias. Como en cualquier conexión de internet, Google ve la dirección IP del dispositivo y
+    los registros técnicos de la conexión. Google actúa como encargado del tratamiento.</li>
+    <li><strong>Base jurídica (RGPD).</strong> La ejecución del servicio que pides al crear la cuenta (art. 6.1.b).</li>
+  </ul>
+  <p>Si no creas una cuenta, nada de esto ocurre.</p>
+  <p>Más información en la
+  <a href="https://policies.google.com/privacy" rel="noopener noreferrer">política de privacidad de Google</a> y en
+  la <a href="https://firebase.google.com/support/privacy" rel="noopener noreferrer">información de privacidad de
+  Firebase</a>.</p>
+
+  <h2 id="precios">Consultas de precios y cambios de divisa</h2>
+  <p>Para mostrar el valor de tus inversiones, la app consulta, desde tu dispositivo, estos servicios de
+  terceros:</p>
+  <ul>
+    <li><strong><a href="https://www.morningstar.com/" rel="noopener noreferrer">Morningstar</a></strong>: precios
+    de fondos y otros instrumentos. Se envía el identificador del instrumento (p. ej. el ISIN).</li>
+    <li><strong><a href="https://legal.yahoo.com/" rel="noopener noreferrer">Yahoo Finance</a></strong>: búsqueda
+    y precios de acciones y ETF. Se envía el ticker o el texto de búsqueda.</li>
+    <li><strong><a href="https://www.coingecko.com/en/privacy" rel="noopener noreferrer">CoinGecko</a></strong>:
+    precios de criptomonedas. Se envía el identificador de la moneda o el texto de búsqueda.</li>
+    <li><strong><a href="https://frankfurter.dev/" rel="noopener noreferrer">Frankfurter</a></strong> (datos del
+    BCE): tipos de cambio. Se envían las divisas.</li>
+  </ul>
+  <p>No se envían tus cantidades, saldos, correo ni identificador de cuenta. Como en cualquier conexión de
+  internet, estos servicios ven la <strong>dirección IP</strong> del dispositivo y tienen sus propias políticas de
+  privacidad, a las que remiten los enlaces anteriores.</p>
+
+  <h2 id="no-hacemos">Lo que no hacemos</h2>
+  <ul>
+    <li>No usamos publicidad ni SDK de publicidad.</li>
+    <li>No usamos analítica ni informes de fallos propios: la app no incluye Firebase Analytics, Crashlytics ni
+    ningún otro servicio de este tipo. Si algún día se añade, esta política se actualizará antes. Aparte, Google
+    Play puede ofrecer al desarrollador estadísticas agregadas y de fallos de las instalaciones cuyos usuarios lo
+    permitan en su móvil; la app no incluye código para ello.</li>
+    <li>No rastreamos entre apps ni sitios web.</li>
+    <li>No vendemos ni cedemos tus datos a terceros para sus fines.</li>
+  </ul>
+  <p>Las páginas de este sitio web no usan cookies, scripts ni servicios externos.</p>
+
+  <h2 id="conservacion">Cuánto tiempo se guardan</h2>
+  <ul>
+    <li><strong>En el dispositivo</strong>: hasta que borres los datos desde la app o la desinstales.</li>
+    <li><strong>En la nube</strong>: mientras la cuenta exista. Al borrar la cuenta se elimina la copia y la
+    cuenta.</li>
+  </ul>
+
+  <h2 id="derechos">Tus derechos y cómo ejercerlos</h2>
+  <p>Puedes acceder a tus datos, rectificarlos, suprimirlos, limitar u oponerte a su tratamiento, y pedir su
+  portabilidad. Además:</p>
+  <ul>
+    <li><strong>Exportar</strong>: Ajustes → Datos → «Exportar copia», en un archivo JSON con tus datos
+    financieros.</li>
+    <li><strong>Borrar los datos del móvil</strong>: Ajustes → Datos → «Borrar todos los datos». Elimina tus datos
+    financieros; tu perfil y tus preferencias se conservan. Para quitar también esos y todo lo demás, desinstala
+    la app.</li>
+    <li><strong>Borrar tu cuenta y la copia en la nube</strong>: dentro de la app, en Ajustes → Cuenta →
+    «Borrar cuenta». Primero se elimina la copia en la nube y después la cuenta.</li>
+    <li><strong>Por correo</strong>: si no puedes entrar en la app, escribe a
+    <a href="mailto:amador.moreno.david@gmail.com">amador.moreno.david@gmail.com</a> desde el correo de la cuenta
+    y la eliminaremos en un plazo máximo de 30 días.</li>
+  </ul>
+  <p>Los pasos detallados están en la página <a href="/borrar-cuenta">Borrar tu cuenta y tus datos</a>.</p>
+  <p>Si consideras que tus derechos no se han atendido, puedes reclamar ante la autoridad de protección de datos de
+  tu país (en España, la Agencia Española de Protección de Datos,
+  <a href="https://www.aepd.es/" rel="noopener noreferrer">aepd.es</a>).</p>
+
+  <h2 id="menores">Menores</h2>
+  <p>La app no está dirigida a menores de 18 años y no recogemos a sabiendas datos de menores. Si crees que un
+  menor ha creado una cuenta, escríbenos y la eliminaremos.</p>
+
+  <h2 id="cambios">Cambios en esta política</h2>
+  <p>Si cambia, publicaremos aquí la nueva versión con su fecha y, si el cambio es relevante, lo avisaremos en la
+  app.</p>
+
+  <h2 id="contacto">Contacto</h2>
+  <p>David Amador Moreno ·
+  <a href="mailto:amador.moreno.david@gmail.com">amador.moreno.david@gmail.com</a></p>
+</div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p>Patrimonio · David Amador Moreno · <a href="mailto:amador.moreno.david@gmail.com">amador.moreno.david@gmail.com</a></p>
+    <p>Tipografías Instrument Serif y Manrope, con licencia SIL Open Font License 1.1.</p>
+  </div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Borrar tu cuenta y tus datos de Patrimonio</title>
+<meta name="description" content="Cómo borrar tu cuenta de Patrimonio y la copia en la nube, desde la app o por correo, y qué datos se eliminan.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip-link" href="#contenido">Saltar al contenido</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="/">Patrimonio</a>
+    <nav class="site-nav" aria-label="Principal">
+      <a href="/privacidad">Privacidad</a>
+      <a href="/borrar-cuenta" aria-current="page">Borrar cuenta</a>
+    </nav>
+  </div>
+</header>
+
+<main id="contenido">
+<div class="wrap">
+  <h1>Borrar tu cuenta y tus datos</h1>
+
+  <p class="lead">Esta página explica cómo borrar la cuenta de la app <strong>Patrimonio</strong>, desarrollada por
+  <strong>David Amador Moreno</strong>, y los datos asociados. La cuenta es opcional: si nunca creaste una, no hay
+  nada que borrar en la nube y tus datos solo están en tu móvil.</p>
+
+  <section class="summary" aria-labelledby="resumen">
+    <h2 id="resumen">En resumen</h2>
+    <ul>
+      <li>Desde la app: <strong>Ajustes → Cuenta → «Borrar cuenta»</strong>. Se elimina la cuenta y la copia en la
+      nube.</li>
+      <li>Sin la app: escribe a <a href="mailto:amador.moreno.david@gmail.com?subject=Borrar%20mi%20cuenta%20de%20Patrimonio">amador.moreno.david@gmail.com</a>
+      desde el correo de la cuenta. La borramos en un plazo máximo de 30 días.</li>
+      <li>Los datos que tienes en el móvil no se borran con la cuenta; se borran aparte (ver más abajo).</li>
+    </ul>
+  </section>
+
+  <h2 id="desde-la-app">Opción 1: desde la app</h2>
+  <p>Es la forma más rápida y se aplica al momento. Necesitas conexión a internet.</p>
+  <ol>
+    <li>Abre Patrimonio y entra en <strong>Ajustes</strong>.</li>
+    <li>En la sección <strong>Cuenta</strong>, toca la fila con tu correo para abrir la pantalla «Cuenta».</li>
+    <li>Toca <strong>«Borrar cuenta»</strong> (la última opción, en rojo).</li>
+    <li>Confirma que eres tú:
+      <ul>
+        <li>si tu cuenta es de correo y contraseña, escribe tu contraseña y toca <strong>«Borrar cuenta»</strong>;</li>
+        <li>si entraste con Google, toca <strong>«Borrar cuenta»</strong> y elige de nuevo la misma cuenta de
+        Google.</li>
+      </ul>
+    </li>
+  </ol>
+  <p>La app borra primero la copia en la nube y después la cuenta, y te avisa con el mensaje «Cuenta y copia en la
+  nube borradas. Tus datos siguen en este móvil.». Si la copia no se puede borrar, la cuenta se mantiene y la app te
+  pide que lo intentes de nuevo, para que no queden datos huérfanos.</p>
+
+  <h2 id="datos-del-movil">Opción 2: borrar también los datos del móvil</h2>
+  <p>Los datos que guardas en el móvil (cuentas, deudas, inversiones, movimientos, metas) no se borran al borrar la
+  cuenta. Para eliminarlos:</p>
+  <ul>
+    <li><strong>Ajustes → Datos → «Borrar todos los datos»</strong> elimina de forma permanente tus datos
+    financieros. Tu perfil y tus preferencias se conservan.</li>
+    <li><strong>Desinstalar la app</strong> elimina todo lo que guarda en el móvil, incluido el perfil y las
+    preferencias.</li>
+  </ul>
+  <p>Si quieres borrar la cuenta y desinstalar la app, borra primero la cuenta (Opción 1): sin la app instalada
+  tendrás que usar la Opción 3. Si tienes activada la copia automática del sistema (Google en Android, iCloud en
+  iOS), el sistema operativo puede conservar una copia de los datos locales de la app; eso se gestiona en los ajustes
+  del móvil.</p>
+
+  <h2 id="por-correo">Opción 3: sin la app, por correo</h2>
+  <p>Si ya no tienes la app o no puedes entrar en ella:</p>
+  <ol>
+    <li>Escribe a <a href="mailto:amador.moreno.david@gmail.com?subject=Borrar%20mi%20cuenta%20de%20Patrimonio">amador.moreno.david@gmail.com</a>
+    <strong>desde la dirección de correo de la cuenta</strong>, con el asunto «Borrar mi cuenta de Patrimonio».</li>
+    <li>Si el correo no llega desde esa dirección, podemos pedirte que confirmes tu identidad antes de borrar nada.</li>
+    <li>Eliminamos la cuenta y la copia en la nube en un plazo máximo de <strong>30 días</strong> y te lo
+    confirmamos por correo.</li>
+  </ol>
+
+  <h2 id="que-se-borra">Qué se elimina y qué se conserva</h2>
+  <h3>Se elimina</h3>
+  <ul>
+    <li>Tu cuenta de Firebase Authentication: correo, identificador de usuario y la contraseña (o el vínculo con tu
+    cuenta de Google).</li>
+    <li>La copia cifrada en Cloud Firestore (<code>users/{uid}/backup/latest</code>), con la fecha de subida y el
+    resto de datos técnicos que la acompañan.</li>
+  </ul>
+  <h3>Se conserva</h3>
+  <ul>
+    <li><strong>Nada en nuestros servidores.</strong> No guardamos copias ni mantenemos un periodo de retención
+    propio después de borrar la cuenta.</li>
+    <li>Los sistemas de Google pueden conservar durante un tiempo limitado copias técnicas y registros de
+    seguridad antes de su eliminación definitiva, según sus propias políticas.</li>
+    <li>Los datos que tienes en el móvil, hasta que los borres como se explica en la Opción 2.</li>
+    <li>Los archivos que hayas creado con «Exportar copia» están en tu poder, donde los guardaste; no tenemos copia
+    de ellos y puedes borrarlos tú mismo.</li>
+  </ul>
+
+  <p>Para saber más sobre cómo se tratan tus datos, lee la
+  <a href="/privacidad">política de privacidad</a>.</p>
+</div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p>Patrimonio · David Amador Moreno · <a href="mailto:amador.moreno.david@gmail.com">amador.moreno.david@gmail.com</a></p>
+    <p>Tipografías Instrument Serif y Manrope, con licencia SIL Open Font License 1.1.</p>
+  </div>
+</footer>
+</body>
+</html>
