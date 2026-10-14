@@ -184,7 +184,7 @@ class DataSourcesViewModel(
     }
 
     private fun usageText(usage: EodhdUsage): String {
-        val calls = "${usage.apiRequests} de ${usage.dailyRateLimit} llamadas hoy"
+        val calls = "${groupThousands(usage.apiRequests)} de ${groupThousands(usage.dailyRateLimit)} llamadas hoy"
         return if (usage.subscriptionType.isBlank()) calls else "Plan ${usage.subscriptionType} · $calls"
     }
 
@@ -193,3 +193,6 @@ class DataSourcesViewModel(
         const val UNREACHABLE_MESSAGE = "No se pudo comprobar la clave. Revisa la conexión e inténtalo de nuevo."
     }
 }
+
+/** 1234567 → «1.234.567», the Spanish thousands separator. */
+private fun groupThousands(value: Int): String = value.toString().reversed().chunked(3).joinToString(".").reversed()

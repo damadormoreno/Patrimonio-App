@@ -267,7 +267,7 @@ class DataSourcesViewModelTest {
         val job = observe(vm)
         settle()
 
-        assertEquals("1 de 100000 llamadas hoy", vm.state.value.usage)
+        assertEquals("1 de 100.000 llamadas hoy", vm.state.value.usage)
         job.cancel()
     }
 
