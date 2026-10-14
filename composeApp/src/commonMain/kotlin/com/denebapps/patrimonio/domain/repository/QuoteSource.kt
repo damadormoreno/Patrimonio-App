@@ -17,5 +17,8 @@ interface QuoteSource {
     suspend fun latestQuote(ref: InstrumentRef): Quote
 }
 
-/** The quote source could not answer: network failure, bad status, malformed payload or unsupported data. */
-class QuoteUnavailableException(message: String, cause: Throwable? = null) : Exception(message, cause)
+/**
+ * The quote source could not answer: network failure, bad status, malformed payload or unsupported data. Open so an
+ * adapter can tell a caller more (EODHD's invalid key and exhausted quota) without breaking `catch` sites.
+ */
+open class QuoteUnavailableException(message: String, cause: Throwable? = null) : Exception(message, cause)

@@ -24,8 +24,8 @@ import kotlin.math.round
 private val ISIN_REGEX = Regex("^[A-Z]{2}[A-Z0-9]{9}\\d$")
 
 /** Yahoo quotes London shares in pence under these currency codes. */
-private val PENCE_CODES = setOf("GBp", "GBX")
-private const val PENCE_PER_POUND = 100L
+internal val PENCE_CODES = setOf("GBp", "GBX")
+internal const val PENCE_PER_POUND = 100L
 
 // Yahoo serves closes as single-precision floats (131.67 arrives as 131.669998): keep four decimals of the
 // quoted unit, which is what exchanges publish, and drop the rest as noise. In `Price` scale that is a step of 100.
