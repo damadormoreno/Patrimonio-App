@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.sqlite.driver.AndroidSQLiteDriver
 import androidx.test.core.app.ApplicationProvider
 import com.denebapps.patrimonio.AppViewModel
+import com.denebapps.patrimonio.data.datasources.DataSourceSettingsStore
 import com.denebapps.patrimonio.data.db.AppDatabase
 import com.denebapps.patrimonio.data.db.SeedingGate
 import com.denebapps.patrimonio.data.db.configureAppDatabase
@@ -15,6 +16,10 @@ import com.denebapps.patrimonio.data.db.dao.PortfolioHoldingDao
 import com.denebapps.patrimonio.data.db.dao.SavingsGoalDao
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
 import com.denebapps.patrimonio.data.platform.PlatformContext
+import com.denebapps.patrimonio.data.quotes.CompositeQuoteSource
+import com.denebapps.patrimonio.data.quotes.EodhdApi
+import com.denebapps.patrimonio.data.quotes.EodhdQuoteSource
+import com.denebapps.patrimonio.data.quotes.MarketDataSource
 import com.denebapps.patrimonio.domain.model.Asset
 import com.denebapps.patrimonio.domain.model.AssetClass
 import com.denebapps.patrimonio.domain.model.Currency
@@ -94,7 +99,9 @@ import org.koin.dsl.module
 import org.robolectric.RobolectricTestRunner
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 
 /** Test-only `dbModule` override providing an in-memory [AppDatabase]. */
@@ -327,6 +334,26 @@ class KoinModuleTest {
 
         assertSame<Any>(koin.get<QuoteSource>(), koin.get<PriceHistorySource>())
         assertSame<Any>(koin.get<QuoteSource>(), koin.get<FundamentalsSource>())
+    }
+
+    @Test
+    fun `the market data ports resolve to the EODHD decorator over the composite source`() {
+        val koin = startTestKoin(fxModule, quotesModule)
+
+        assertIs<EodhdQuoteSource>(koin.get<QuoteSource>())
+        assertSame<Any>(koin.get<QuoteSource>(), koin.get<MarketDataSource>())
+        assertNotNull(koin.get<CompositeQuoteSource>())
+        assertSame(koin.get<DataSourceSettingsStore>(), koin.get<DataSourceSettingsStore>())
+        assertSame(koin.get<EodhdApi>(), koin.get<EodhdApi>())
+    }
+
+    @Test
+    fun `without a key the resolved market data source is a pass-through that never reaches EODHD`() = runTest {
+        val koin = startTestKoin(fxModule, quotesModule)
+
+        assertNull(koin.get<DataSourceSettingsStore>().current().apiKey)
+        // An empty query is answered by the composite without any network call.
+        assertEquals(emptyList(), koin.get<QuoteSource>().search("  "))
     }
 
     @Test
