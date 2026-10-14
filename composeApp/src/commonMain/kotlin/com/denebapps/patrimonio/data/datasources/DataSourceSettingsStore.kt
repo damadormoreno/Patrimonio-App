@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import okio.Path.Companion.toPath
 
@@ -79,17 +81,20 @@ private val SYMBOL_CACHE_KEY = stringPreferencesKey("eodhd_symbol_cache")
 
 private val CacheJson = Json { ignoreUnknownKeys = true }
 
+private val CacheSerializer = MapSerializer(String.serializer(), CachedSymbol.serializer())
+
 /** The symbol cache stored as [json]; anything unreadable (or absent) is an empty cache, never a failure. */
 internal fun decodeSymbolCache(json: String?): Map<String, CachedSymbol> {
     if (json.isNullOrBlank()) return emptyMap()
     return try {
-        CacheJson.decodeFromString<Map<String, CachedSymbol>>(json)
+        CacheJson.decodeFromString(CacheSerializer, json)
     } catch (_: IllegalArgumentException) {
         emptyMap()
     }
 }
 
-private fun encodeSymbolCache(cache: Map<String, CachedSymbol>): String = CacheJson.encodeToString(cache)
+private fun encodeSymbolCache(cache: Map<String, CachedSymbol>): String =
+    CacheJson.encodeToString(CacheSerializer, cache)
 
 /**
  * Keeps the settings in their own DataStore file, which Android's auto backup and device transfer exclude. [scope] is the
