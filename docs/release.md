@@ -122,9 +122,10 @@ Requisito previo: cuenta de desarrollador de Google Play (pago único, verificac
       disponibles en minutos.
 4. **Contenido de la app** (Play lo pide antes de cualquier lanzamiento, también el interno, en el panel
    *Configurar tu app*):
-   - **Política de privacidad**: URL pública. Hay un borrador en [privacy-policy.md](privacy-policy.md); tú
-     decides dónde alojarlo (GitHub Pages, tu web, etc.).
-   - **Seguridad de los datos (Data safety)**. Punto de partida según el borrador de la política
+   - **Política de privacidad**: `https://patrimonio-116ff.web.app/privacidad`. La página está en
+     `hosting/public/privacidad.html` y se publica en Firebase Hosting ([web.md](web.md)); hay que desplegarla
+     antes de pegar la URL.
+   - **Seguridad de los datos (Data safety)**. Punto de partida según la política de privacidad
      (revísalo con lo que haga la versión que subas):
      - Recoge: correo electrónico e ID de usuario (cuenta opcional) y contenido del usuario (la copia en
        la nube, cifrada en el móvil). Finalidad: funcionalidad de la app. Sin publicidad ni analítica.
@@ -132,8 +133,9 @@ Requisito previo: cuenta de desarrollador de Google Play (pago único, verificac
      - No se comparten con terceros para publicidad. Las consultas de precios envían solo identificadores
        de instrumentos (ISIN, ticker, divisa), no datos personales.
    - **Eliminación de la cuenta**: Play exige, para apps con cuentas, una URL donde se explique cómo pedir
-     el borrado de la cuenta y los datos (además del borrado dentro de la app). Puede ser una sección de
-     la página de la política.
+     el borrado de la cuenta y los datos (además del borrado dentro de la app). En *Seguridad de los datos*,
+     en la URL de eliminación de la cuenta: `https://patrimonio-116ff.web.app/borrar-cuenta`
+     (`hosting/public/borrar-cuenta.html`: pasos en la app, borrado por correo en 30 días y qué se elimina).
    - **Anuncios**: la app no los tiene. **Acceso a la app**: todo es accesible sin credenciales. **Público
      objetivo**: adultos. **Clasificación de contenido**: cuestionario IARC. **Funciones financieras**:
      revisa la declaración; la app no mueve dinero, solo registra patrimonio.
@@ -186,8 +188,11 @@ Necesitas un Mac con Xcode y una cuenta del Apple Developer Program (de pago, an
    hasta 100). Crea un grupo, añádete, asigna la build y abre TestFlight en el iPhone. Las builds
    internas no pasan revisión de Apple; las externas sí.
 8. **Privacidad**: el proyecto incluye `iosApp/iosApp/PrivacyInfo.xcprivacy`. Además, en App Store
-   Connect hay que rellenar los «datos de privacidad de la app» y la URL de la política antes de publicar
-   al público (para TestFlight interno no se exige).
+   Connect hay que rellenar los «datos de privacidad de la app» y la URL de la política
+   (`https://patrimonio-116ff.web.app/privacidad`, ver [web.md](web.md)) antes de publicar al público (para
+   TestFlight interno no se exige). Apple exige poder borrar la cuenta dentro de la app: lo cubre Ajustes →
+   Cuenta → «Borrar cuenta» (la página `https://patrimonio-116ff.web.app/borrar-cuenta` lo explica además
+   fuera de la app).
 
 ### Cumplimiento de exportación (cifrado)
 
@@ -214,7 +219,8 @@ con el target `iosApp` marcado. Comprueba con *Product → Archive →* *Generat
 - [ ] Keystore de subida creado, copiado a un sitio seguro y contraseñas en el gestor.
 - [ ] Cuatro secrets `RELEASE_*` en GitHub.
 - [ ] Cuenta de Google Play, app creada y declaraciones de contenido rellenas.
-- [ ] Política de privacidad revisada y alojada; URL en Play Console.
+- [ ] Web desplegada en Firebase Hosting ([web.md](web.md)); URLs de privacidad y de eliminación de cuenta en
+  Play Console.
 - [ ] Huellas de la firma de Play añadidas en Firebase.
 - [ ] Cuenta del Apple Developer Program, equipo elegido en Xcode, app creada en App Store Connect.
 - [ ] Decisión sobre el cumplimiento de exportación de Apple.

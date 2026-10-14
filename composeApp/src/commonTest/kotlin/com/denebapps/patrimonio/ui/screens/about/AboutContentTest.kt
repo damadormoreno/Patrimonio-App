@@ -3,7 +3,6 @@ package com.denebapps.patrimonio.ui.screens.about
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class AboutContentTest {
@@ -91,9 +90,16 @@ class AboutContentTest {
     }
 
     @Test
-    fun `the shipped configuration offers neither link until it is filled in`() {
-        assertNull(PRIVACY_POLICY_URL)
-        assertNull(CONTACT_EMAIL)
+    fun `the shipped configuration points at the published privacy policy and the contact email`() {
+        assertEquals("https://patrimonio-116ff.web.app/privacidad", PRIVACY_POLICY_URL)
+        assertEquals("amador.moreno.david@gmail.com", CONTACT_EMAIL)
+    }
+
+    @Test
+    fun `the shipped configuration shows the privacy and contact rows by default`() {
+        val links = aboutContent(versionName = "1.2.3").links
+
+        assertEquals(listOf("Política de privacidad", "Contacto"), links.map { it.title })
     }
 
     @Test

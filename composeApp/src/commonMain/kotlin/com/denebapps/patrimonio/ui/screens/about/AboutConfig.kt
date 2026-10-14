@@ -1,10 +1,10 @@
 package com.denebapps.patrimonio.ui.screens.about
 
 /**
- * Where the privacy policy is published. `null` while it has no public URL: «Acerca de» hides its row until this is
- * set (the stores ask for the same URL in the listing, so fill both together; see `docs/privacy-policy.md`).
+ * Where the privacy policy is published: the static site under `hosting/public/` on Firebase Hosting
+ * (see `docs/web.md`). The stores ask for the same URL in the listing. `null` hides the «Acerca de» row.
  */
-val PRIVACY_POLICY_URL: String? = null
+val PRIVACY_POLICY_URL: String? = "https://patrimonio-116ff.web.app/privacidad"
 
 /** Contact email shown in «Acerca de» (opens the mail app). `null` hides the row. */
-val CONTACT_EMAIL: String? = null
+val CONTACT_EMAIL: String? = "amador.moreno.david@gmail.com"

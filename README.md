@@ -38,8 +38,8 @@ para escribir y testear migraciones. CI falla si el schema generado no coincide 
 
 `.github/workflows/release.yml`, en cada etiqueta `v*` (o a mano): tests y AAB de release firmado (con los secretos
 `RELEASE_*`) y su mapping de R8 como artifacts. Cómo publicar la beta en Google Play (pruebas internas) y TestFlight,
-paso a paso: [`docs/release.md`](docs/release.md). Borrador de política de privacidad:
-[`docs/privacy-policy.md`](docs/privacy-policy.md).
+paso a paso: [`docs/release.md`](docs/release.md). Política de privacidad y página de borrado de cuenta
+(HTML estático en `hosting/public/`, publicado en Firebase Hosting): [`docs/web.md`](docs/web.md).
 
 **Icono**: «P» cursiva de Instrument Serif con una tendencia, generado desde la fuente por
 [`tools/icon/AppIcon.java`](tools/icon/AppIcon.java) (icono adaptativo y temático en Android, 1024 px en iOS,
