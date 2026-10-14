@@ -107,6 +107,15 @@ producto puede llevar, opcionalmente, el banco o bróker que lo gestiona (*Banco
   habría que pasar a una fuente con licencia.
 - Los precios se actualizan al abrir la app si tienen más de 6 horas y con el icono de actualizar
   (o deslizando hacia abajo) en la pestaña. Solo se admiten productos cotizados en EUR, USD, GBP o JPY.
+- **Clave propia de EODHD (opcional)**, en *Ajustes → Fuentes de datos*: con tu clave de
+  [EODHD](https://eodhd.com) (se comprueba al guardarla) los fondos, ETF y acciones tienen una fuente con
+  licencia. Por defecto actúa como **respaldo**: solo se consulta si falla Morningstar o Yahoo, con lo que se
+  gastan pocas llamadas (el plan gratuito da 20 al día y cerca de un año de histórico). Con el interruptor
+  *Usar EODHD como fuente principal* se consulta primero (pensado para planes de pago). Si EODHD rechaza la
+  clave o se agota el cupo diario, la app no se detiene: usa la otra fuente (hasta el día siguiente UTC en el
+  caso del cupo) y lo avisa en Ajustes, donde también se ve el uso del día. Las criptomonedas no usan EODHD. La
+  clave se guarda solo en el dispositivo (fuera de la copia del sistema, de la exportación y de la nube) y
+  nunca se escribe en registros ni en errores.
 - **Criptomonedas** con [CoinGecko](https://www.coingecko.com/) (API pública, sin clave): búsqueda,
   precio en EUR e histórico **del último año** (la API pública no da más). Las monedas que valen menos de
   un céntimo pierden precisión (los precios se guardan con 6 decimales).

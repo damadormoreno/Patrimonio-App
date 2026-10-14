@@ -59,6 +59,12 @@ private val DATA_SOURCES = listOf(
         note = "Fuente pública no oficial; los precios pueden retrasarse o fallar.",
     ),
     DataSourceInfo(
+        name = "EODHD",
+        covers = "Fondos, ETF y acciones (opcional)",
+        note = "Con tu propia clave. Proveedor de datos con licencia.",
+        url = "https://eodhd.com",
+    ),
+    DataSourceInfo(
         name = "CoinGecko",
         covers = "Criptomonedas",
         note = "Powered by CoinGecko.",

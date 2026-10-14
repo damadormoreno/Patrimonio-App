@@ -24,6 +24,7 @@ import com.denebapps.patrimonio.ui.screens.portfolio.observeHoldingUsage
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
 import com.denebapps.patrimonio.ui.screens.settings.AccountTypesViewModel
 import com.denebapps.patrimonio.ui.screens.settings.BackupViewModel
+import com.denebapps.patrimonio.ui.screens.settings.DataSourcesViewModel
 import com.denebapps.patrimonio.ui.screens.settings.SecurityViewModel
 import com.denebapps.patrimonio.ui.screens.settings.SettingsViewModel
 import kotlinx.datetime.Clock
@@ -50,6 +51,7 @@ val presentationModule = module {
     viewModel { AppViewModel(get(), get(), get()) }
     viewModel { SettingsViewModel(get(), get()) }
     viewModel { SecurityViewModel(get(), get()) }
+    viewModel { DataSourcesViewModel(get(), get(), get()) }
     viewModel { AccountTypesViewModel(get(), get(), get()) }
     viewModel { LockViewModel(get(), get(), get(), get()) }
     viewModel { BackupViewModel(get(), get(), get()) }

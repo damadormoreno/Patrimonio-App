@@ -167,6 +167,7 @@ private fun SettingsContent(
             }
             SecuritySection()
             AccountTypesSection()
+            DataSourcesSection()
             SettingsSection(title = "Datos", modifier = Modifier.padding(top = 12.dp))
             SettingsCard {
                 SettingsRow(

@@ -77,6 +77,7 @@ import com.denebapps.patrimonio.ui.screens.portfolio.TransferFormViewModel
 import com.denebapps.patrimonio.ui.screens.savings.SavingsGoalsViewModel
 import com.denebapps.patrimonio.ui.screens.settings.AccountTypesViewModel
 import com.denebapps.patrimonio.ui.screens.settings.BackupViewModel
+import com.denebapps.patrimonio.ui.screens.settings.DataSourcesViewModel
 import com.denebapps.patrimonio.ui.screens.settings.SecurityViewModel
 import com.denebapps.patrimonio.ui.screens.settings.SettingsViewModel
 import kotlinx.coroutines.Dispatchers
@@ -502,6 +503,7 @@ class KoinModuleTest {
         assertNotNull(koin.get<AccountViewModel>())
         assertNotNull(koin.get<LockViewModel>())
         assertNotNull(koin.get<SecurityViewModel>())
+        assertNotNull(koin.get<DataSourcesViewModel>())
         assertNotNull(koin.get<AccountTypesViewModel>())
         assertSame(koin.get<CloudBackup>(), koin.get<CloudBackup>())
     }
