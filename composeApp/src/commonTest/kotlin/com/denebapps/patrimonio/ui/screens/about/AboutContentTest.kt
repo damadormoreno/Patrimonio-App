@@ -21,7 +21,7 @@ class AboutContentTest {
     fun `the data sources name every provider the app queries`() {
         val names = content().dataSources.map { it.name }
 
-        assertEquals(listOf("Morningstar", "Yahoo Finance", "CoinGecko", "Frankfurter"), names)
+        assertEquals(listOf("Morningstar", "Yahoo Finance", "EODHD", "CoinGecko", "Frankfurter"), names)
     }
 
     @Test
@@ -33,6 +33,15 @@ class AboutContentTest {
             assertTrue("no oficial" in source.note, "${source.name}: ${source.note}")
             assertTrue("retrasarse" in source.note, "${source.name}: ${source.note}")
         }
+    }
+
+    @Test
+    fun `EODHD is listed as an optional licensed source that needs the user's own key`() {
+        val eodhd = content().dataSources.single { it.name == "EODHD" }
+
+        assertEquals("Fondos, ETF y acciones (opcional)", eodhd.covers)
+        assertEquals("Con tu propia clave. Proveedor de datos con licencia.", eodhd.note)
+        assertEquals("https://eodhd.com", eodhd.url)
     }
 
     @Test

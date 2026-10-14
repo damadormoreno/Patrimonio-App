@@ -14,6 +14,9 @@ const val AUTH_SESSION_FILE_NAME = "patrimonio-auth.preferences_pb"
 /** Which account this device last backed up to; excluded from Android's auto backup like the session. */
 const val CLOUD_LINK_FILE_NAME = "patrimonio-cloud.preferences_pb"
 
+/** Optional data-source settings (the user's own EODHD key, symbol cache). Device-only: excluded from Android's backup. */
+const val DATA_SOURCES_FILE_NAME = "patrimonio-datasources.preferences_pb"
+
 /** The app lock (PIN hash, biometrics, wrong attempts). Backed up with the data it protects. */
 const val APP_LOCK_FILE_NAME = "patrimonio-lock.preferences_pb"
 

@@ -19,6 +19,16 @@ interface PortfolioHoldingDao {
     @Query("SELECT * FROM portfolio_holdings WHERE id = :id")
     suspend fun find(id: String): PortfolioHoldingEntity?
 
+    /**
+     * A quoted holding priced as [provider]/[providerCode], preferring one that has an ISIN; `null` when there is none.
+     * Lets a market-data source learn the ISIN and ticker behind a bare instrument ref.
+     */
+    @Query(
+        "SELECT * FROM portfolio_holdings WHERE provider = :provider AND providerCode = :providerCode " +
+            "ORDER BY (isin IS NULL), id LIMIT 1",
+    )
+    suspend fun findByInstrument(provider: String, providerCode: String): PortfolioHoldingEntity?
+
     /** Fails when the id already exists: holdings are never silently overwritten. */
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(holding: PortfolioHoldingEntity)

@@ -7,9 +7,6 @@ import com.denebapps.patrimonio.domain.model.InstrumentType
 import com.denebapps.patrimonio.domain.model.PricePoint
 import com.denebapps.patrimonio.domain.model.Quote
 import com.denebapps.patrimonio.domain.model.QuoteProvider
-import com.denebapps.patrimonio.domain.repository.FundamentalsSource
-import com.denebapps.patrimonio.domain.repository.PriceHistorySource
-import com.denebapps.patrimonio.domain.repository.QuoteSource
 import com.denebapps.patrimonio.domain.repository.QuoteUnavailableException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -36,7 +33,7 @@ class CompositeQuoteSource(
     private val morningstar: MorningstarApi,
     private val yahoo: YahooFinanceApi,
     private val coinGecko: CoinGeckoApi,
-) : QuoteSource, PriceHistorySource, FundamentalsSource {
+) : MarketDataSource {
     override suspend fun search(query: String): List<InstrumentCandidate> {
         val text = query.trim()
         return when {
