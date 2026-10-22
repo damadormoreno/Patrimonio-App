@@ -16,10 +16,11 @@ import kotlinx.coroutines.launch
 private const val APP_STOP_TIMEOUT_MS = 5_000L
 
 /** App-wide state for the root UI: theme and app lock. Also keeps the cloud backup going while the app is open:
- *  this ViewModel lives as long as the UI and survives configuration changes, so it starts once. */
+ *  this ViewModel lives as long as the UI and survives configuration changes, so it starts once. Coming back to the
+ *  foreground looks for changes made on another device meanwhile. */
 class AppViewModel(
     preferencesRepository: PreferencesRepository,
-    cloudBackup: CloudBackup,
+    private val cloudBackup: CloudBackup,
     private val appLock: AppLock,
 ) : ViewModel() {
     val lockState: StateFlow<AppLockState> = appLock.state
@@ -38,5 +39,8 @@ class AppViewModel(
 
     fun onBackground() = appLock.onBackground()
 
-    fun onForeground() = appLock.onForeground()
+    fun onForeground() {
+        appLock.onForeground()
+        cloudBackup.checkForUpdates()
+    }
 }

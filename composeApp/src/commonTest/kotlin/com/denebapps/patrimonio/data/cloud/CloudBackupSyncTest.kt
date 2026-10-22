@@ -77,6 +77,14 @@ class CloudBackupSyncTest {
 
     private suspend fun uploadedJson(): String = crypto.decrypt(key(), "uid-1", remote.document?.data.orEmpty())
 
+    private suspend fun fingerprintOf(json: String): String =
+        crypto.fingerprint(userDataOf(Json.parseToJsonElement(json).jsonObject).toString())
+
+    /** This device last synced [revision] and its data has not changed since. */
+    private suspend fun syncedWith(revision: String) {
+        links.link = CloudLink("uid-1", revision, 1_000, fingerprintOf(backup.exported))
+    }
+
     @Test
     fun `signed out nothing is checked or uploaded`() = runTest {
         auth.signOut()
@@ -95,7 +103,10 @@ class CloudBackupSyncTest {
         assertFalse("a1" in remote.document?.data.orEmpty())
         assertEquals("key-1", remote.document?.key?.keyId)
         assertEquals(1, remote.document?.records)
-        assertEquals(CloudLink("uid-1", "rev-1", clock.now.toEpochMilliseconds()), links.link)
+        assertEquals(
+            CloudLink("uid-1", "rev-1", clock.now.toEpochMilliseconds(), fingerprintOf(backup.exported)),
+            links.link,
+        )
         assertEquals(CloudBackupState.Active(clock.now), sync.state.value)
 
         // The first emission is the data just uploaded; a later change uploads after the debounce.
@@ -142,10 +153,123 @@ class CloudBackupSyncTest {
 
         assertEquals(listOf("{\"cloud\":true}"), backup.imported)
         val cloudSavedAt = Instant.parse("2026-10-01T08:00:00Z")
-        assertEquals(CloudLink("uid-1", "rev-other", cloudSavedAt.toEpochMilliseconds()), links.link)
+        // Fingerprinted from this device's export after the restore, not from the copy itself.
+        assertEquals(
+            CloudLink("uid-1", "rev-other", cloudSavedAt.toEpochMilliseconds(), fingerprintOf(backup.exported)),
+            links.link,
+        )
         assertEquals(CloudBackupState.Active(cloudSavedAt), sync.state.value)
         advanceTimeBy(60.seconds)
         assertEquals(listOf("fetch:meta", "fetch:data"), remote.calls)
+    }
+
+    @Test
+    fun `a copy written elsewhere replaces this device's data without asking when nothing changed here`() = runTest {
+        remote.document = cloudCopy("rev-other")
+        syncedWith("rev-0")
+        start()
+
+        assertEquals(listOf("fetch:meta", "fetch:data"), remote.calls)
+        assertEquals(listOf(CLOUD_JSON), backup.imported)
+        assertEquals("rev-other", links.link?.revision)
+        assertEquals(CloudBackupState.Active(CLOUD_SAVED_AT), sync.state.value)
+
+        // Restored, so nothing goes up until the next change.
+        advanceTimeBy(60.seconds)
+        assertEquals(listOf("fetch:meta", "fetch:data"), remote.calls)
+    }
+
+    @Test
+    fun `a copy written elsewhere after editing here still asks`() = runTest {
+        remote.document = cloudCopy("rev-other")
+        syncedWith("rev-0")
+        backup.exported = "{ \"assets\": [{ \"id\": \"a1\" }, { \"id\": \"a2\" }] }"
+        start()
+
+        assertEquals(CloudBackupState.Conflict(CLOUD_SAVED_AT), sync.state.value)
+        assertTrue(backup.imported.isEmpty())
+    }
+
+    @Test
+    fun `refreshed prices and snapshots are not edits so the copy written elsewhere is restored`() = runTest {
+        backup.exported = HOLDING_BACKUP
+        syncedWith("rev-0")
+        backup.exported = HOLDING_BACKUP
+            .replace("\"priceScaled\":100", "\"priceScaled\":120")
+            .replace("\"assetsMinor\":5", "\"assetsMinor\":6")
+            .replace("2026-10-01", "2026-10-08")
+        remote.document = cloudCopy("rev-other")
+        start()
+
+        assertEquals(listOf(CLOUD_JSON), backup.imported)
+        assertEquals(CloudBackupState.Active(CLOUD_SAVED_AT), sync.state.value)
+    }
+
+    @Test
+    fun `a link saved before fingerprints asks as before`() = runTest {
+        remote.document = cloudCopy("rev-other")
+        links.link = CloudLink("uid-1", "rev-0", 1_000)
+        start()
+
+        assertEquals(CloudBackupState.Conflict(CLOUD_SAVED_AT), sync.state.value)
+    }
+
+    @Test
+    fun `coming back to the app restores a copy written elsewhere meanwhile`() = runTest {
+        start()
+        advanceTimeBy(10.seconds)
+        sync.checkForUpdates()
+        runCurrent()
+        assertEquals(listOf("fetch:meta", "upload:rev-1", "fetch:meta"), remote.calls)
+        assertTrue(sync.state.value is CloudBackupState.Active)
+
+        remote.document = cloudCopy("rev-other")
+        sync.checkForUpdates()
+        runCurrent()
+
+        assertEquals(listOf(CLOUD_JSON), backup.imported)
+        assertEquals("rev-other", links.link?.revision)
+        assertEquals(CloudBackupState.Active(CLOUD_SAVED_AT), sync.state.value)
+    }
+
+    @Test
+    fun `coming back to the app after editing here asks about a copy written elsewhere`() = runTest {
+        start()
+        remote.document = cloudCopy("rev-other")
+        backup.exported = "{ \"assets\": [] , \"liabilities\": [{ \"id\": \"l1\" }] }"
+
+        sync.checkForUpdates()
+        runCurrent()
+
+        assertEquals(CloudBackupState.Conflict(CLOUD_SAVED_AT), sync.state.value)
+        assertTrue(backup.imported.isEmpty())
+    }
+
+    @Test
+    fun `a failed update check keeps backing up`() = runTest {
+        start()
+        remote.failure = CloudBackupError.NETWORK
+
+        sync.checkForUpdates()
+        runCurrent()
+
+        assertEquals(CloudBackupState.Active(clock.now), sync.state.value)
+        remote.failure = null
+        changes.emit()
+        advanceTimeBy(6.seconds)
+        runCurrent()
+        assertEquals("rev-2", remote.document?.revision)
+    }
+
+    @Test
+    fun `user data leaves out the export time, the snapshots and the provider data of the holdings`() {
+        val data = userDataOf(Json.parseToJsonElement(HOLDING_BACKUP).jsonObject)
+
+        assertEquals(
+            "{\"assets\":[{\"id\":\"a1\"}],\"portfolioHoldings\":[{\"id\":\"p1\",\"unitsScaled\":7," +
+                "\"assetClass\":\"EQUITY\"}]}",
+            data.toString(),
+        )
     }
 
     @Test
@@ -169,6 +293,7 @@ class CloudBackupSyncTest {
         start()
         remote.document = cloudCopy("rev-other")
 
+        backup.exported = "{ \"assets\": [{ \"id\": \"a1\" }, { \"id\": \"a2\" }] }"
         changes.emit()
         advanceTimeBy(6.seconds)
         runCurrent()
@@ -510,6 +635,13 @@ private class InMemoryCloudLinkStore : CloudLinkStore {
 private const val PASSPHRASE = "frase de prueba"
 private const val CLOUD_JSON = "{\"cloud\":true}"
 private val CLOUD_SAVED_AT = Instant.parse("2026-10-01T08:00:00Z")
+
+private const val HOLDING_BACKUP =
+    "{\"exportedAt\":\"2026-10-01T08:00:00Z\",\"assets\":[{\"id\":\"a1\"}]," +
+        "\"netWorthSnapshots\":[{\"yearMonth\":\"2026-10\",\"assetsMinor\":5}]," +
+        "\"portfolioHoldings\":[{\"id\":\"p1\",\"unitsScaled\":7,\"priceScaled\":100,\"priceDateEpochDay\":1," +
+        "\"priceFetchedAtEpochMs\":2,\"ongoingChargePercentScaled\":3,\"riskLevel\":4,\"category\":\"RV\"," +
+        "\"managementCompany\":\"G\",\"assetClass\":\"EQUITY\"}]}"
 
 private const val EMPTY_BACKUP =
     "{\"assets\":[],\"liabilities\":[],\"accountGroups\":[],\"savingsGoals\":[]}"

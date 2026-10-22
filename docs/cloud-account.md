@@ -109,18 +109,30 @@ bytes. Un documento admite 1 MiB; la app rechaza datos de más de ~900 KB («ocu
    - Si este móvil no tiene la clave: con copia cifrada pide la frase para abrirla (o empezar de cero);
      si no, pide crear una. No sube nada hasta tenerla.
    - Sin copia: sube la de este móvil.
-   - Con la revisión que este móvil subió la última vez: sigue sin preguntar. Al cerrar sesión se olvida,
-     así que volver a iniciar sesión siempre pregunta (los datos pueden haber cambiado mientras tanto).
-   - Con otra revisión (otro móvil, otra cuenta en este móvil, móvil restaurado): **pregunta** qué
+   - Con la revisión que este móvil subió o restauró la última vez: sigue sin preguntar. Al cerrar sesión se
+     olvida, así que volver a iniciar sesión siempre pregunta (los datos pueden haber cambiado mientras tanto).
+   - Con otra revisión y sin cambios en este móvil desde la última vez (misma *huella*, ver abajo): la copia de
+     la nube **sustituye a los datos del móvil sin preguntar**. Es el caso normal al alternar dispositivos.
+   - Con otra revisión y cambios en este móvil (o en otra cuenta, o en un móvil restaurado): **pregunta** qué
      datos usar, la copia de la nube o los de este móvil. No sube nada hasta que se elige.
 2. Cada cambio en los datos (Room, 5 s de margen) sube la copia entera con una revisión nueva. Antes
    comprueba que la nube sigue con la revisión de este móvil; si otro móvil subió entretanto, vuelve a
    preguntar en lugar de pisarla. Tampoco sube nunca sin preguntar un móvil vacío (`records` = 0, p. ej.
    tras «Borrar todos los datos») encima de una copia con datos.
-3. Los fallos (sin conexión, Firestore caído) se reintentan solos, de 30 s a 15 min, y con «Reintentar» /
+3. Al volver la app a primer plano lee los metadatos de la nube: si otro dispositivo subió una copia, se vuelve
+   al paso 1 (normalmente se aplica sin preguntar). Si la lectura falla no pasa nada: la siguiente subida
+   vuelve a comprobarlo.
+4. Los fallos (sin conexión, Firestore caído) se reintentan solos, de 30 s a 15 min, y con «Reintentar» /
    «Guardar ahora».
 
-La última revisión subida y la clave de datos se guardan en `patrimonio-cloud.preferences_pb`, también
+**Huella**: SHA-256 del JSON de la copia sin lo que la app escribe sola — la fecha de exportación, los
+snapshots de patrimonio (el del mes se recalcula con cada refresco de precios) y, en cada producto, el precio y
+los datos del proveedor (TER, riesgo, categoría, gestora), que se vuelven a descargar tras restaurar. Se calcula
+al subir (de lo subido) y al restaurar (de lo que exporta el móvil después de importar, porque la importación
+recalcula unidades y el snapshot del mes). Así, refrescar precios no cuenta como un cambio y no provoca la
+pregunta. Los enlaces guardados antes de la huella no la tienen: la primera vez se pregunta como antes.
+
+La última revisión subida, su huella y la clave de datos se guardan en `patrimonio-cloud.preferences_pb`, también
 fuera del backup automático de Android: un móvil restaurado vuelve a pedir la frase y a preguntar antes de
 subir. Cerrar sesión borra ambas.
 

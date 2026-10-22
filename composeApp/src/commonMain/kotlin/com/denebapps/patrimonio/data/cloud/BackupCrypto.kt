@@ -74,6 +74,11 @@ class BackupCrypto(
         cipher(Base64.decode(key.secret)).decrypt(Base64.decode(ciphertext), dataContext(uid, key)).decodeToString()
     }
 
+    /** SHA-256 of [text], as Base64: tells whether two backups hold the same data without keeping either. */
+    suspend fun fingerprint(text: String): String = work {
+        Base64.encode(provider.get(SHA256).hasher().hash(text.encodeToByteArray()))
+    }
+
     private suspend fun wrap(keyId: String, secret: ByteArray, passphrase: String): WrappedDataKey {
         val salt = CryptographyRandom.nextBytes(SALT_BYTES)
         val kek = deriveKey(passphrase, salt, iterations)

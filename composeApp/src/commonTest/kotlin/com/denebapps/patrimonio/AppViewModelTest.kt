@@ -50,6 +50,16 @@ class AppViewModelTest {
     }
 
     @Test
+    fun `coming back to the foreground looks for cloud changes`() = runTest(dispatcher) {
+        val viewModel = viewModel(FakePreferencesRepository())
+        advanceUntilIdle()
+
+        viewModel.onForeground()
+
+        assertEquals(listOf("run", "checkForUpdates"), cloudBackup.calls)
+    }
+
+    @Test
     fun `theme starts at SYSTEM before preferences emit`() {
         val viewModel = viewModel(FakePreferencesRepository(themeMode = ThemeMode.DARK))
 
