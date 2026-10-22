@@ -1,7 +1,7 @@
 package com.denebapps.patrimonio.data.db.entity
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
+import androidx.room3.Entity
+import androidx.room3.PrimaryKey
 
 /**
  * [id] is a UUID string, like every other entity, so goals created on different devices never collide.

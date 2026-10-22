@@ -1,6 +1,6 @@
 package com.denebapps.patrimonio.data.db
 
-import androidx.room.RoomDatabase
+import androidx.room3.RoomDatabase
 import com.denebapps.patrimonio.data.platform.PlatformContext
 
 /** Android: `getDatabasePath` (app-private storage). iOS: Application Support `databases/`,

@@ -1,6 +1,6 @@
 package com.denebapps.patrimonio.data.db.entity
 
-import androidx.room.Entity
+import androidx.room3.Entity
 
 /**
  * When the price history of an instrument was last downloaded, to skip a sync done less than six hours ago and to tell

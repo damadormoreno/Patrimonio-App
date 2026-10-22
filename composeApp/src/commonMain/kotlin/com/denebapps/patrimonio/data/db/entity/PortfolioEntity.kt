@@ -1,8 +1,8 @@
 package com.denebapps.patrimonio.data.db.entity
 
-import androidx.room.ColumnInfo
-import androidx.room.Entity
-import androidx.room.PrimaryKey
+import androidx.room3.ColumnInfo
+import androidx.room3.Entity
+import androidx.room3.PrimaryKey
 
 /**
  * A named group of portfolio holdings. [id] is a random UUID string. Name uniqueness (ignoring case) is not a database

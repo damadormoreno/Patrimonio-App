@@ -1,7 +1,7 @@
 package com.denebapps.patrimonio.data.db
 
 import android.content.Context
-import androidx.room.Room
+import androidx.room3.Room
 import androidx.sqlite.driver.AndroidSQLiteDriver
 import androidx.test.core.app.ApplicationProvider
 import com.denebapps.patrimonio.data.db.dao.SavingsGoalDao

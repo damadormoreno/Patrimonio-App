@@ -1,9 +1,9 @@
 package com.denebapps.patrimonio.data.db.entity
 
-import androidx.room.Entity
-import androidx.room.ForeignKey
-import androidx.room.Index
-import androidx.room.PrimaryKey
+import androidx.room3.Entity
+import androidx.room3.ForeignKey
+import androidx.room3.Index
+import androidx.room3.PrimaryKey
 
 /** Which variant of a portfolio holding a row stores; the columns that only apply to the other one stay null. */
 enum class HoldingKind { QUOTED, MANUAL }

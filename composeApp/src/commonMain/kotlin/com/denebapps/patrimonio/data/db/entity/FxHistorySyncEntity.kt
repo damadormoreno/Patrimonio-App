@@ -1,7 +1,7 @@
 package com.denebapps.patrimonio.data.db.entity
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
+import androidx.room3.Entity
+import androidx.room3.PrimaryKey
 
 /**
  * Sync state of one currency of [FxHistoryEntity]: the oldest day [coveredFromEpochDay] a download was asked to reach

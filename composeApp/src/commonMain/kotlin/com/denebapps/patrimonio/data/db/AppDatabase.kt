@@ -1,10 +1,10 @@
 package com.denebapps.patrimonio.data.db
 
-import androidx.room.AutoMigration
-import androidx.room.ConstructedBy
-import androidx.room.Database
-import androidx.room.RoomDatabase
-import androidx.room.RoomDatabaseConstructor
+import androidx.room3.AutoMigration
+import androidx.room3.ConstructedBy
+import androidx.room3.Database
+import androidx.room3.RoomDatabase
+import androidx.room3.RoomDatabaseConstructor
 import com.denebapps.patrimonio.data.db.dao.AccountGroupDao
 import com.denebapps.patrimonio.data.db.dao.AccountTypeDao
 import com.denebapps.patrimonio.data.db.dao.AllocationTargetDao

@@ -1,8 +1,8 @@
 package com.denebapps.patrimonio.data.db
 
-import androidx.room.RoomDatabase
-import androidx.room.immediateTransaction
-import androidx.room.useWriterConnection
+import androidx.room3.RoomDatabase
+import androidx.room3.immediateTransaction
+import androidx.room3.useWriterConnection
 
 /**
  * Multi-DAO write transaction helper. NOT `appDatabase.withTransaction {}` — confirmed at apply

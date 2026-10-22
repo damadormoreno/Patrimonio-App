@@ -1,12 +1,12 @@
 package com.denebapps.patrimonio.data.db.dao
 
-import androidx.room.Dao
-import androidx.room.Embedded
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
-import androidx.room.Relation
-import androidx.room.Transaction
+import androidx.room3.Dao
+import androidx.room3.Embedded
+import androidx.room3.Insert
+import androidx.room3.OnConflictStrategy
+import androidx.room3.Query
+import androidx.room3.Relation
+import androidx.room3.Transaction
 import com.denebapps.patrimonio.data.db.entity.AccountGroupEntity
 import com.denebapps.patrimonio.data.db.entity.AccountGroupHoldingMemberEntity
 import com.denebapps.patrimonio.data.db.entity.AccountGroupMemberEntity
@@ -14,9 +14,9 @@ import kotlinx.coroutines.flow.Flow
 
 data class AccountGroupWithMembers(
     @Embedded val group: AccountGroupEntity,
-    @Relation(parentColumn = "id", entityColumn = "groupId")
+    @Relation(parentColumns = ["id"], entityColumns = ["groupId"])
     val members: List<AccountGroupMemberEntity>,
-    @Relation(parentColumn = "id", entityColumn = "groupId")
+    @Relation(parentColumns = ["id"], entityColumns = ["groupId"])
     val holdingMembers: List<AccountGroupHoldingMemberEntity>,
 )
 

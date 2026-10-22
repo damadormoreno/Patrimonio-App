@@ -110,7 +110,7 @@ dependencies {
     add("kspIosSimulatorArm64", libs.room.compiler)
 }
 
-room {
+room3 {
     schemaDirectory("$projectDir/schemas")
 }
 

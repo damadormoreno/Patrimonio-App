@@ -1,12 +1,12 @@
 package com.denebapps.patrimonio.data.db.dao
 
-import androidx.room.Dao
-import androidx.room.Embedded
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
-import androidx.room.Relation
-import androidx.room.Transaction
+import androidx.room3.Dao
+import androidx.room3.Embedded
+import androidx.room3.Insert
+import androidx.room3.OnConflictStrategy
+import androidx.room3.Query
+import androidx.room3.Relation
+import androidx.room3.Transaction
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAllocationEventEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalAssetEntity
 import com.denebapps.patrimonio.data.db.entity.SavingsGoalEntity
@@ -18,15 +18,15 @@ import kotlinx.coroutines.flow.map
 
 data class SavingsGoalRelationRow(
     @Embedded val goal: SavingsGoalEntity,
-    @Relation(parentColumn = "id", entityColumn = "goalId")
+    @Relation(parentColumns = ["id"], entityColumns = ["goalId"])
     val allocationEvents: List<SavingsGoalAllocationEventEntity>,
-    @Relation(parentColumn = "id", entityColumn = "goalId")
+    @Relation(parentColumns = ["id"], entityColumns = ["goalId"])
     val linkEvents: List<SavingsGoalLinkEventEntity>,
-    @Relation(parentColumn = "id", entityColumn = "goalId")
+    @Relation(parentColumns = ["id"], entityColumns = ["goalId"])
     val linkedAssets: List<SavingsGoalAssetEntity>,
-    @Relation(parentColumn = "id", entityColumn = "goalId")
+    @Relation(parentColumns = ["id"], entityColumns = ["goalId"])
     val linkedHoldings: List<SavingsGoalHoldingEntity>,
-    @Relation(parentColumn = "id", entityColumn = "goalId")
+    @Relation(parentColumns = ["id"], entityColumns = ["goalId"])
     val linkedGroups: List<SavingsGoalGroupEntity>,
 )
 
