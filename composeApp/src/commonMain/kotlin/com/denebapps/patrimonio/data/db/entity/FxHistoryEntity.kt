@@ -1,6 +1,6 @@
 package com.denebapps.patrimonio.data.db.entity
 
-import androidx.room.Entity
+import androidx.room3.Entity
 
 /**
  * The rate of [currency] (ISO code) to EUR on [epochDay], scaled by `RATE_SCALE` like [FxRateEntity.rateToEurScaled].

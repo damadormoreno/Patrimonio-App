@@ -1,8 +1,8 @@
 package com.denebapps.patrimonio.data.db
 
 import android.content.Context
-import androidx.room.Room
-import androidx.room.testing.MigrationTestHelper
+import androidx.room3.Room
+import androidx.room3.testing.MigrationTestHelper
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.AndroidSQLiteDriver
 import androidx.sqlite.execSQL
@@ -41,7 +41,7 @@ class AppDatabaseMigrationTest {
     )
 
     @Test
-    fun `migration 1 to 2 keeps goals ledgers and links and leaves the new group links empty`() {
+    fun `migration 1 to 2 keeps goals ledgers and links and leaves the new group links empty`() = runBlocking<Unit> {
         helper.createDatabase(1).use { connection -> connection.seedVersion1() }
 
         helper.runMigrationsAndValidate(2, emptyList()).use { connection ->
@@ -110,7 +110,7 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun `migration 2 to 3 adds an empty subscriptions table wired to assets`() {
+    fun `migration 2 to 3 adds an empty subscriptions table wired to assets`() = runBlocking<Unit> {
         helper.createDatabase(2).use { connection ->
             connection.execSQL(
                 "INSERT INTO assets (id, `group`, name, subtitle, amountMinor, currency) " +
@@ -136,7 +136,7 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun `migration 3 to 4 gives goals UUID ids and keeps their order ledgers and links`() {
+    fun `migration 3 to 4 gives goals UUID ids and keeps their order ledgers and links`() = runBlocking<Unit> {
         // Version 1 inserts are valid at version 3: the later columns are all nullable.
         helper.createDatabase(3).use { connection -> connection.seedVersion1() }
 
@@ -186,7 +186,7 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun `migration 4 to 5 moves the asset link into the goal accounts table`() {
+    fun `migration 4 to 5 moves the asset link into the goal accounts table`() = runBlocking<Unit> {
         helper.createDatabase(4).use { connection ->
             listOf(
                 "INSERT INTO assets (id, `group`, name, subtitle, amountMinor, currency) " +
@@ -240,7 +240,7 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun `migration 5 to 6 adds custom account types and an empty emoji to every account`() {
+    fun `migration 5 to 6 adds custom account types and an empty emoji to every account`() = runBlocking<Unit> {
         helper.createDatabase(5).use { connection ->
             listOf(
                 "INSERT INTO assets (id, `group`, name, subtitle, amountMinor, currency) " +
@@ -272,7 +272,7 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun `migration 6 to 7 drops subscriptions and keeps every other table`() {
+    fun `migration 6 to 7 drops subscriptions and keeps every other table`() = runBlocking<Unit> {
         helper.createDatabase(6).use { connection ->
             listOf(
                 "INSERT INTO assets (id, `group`, name, subtitle, amountMinor, currency, emoji) " +
@@ -331,7 +331,7 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun `migration 7 to 8 adds an empty writable portfolio table and keeps every other table`() {
+    fun `migration 7 to 8 adds an empty writable portfolio table and keeps every other table`() = runBlocking<Unit> {
         helper.createDatabase(7).use { connection ->
             listOf(
                 "INSERT INTO assets (id, `group`, name, subtitle, amountMinor, currency, emoji) " +
@@ -373,7 +373,7 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun `migration 8 to 9 keeps every holding and gives it no broker`() {
+    fun `migration 8 to 9 keeps every holding and gives it no broker`() = runBlocking<Unit> {
         helper.createDatabase(8).use { connection ->
             connection.execSQL(
                 "INSERT INTO portfolio_holdings (id, name, type, isin, ticker, kind, provider, providerCode, " +
@@ -417,58 +417,59 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun `migration 9 to 10 keeps every holding without fundamentals and adds the empty history caches`() {
-        helper.createDatabase(9).use { connection ->
-            connection.execSQL(
-                "INSERT INTO portfolio_holdings (id, name, type, isin, ticker, kind, provider, providerCode, " +
-                    "currency, unitsScaled, priceScaled, priceDateEpochDay, priceFetchedAtEpochMs, valueMinor, " +
-                    "valuedAtEpochMs, broker) VALUES ('p1', 'Vanguard Global', 'FUND', 'IE00B03HCZ61', NULL, " +
-                    "'QUOTED', 'MORNINGSTAR', '0P00012PP6', 'EUR', 8100001, 12345678, 20000, 1000, NULL, NULL, " +
-                    "'Openbank')",
-            )
-            connection.execSQL(
-                "INSERT INTO portfolio_holdings (id, name, type, isin, ticker, kind, provider, providerCode, " +
-                    "currency, unitsScaled, priceScaled, priceDateEpochDay, priceFetchedAtEpochMs, valueMinor, " +
-                    "valuedAtEpochMs, broker) VALUES ('p2', 'Cuadro', 'OTHER', NULL, NULL, 'MANUAL', NULL, NULL, " +
-                    "'EUR', NULL, NULL, NULL, NULL, 250000, 2000, NULL)",
-            )
-        }
-
-        helper.runMigrationsAndValidate(10, emptyList()).use { connection ->
-            assertEquals(2L, connection.count("portfolio_holdings"))
-            connection.prepare(
-                "SELECT id, unitsScaled, broker, ongoingChargePercentScaled, riskLevel, category, " +
-                    "managementCompany, fundamentalsFetchedAtEpochMs FROM portfolio_holdings ORDER BY id",
-            ).use { rows ->
-                assertTrue(rows.step())
-                assertEquals("p1", rows.getText(0))
-                assertEquals(8_100_001L, rows.getLong(1))
-                assertEquals("Openbank", rows.getText(2))
-                (3..7).forEach { assertTrue(rows.isNull(it), "column $it of p1 must start null") }
-                assertTrue(rows.step())
-                assertEquals("p2", rows.getText(0))
-                (3..7).forEach { assertTrue(rows.isNull(it), "column $it of p2 must start null") }
-                assertFalse(rows.step())
-            }
-            listOf("instrument_prices", "instrument_price_sync", "fx_history", "fx_history_sync").forEach { table ->
-                assertTrue(connection.tableExists(table), "$table missing")
-                assertEquals(0L, connection.count(table), "$table must start empty")
+    fun `migration 9 to 10 keeps every holding without fundamentals and adds the empty history caches`() =
+        runBlocking<Unit> {
+            helper.createDatabase(9).use { connection ->
+                connection.execSQL(
+                    "INSERT INTO portfolio_holdings (id, name, type, isin, ticker, kind, provider, providerCode, " +
+                        "currency, unitsScaled, priceScaled, priceDateEpochDay, priceFetchedAtEpochMs, valueMinor, " +
+                        "valuedAtEpochMs, broker) VALUES ('p1', 'Vanguard Global', 'FUND', 'IE00B03HCZ61', NULL, " +
+                        "'QUOTED', 'MORNINGSTAR', '0P00012PP6', 'EUR', 8100001, 12345678, 20000, 1000, NULL, NULL, " +
+                        "'Openbank')",
+                )
+                connection.execSQL(
+                    "INSERT INTO portfolio_holdings (id, name, type, isin, ticker, kind, provider, providerCode, " +
+                        "currency, unitsScaled, priceScaled, priceDateEpochDay, priceFetchedAtEpochMs, valueMinor, " +
+                        "valuedAtEpochMs, broker) VALUES ('p2', 'Cuadro', 'OTHER', NULL, NULL, 'MANUAL', NULL, NULL, " +
+                        "'EUR', NULL, NULL, NULL, NULL, 250000, 2000, NULL)",
+                )
             }
 
-            connection.execSQL(
-                "UPDATE portfolio_holdings SET ongoingChargePercentScaled = 1800, riskLevel = 6, " +
-                    "category = 'RV Global', managementCompany = 'Vanguard' WHERE id = 'p1'",
-            )
-            connection.execSQL(
-                "INSERT INTO instrument_prices (provider, code, epochDay, priceScaled, currency) " +
-                    "VALUES ('MORNINGSTAR', '0P00012PP6', 20000, 12345678, 'EUR')",
-            )
-            assertEquals(1L, connection.count("instrument_prices"))
+            helper.runMigrationsAndValidate(10, emptyList()).use { connection ->
+                assertEquals(2L, connection.count("portfolio_holdings"))
+                connection.prepare(
+                    "SELECT id, unitsScaled, broker, ongoingChargePercentScaled, riskLevel, category, " +
+                        "managementCompany, fundamentalsFetchedAtEpochMs FROM portfolio_holdings ORDER BY id",
+                ).use { rows ->
+                    assertTrue(rows.step())
+                    assertEquals("p1", rows.getText(0))
+                    assertEquals(8_100_001L, rows.getLong(1))
+                    assertEquals("Openbank", rows.getText(2))
+                    (3..7).forEach { assertTrue(rows.isNull(it), "column $it of p1 must start null") }
+                    assertTrue(rows.step())
+                    assertEquals("p2", rows.getText(0))
+                    (3..7).forEach { assertTrue(rows.isNull(it), "column $it of p2 must start null") }
+                    assertFalse(rows.step())
+                }
+                listOf("instrument_prices", "instrument_price_sync", "fx_history", "fx_history_sync").forEach { table ->
+                    assertTrue(connection.tableExists(table), "$table missing")
+                    assertEquals(0L, connection.count(table), "$table must start empty")
+                }
+
+                connection.execSQL(
+                    "UPDATE portfolio_holdings SET ongoingChargePercentScaled = 1800, riskLevel = 6, " +
+                        "category = 'RV Global', managementCompany = 'Vanguard' WHERE id = 'p1'",
+                )
+                connection.execSQL(
+                    "INSERT INTO instrument_prices (provider, code, epochDay, priceScaled, currency) " +
+                        "VALUES ('MORNINGSTAR', '0P00012PP6', 20000, 12345678, 'EUR')",
+                )
+                assertEquals(1L, connection.count("instrument_prices"))
+            }
         }
-    }
 
     @Test
-    fun `migration 10 to 11 puts every holding in a new Mi cartera and keeps all their data`() {
+    fun `migration 10 to 11 puts every holding in a new Mi cartera and keeps all their data`() = runBlocking<Unit> {
         helper.createDatabase(10).use { connection -> connection.seedVersion10Holdings() }
 
         helper.runMigrationsAndValidate(11, listOf(MIGRATION_10_11)).use { connection ->
@@ -528,7 +529,7 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun `migration 10 to 11 on a database without holdings still creates exactly one Mi cartera`() {
+    fun `migration 10 to 11 on a database without holdings still creates exactly one Mi cartera`() = runBlocking<Unit> {
         helper.createDatabase(10).use { connection ->
             connection.execSQL(
                 "INSERT INTO assets (id, `group`, name, subtitle, amountMinor, currency, emoji) " +
@@ -549,7 +550,7 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun `after migration 10 to 11 the portfolio foreign key is live and never deletes holdings`() {
+    fun `after migration 10 to 11 the portfolio foreign key is live and never deletes holdings`() = runBlocking<Unit> {
         helper.createDatabase(10).use { connection -> connection.seedVersion10Holdings() }
 
         helper.runMigrationsAndValidate(11, listOf(MIGRATION_10_11)).use { connection ->
@@ -599,7 +600,7 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun `migration 11 to 12 keeps every holding and gives it no asset class`() {
+    fun `migration 11 to 12 keeps every holding and gives it no asset class`() = runBlocking<Unit> {
         helper.createDatabase(11).use { connection -> connection.seedVersion11Holdings() }
 
         helper.runMigrationsAndValidate(12, emptyList()).use { connection ->
@@ -651,34 +652,35 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun `migration 12 to 13 keeps every holding and adds an empty movements table that follows its holding`() {
-        helper.createDatabase(12).use { connection -> connection.seedVersion11Holdings() }
+    fun `migration 12 to 13 keeps every holding and adds an empty movements table that follows its holding`() =
+        runBlocking<Unit> {
+            helper.createDatabase(12).use { connection -> connection.seedVersion11Holdings() }
 
-        helper.runMigrationsAndValidate(13, emptyList()).use { connection ->
-            assertEquals(2L, connection.count("portfolio_holdings"))
-            connection.prepare("SELECT unitsScaled, valueMinor FROM portfolio_holdings ORDER BY id").use { rows ->
-                assertTrue(rows.step())
-                assertEquals(8_100_001L, rows.getLong(0))
-                assertTrue(rows.step())
-                assertEquals(250_000L, rows.getLong(1))
+            helper.runMigrationsAndValidate(13, emptyList()).use { connection ->
+                assertEquals(2L, connection.count("portfolio_holdings"))
+                connection.prepare("SELECT unitsScaled, valueMinor FROM portfolio_holdings ORDER BY id").use { rows ->
+                    assertTrue(rows.step())
+                    assertEquals(8_100_001L, rows.getLong(0))
+                    assertTrue(rows.step())
+                    assertEquals(250_000L, rows.getLong(1))
+                }
+                assertTrue(connection.tableExists("movements"))
+                assertEquals(0L, connection.count("movements"))
+                assertTrue(connection.indexExists("index_movements_holdingId"))
+                assertTrue(connection.indexExists("index_movements_transferId"))
+
+                connection.execSQL("PRAGMA foreign_keys = ON")
+                val insert = "INSERT INTO movements (id, holdingId, type, epochDay, unitsScaled, amountMinor, " +
+                    "currency, feeMinor, amountEurMinor, feeEurMinor, transferId, note, sequence) " +
+                    "VALUES ('%s', '%s', 'BUY', 20000, 1000000, 10000, 'EUR', 0, 10000, 0, NULL, NULL, 1)"
+                connection.execSQL(insert.format("m1", "p1"))
+                assertEquals(1L, connection.count("movements"))
+                assertFails { connection.execSQL(insert.format("m2", "ghost")) }
+
+                connection.execSQL("DELETE FROM portfolio_holdings WHERE id = 'p1'")
+                assertEquals(0L, connection.count("movements"), "the movements must go with their holding")
             }
-            assertTrue(connection.tableExists("movements"))
-            assertEquals(0L, connection.count("movements"))
-            assertTrue(connection.indexExists("index_movements_holdingId"))
-            assertTrue(connection.indexExists("index_movements_transferId"))
-
-            connection.execSQL("PRAGMA foreign_keys = ON")
-            val insert = "INSERT INTO movements (id, holdingId, type, epochDay, unitsScaled, amountMinor, currency, " +
-                "feeMinor, amountEurMinor, feeEurMinor, transferId, note, sequence) " +
-                "VALUES ('%s', '%s', 'BUY', 20000, 1000000, 10000, 'EUR', 0, 10000, 0, NULL, NULL, 1)"
-            connection.execSQL(insert.format("m1", "p1"))
-            assertEquals(1L, connection.count("movements"))
-            assertFails { connection.execSQL(insert.format("m2", "ghost")) }
-
-            connection.execSQL("DELETE FROM portfolio_holdings WHERE id = 'p1'")
-            assertEquals(0L, connection.count("movements"), "the movements must go with their holding")
         }
-    }
 
     @Test
     fun `a version 12 database opens through the app with no movements`() = runBlocking {
@@ -697,7 +699,7 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun `migration 13 to 14 sets the default tolerance and adds an empty targets table`() {
+    fun `migration 13 to 14 sets the default tolerance and adds an empty targets table`() = runBlocking<Unit> {
         helper.createDatabase(13).use { connection ->
             connection.seedVersion11Holdings()
             connection.execSQL("INSERT INTO portfolios (id, name, sortOrder) VALUES ('pf-2', 'Hijos', 1)")
@@ -754,7 +756,7 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun `migration 14 to 15 keeps groups and members and adds an empty holding members table`() {
+    fun `migration 14 to 15 keeps groups and members and adds an empty holding members table`() = runBlocking<Unit> {
         helper.createDatabase(14).use { connection -> connection.seedVersion14GroupsAndHoldings() }
 
         helper.runMigrationsAndValidate(15, emptyList()).use { connection ->
@@ -803,98 +805,107 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun `migration 15 to 16 moves group links into the goal groups table and keeps every goal field`() {
-        helper.createDatabase(15).use { connection -> connection.seedVersion15Goals() }
+    fun `migration 15 to 16 moves group links into the goal groups table and keeps every goal field`() =
+        runBlocking<Unit> {
+            helper.createDatabase(15).use { connection -> connection.seedVersion15Goals() }
 
-        helper.runMigrationsAndValidate(16, listOf(MIGRATION_15_16)).use { connection ->
-            val goals = connection.prepare(
-                "SELECT id, name, targetMinor, currency, targetDateEpochDay, lifecycle, createdAtEpochMs " +
-                    "FROM savings_goals ORDER BY createdAtEpochMs",
-            ).use { rows ->
-                buildList {
-                    while (rows.step()) {
-                        add(
-                            listOf(
-                                rows.getText(0),
-                                rows.getText(1),
-                                rows.getLong(2),
-                                rows.getText(3),
-                                if (rows.isNull(4)) null else rows.getLong(4),
-                                rows.getText(5),
-                                rows.getLong(6),
-                            ),
-                        )
+            helper.runMigrationsAndValidate(16, listOf(MIGRATION_15_16)).use { connection ->
+                val goals = connection.prepare(
+                    "SELECT id, name, targetMinor, currency, targetDateEpochDay, lifecycle, createdAtEpochMs " +
+                        "FROM savings_goals ORDER BY createdAtEpochMs",
+                ).use { rows ->
+                    buildList {
+                        while (rows.step()) {
+                            add(
+                                listOf(
+                                    rows.getText(0),
+                                    rows.getText(1),
+                                    rows.getLong(2),
+                                    rows.getText(3),
+                                    if (rows.isNull(4)) null else rows.getLong(4),
+                                    rows.getText(5),
+                                    rows.getLong(6),
+                                ),
+                            )
+                        }
                     }
                 }
-            }
-            assertEquals(
-                listOf(
-                    listOf("u1", "Viaje", 300_000L, "EUR", 20_800L, "OPEN", 7L),
-                    listOf("u2", "Casa", 900_000L, "USD", null, "OPEN", 12L),
-                    listOf("u3", "Coche", 50_000L, "EUR", 21_000L, "CLOSED", 15L),
-                    listOf("u4", "Vieja", 10_000L, "EUR", null, "CANCELLED", 20L),
-                ),
-                goals,
-            )
-            assertEquals(
-                listOf("u2" to "g1", "u4" to "g2"),
-                connection.pairs("savings_goal_groups", "goalId", "groupId"),
-            )
-            assertEquals(
-                listOf("u1" to "a1", "u1" to "a2"),
-                connection.pairs("savings_goal_assets", "goalId", "assetId"),
-            )
-            assertEquals(0L, connection.count("savings_goal_holdings"))
-            assertTrue(connection.tableExists("savings_goal_holdings"))
-            assertTrue(connection.indexExists("index_savings_goal_holdings_holdingId"))
-            assertTrue(connection.indexExists("index_savings_goal_groups_groupId"))
-            assertFalse(connection.columnExists("savings_goals", "linkedGroupId"))
-            assertTrue(connection.columnExists("savings_goal_link_events", "fromHoldingId"))
-            assertTrue(connection.columnExists("savings_goal_link_events", "toHoldingId"))
-
-            // Ledgers and link history survive, the group ids of the events included; the new columns are empty.
-            assertEquals(2L, connection.count("savings_goal_allocation_events"))
-            connection.prepare(
-                "SELECT goalId, toGroupId, toHoldingId, fromHoldingId FROM savings_goal_link_events WHERE id = 5",
-            ).use { rows ->
-                assertTrue(rows.step())
-                assertEquals("u2", rows.getText(0))
-                assertEquals("g1", rows.getText(1))
-                assertTrue(rows.isNull(2))
-                assertTrue(rows.isNull(3))
-            }
-
-            // Both new tables follow their foreign keys; the goals' own table is untouched by them.
-            connection.execSQL("PRAGMA foreign_keys = ON")
-            connection.execSQL("INSERT INTO savings_goal_holdings (goalId, holdingId) VALUES ('u1', 'p1')")
-            connection.execSQL("INSERT INTO savings_goal_holdings (goalId, holdingId) VALUES ('u1', 'p2')")
-            connection.execSQL("INSERT INTO savings_goal_groups (goalId, groupId) VALUES ('u2', 'g2')")
-            assertFails {
-                connection.execSQL(
-                    "INSERT INTO savings_goal_holdings (goalId, holdingId) VALUES ('u1', 'p1')",
+                assertEquals(
+                    listOf(
+                        listOf("u1", "Viaje", 300_000L, "EUR", 20_800L, "OPEN", 7L),
+                        listOf("u2", "Casa", 900_000L, "USD", null, "OPEN", 12L),
+                        listOf("u3", "Coche", 50_000L, "EUR", 21_000L, "CLOSED", 15L),
+                        listOf("u4", "Vieja", 10_000L, "EUR", null, "CANCELLED", 20L),
+                    ),
+                    goals,
                 )
-            }
-            assertFails {
-                connection.execSQL(
-                    "INSERT INTO savings_goal_holdings (goalId, holdingId) VALUES ('u1', 'x')",
+                assertEquals(
+                    listOf("u2" to "g1", "u4" to "g2"),
+                    connection.pairs("savings_goal_groups", "goalId", "groupId"),
                 )
-            }
-            assertFails { connection.execSQL("INSERT INTO savings_goal_groups (goalId, groupId) VALUES ('u2', 'x')") }
-            assertFails { connection.execSQL("INSERT INTO savings_goal_groups (goalId, groupId) VALUES ('x', 'g1')") }
+                assertEquals(
+                    listOf("u1" to "a1", "u1" to "a2"),
+                    connection.pairs("savings_goal_assets", "goalId", "assetId"),
+                )
+                assertEquals(0L, connection.count("savings_goal_holdings"))
+                assertTrue(connection.tableExists("savings_goal_holdings"))
+                assertTrue(connection.indexExists("index_savings_goal_holdings_holdingId"))
+                assertTrue(connection.indexExists("index_savings_goal_groups_groupId"))
+                assertFalse(connection.columnExists("savings_goals", "linkedGroupId"))
+                assertTrue(connection.columnExists("savings_goal_link_events", "fromHoldingId"))
+                assertTrue(connection.columnExists("savings_goal_link_events", "toHoldingId"))
 
-            connection.execSQL("DELETE FROM portfolio_holdings WHERE id = 'p2'")
-            assertEquals(1L, connection.count("savings_goal_holdings"), "a deleted product leaves the goal")
-            connection.execSQL("DELETE FROM account_groups WHERE id = 'g2'")
-            assertEquals(listOf("u2" to "g1"), connection.pairs("savings_goal_groups", "goalId", "groupId"))
-            assertEquals(4L, connection.count("savings_goals"), "deleting a product or a group keeps every goal")
-            connection.execSQL("DELETE FROM savings_goals WHERE id = 'u1'")
-            assertEquals(0L, connection.count("savings_goal_holdings"))
-            assertEquals(0L, connection.count("savings_goal_assets"))
+                // Ledgers and link history survive, the group ids of the events included; the new columns are empty.
+                assertEquals(2L, connection.count("savings_goal_allocation_events"))
+                connection.prepare(
+                    "SELECT goalId, toGroupId, toHoldingId, fromHoldingId FROM savings_goal_link_events WHERE id = 5",
+                ).use { rows ->
+                    assertTrue(rows.step())
+                    assertEquals("u2", rows.getText(0))
+                    assertEquals("g1", rows.getText(1))
+                    assertTrue(rows.isNull(2))
+                    assertTrue(rows.isNull(3))
+                }
+
+                // Both new tables follow their foreign keys; the goals' own table is untouched by them.
+                connection.execSQL("PRAGMA foreign_keys = ON")
+                connection.execSQL("INSERT INTO savings_goal_holdings (goalId, holdingId) VALUES ('u1', 'p1')")
+                connection.execSQL("INSERT INTO savings_goal_holdings (goalId, holdingId) VALUES ('u1', 'p2')")
+                connection.execSQL("INSERT INTO savings_goal_groups (goalId, groupId) VALUES ('u2', 'g2')")
+                assertFails {
+                    connection.execSQL(
+                        "INSERT INTO savings_goal_holdings (goalId, holdingId) VALUES ('u1', 'p1')",
+                    )
+                }
+                assertFails {
+                    connection.execSQL(
+                        "INSERT INTO savings_goal_holdings (goalId, holdingId) VALUES ('u1', 'x')",
+                    )
+                }
+                assertFails {
+                    connection.execSQL(
+                        "INSERT INTO savings_goal_groups (goalId, groupId) VALUES ('u2', 'x')",
+                    )
+                }
+                assertFails {
+                    connection.execSQL(
+                        "INSERT INTO savings_goal_groups (goalId, groupId) VALUES ('x', 'g1')",
+                    )
+                }
+
+                connection.execSQL("DELETE FROM portfolio_holdings WHERE id = 'p2'")
+                assertEquals(1L, connection.count("savings_goal_holdings"), "a deleted product leaves the goal")
+                connection.execSQL("DELETE FROM account_groups WHERE id = 'g2'")
+                assertEquals(listOf("u2" to "g1"), connection.pairs("savings_goal_groups", "goalId", "groupId"))
+                assertEquals(4L, connection.count("savings_goals"), "deleting a product or a group keeps every goal")
+                connection.execSQL("DELETE FROM savings_goals WHERE id = 'u1'")
+                assertEquals(0L, connection.count("savings_goal_holdings"))
+                assertEquals(0L, connection.count("savings_goal_assets"))
+            }
         }
-    }
 
     @Test
-    fun `migration 15 to 16 on a database without goals just creates the new tables`() {
+    fun `migration 15 to 16 on a database without goals just creates the new tables`() = runBlocking<Unit> {
         helper.createDatabase(15).use { connection -> connection.seedVersion11Holdings() }
 
         helper.runMigrationsAndValidate(16, listOf(MIGRATION_15_16)).use { connection ->

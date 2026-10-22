@@ -1,6 +1,6 @@
 package com.denebapps.patrimonio.data.db.entity
 
-import androidx.room.Entity
+import androidx.room3.Entity
 
 /**
  * One day of a product's price history, the cache behind the price charts. [provider] and [code] identify the

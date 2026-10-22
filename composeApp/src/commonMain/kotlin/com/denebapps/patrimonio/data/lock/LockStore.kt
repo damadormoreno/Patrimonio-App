@@ -1,15 +1,14 @@
 package com.denebapps.patrimonio.data.lock
 
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.denebapps.patrimonio.data.datastore.preferencesDataStore
 import com.denebapps.patrimonio.domain.repository.AutoLockDelay
 import kotlinx.coroutines.flow.first
-import okio.Path.Companion.toPath
 
 /** The PIN as a PBKDF2 hash, never the PIN itself. */
 data class PinHash(val hash: String, val salt: String, val iterations: Int)
@@ -42,7 +41,7 @@ private val RETRY_AT_KEY = longPreferencesKey("retry_at_epoch_ms")
  * with the same PIN.
  */
 class DataStoreLockStore(filePath: String) : LockStore {
-    private val dataStore = PreferenceDataStoreFactory.createWithPath(produceFile = { filePath.toPath() })
+    private val dataStore = preferencesDataStore(filePath)
 
     override suspend fun get(): StoredLock = dataStore.data.first().toStoredLock()
 

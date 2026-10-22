@@ -1,7 +1,7 @@
 package com.denebapps.patrimonio.data.db.entity
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
+import androidx.room3.Entity
+import androidx.room3.PrimaryKey
 
 /** Past months are immutable — only the row for the current `YearMonth` is ever re-upserted. */
 @Entity(tableName = "net_worth_snapshots")

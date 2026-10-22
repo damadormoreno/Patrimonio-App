@@ -1,8 +1,8 @@
 package com.denebapps.patrimonio.data.db.entity
 
-import androidx.room.Entity
-import androidx.room.ForeignKey
-import androidx.room.Index
+import androidx.room3.Entity
+import androidx.room3.ForeignKey
+import androidx.room3.Index
 
 /** Junction row for OVERLAPPING many-to-many [AccountGroupEntity] <-> [AssetEntity] membership. */
 @Entity(

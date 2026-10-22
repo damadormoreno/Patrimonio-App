@@ -1,13 +1,12 @@
 package com.denebapps.patrimonio.data.auth
 
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.denebapps.patrimonio.data.datastore.preferencesDataStore
 import com.denebapps.patrimonio.domain.repository.AccountProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import okio.Path.Companion.toPath
 
 /** A signed-in Firebase session: who, how they signed in, plus the tokens that keep it alive. */
 data class AuthSession(
@@ -36,7 +35,7 @@ private val PROVIDER_KEY = stringPreferencesKey("provider")
 
 /** Keeps the session in its own DataStore file, which Android's auto backup excludes. */
 class DataStoreAuthSessionStore(filePath: String) : AuthSessionStore {
-    private val dataStore = PreferenceDataStoreFactory.createWithPath(produceFile = { filePath.toPath() })
+    private val dataStore = preferencesDataStore(filePath)
 
     override fun observe(): Flow<AuthSession?> = dataStore.data.map { prefs ->
         val uid = prefs[UID_KEY] ?: return@map null

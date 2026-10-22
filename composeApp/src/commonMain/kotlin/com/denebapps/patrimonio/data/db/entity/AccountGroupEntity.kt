@@ -1,7 +1,7 @@
 package com.denebapps.patrimonio.data.db.entity
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
+import androidx.room3.Entity
+import androidx.room3.PrimaryKey
 
 /** The builtin "all accounts" group is NEVER a row here — it is synthesized at read time by the
  *  domain/repository layer. See [com.denebapps.patrimonio.domain.model.AccountGroup.allAccounts]. */

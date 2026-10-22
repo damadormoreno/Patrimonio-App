@@ -1,12 +1,11 @@
 package com.denebapps.patrimonio.data.cloud
 
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.denebapps.patrimonio.data.datastore.preferencesDataStore
 import kotlinx.coroutines.flow.first
-import okio.Path.Companion.toPath
 
 /**
  * The last copy this device uploaded or restored: to which account, with which [revision] and when. While the cloud
@@ -51,7 +50,7 @@ private val KEY_WRAPPED_KEY = stringPreferencesKey("key_wrapped")
  * ask for the passphrase. The data key is as protected as the app's database, which holds the same data.
  */
 class DataStoreCloudLinkStore(filePath: String) : CloudLinkStore {
-    private val dataStore = PreferenceDataStoreFactory.createWithPath(produceFile = { filePath.toPath() })
+    private val dataStore = preferencesDataStore(filePath)
 
     override suspend fun get(): CloudLink? {
         val prefs = dataStore.data.first()

@@ -11,8 +11,8 @@ presupuestos, categorías ni analítica.
 
 - Kotlin Multiplatform + Compose Multiplatform, un único módulo `:composeApp`
   (`androidTarget`, `iosArm64`, `iosSimulatorArm64`) + `iosApp/` (Xcode).
-- Kotlin 2.2.0, Compose MP 1.9.0, AGP 8.9.1, minSdk 29 / compileSdk 36 / target 35.
-- Room KMP 2.7.1 (`BundledSQLiteDriver`), DataStore preferences, Koin 4, navigation-compose,
+- Kotlin 2.2.21, Compose MP 1.9.0, AGP 8.10.1, minSdk 29 / compileSdk 36 / target 35.
+- Room 3.0.3 (`androidx.room3`, `BundledSQLiteDriver`), DataStore preferences, Koin 4, navigation-compose,
   Ktor (tipos de cambio de Frankfurter y cotizaciones de Morningstar/Yahoo), kotlinx-datetime.
 - Paquete / applicationId / bundle id: `com.denebapps.patrimonio`.
 

@@ -1,8 +1,16 @@
 package com.denebapps.patrimonio.data.db
 
-import androidx.room.migration.Migration
+import androidx.room3.RoomDatabase
+import androidx.room3.migration.Migration
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.execSQL
+
+/** Single place to register production migrations, applied identically on Android and iOS. The web database is
+ *  created at the current version and never migrates. 1 -> 2 and 2 -> 3 are `AutoMigration`s declared on
+ *  [AppDatabase], which Room applies by itself; hand-written ones go here (see `AppDatabaseMigrationTest`). They use
+ *  the blocking SQLite statement API, which the web driver does not have, hence mobile only. */
+fun RoomDatabase.Builder<AppDatabase>.configureAppDatabase(): RoomDatabase.Builder<AppDatabase> =
+    addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_6_7, MIGRATION_10_11, MIGRATION_15_16)
 
 /**
  * 3 -> 4: savings goal ids go from an autoincrement INTEGER to a UUID string, so goals created on
@@ -16,7 +24,7 @@ import androidx.sqlite.execSQL
  * goal created afterwards, whose value is a real instant. Event ids stay local autoincrement keys.
  */
 val MIGRATION_3_4 = object : Migration(3, 4) {
-    override fun migrate(connection: SQLiteConnection) {
+    override suspend fun migrate(connection: SQLiteConnection) {
         MIGRATION_3_4_STATEMENTS.forEach(connection::execSQL)
         connection.prepare("PRAGMA foreign_key_check").use { violations ->
             check(!violations.step()) { "Migration 3 -> 4 left foreign key violations" }
@@ -81,7 +89,7 @@ private val MIGRATION_3_4_STATEMENTS = listOf(
  * final check as [MIGRATION_3_4].
  */
 val MIGRATION_4_5 = object : Migration(4, 5) {
-    override fun migrate(connection: SQLiteConnection) {
+    override suspend fun migrate(connection: SQLiteConnection) {
         MIGRATION_4_5_STATEMENTS.forEach(connection::execSQL)
         connection.prepare("PRAGMA foreign_key_check").use { violations ->
             check(!violations.step()) { "Migration 4 -> 5 left foreign key violations" }
@@ -116,7 +124,7 @@ private val MIGRATION_4_5_STATEMENTS = listOf(
  * `7.json`, which Room validates in `AppDatabaseMigrationTest`.
  */
 val MIGRATION_6_7 = object : Migration(6, 7) {
-    override fun migrate(connection: SQLiteConnection) {
+    override suspend fun migrate(connection: SQLiteConnection) {
         connection.execSQL("DROP TABLE IF EXISTS `subscriptions`")
     }
 }
@@ -130,7 +138,7 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
  * holdings. Same rebuild pattern and final check as [MIGRATION_3_4].
  */
 val MIGRATION_10_11 = object : Migration(10, 11) {
-    override fun migrate(connection: SQLiteConnection) {
+    override suspend fun migrate(connection: SQLiteConnection) {
         MIGRATION_10_11_STATEMENTS.forEach(connection::execSQL)
         connection.prepare("PRAGMA foreign_key_check").use { violations ->
             check(!violations.step()) { "Migration 10 -> 11 left foreign key violations" }
@@ -172,7 +180,7 @@ private val MIGRATION_10_11_STATEMENTS = listOf(
  * Same rebuild pattern and final check as [MIGRATION_3_4].
  */
 val MIGRATION_15_16 = object : Migration(15, 16) {
-    override fun migrate(connection: SQLiteConnection) {
+    override suspend fun migrate(connection: SQLiteConnection) {
         MIGRATION_15_16_STATEMENTS.forEach(connection::execSQL)
         connection.prepare("PRAGMA foreign_key_check").use { violations ->
             check(!violations.step()) { "Migration 15 -> 16 left foreign key violations" }

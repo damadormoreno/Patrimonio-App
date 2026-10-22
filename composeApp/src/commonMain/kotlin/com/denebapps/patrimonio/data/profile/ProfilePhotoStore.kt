@@ -2,15 +2,6 @@ package com.denebapps.patrimonio.data.profile
 
 import com.denebapps.patrimonio.domain.repository.ProfilePhoto
 import com.denebapps.patrimonio.domain.repository.ProfilePhotoRepository
-import io.github.vinceglb.filekit.FileKit
-import io.github.vinceglb.filekit.ImageFormat
-import io.github.vinceglb.filekit.PlatformFile
-import io.github.vinceglb.filekit.compressImage
-import io.github.vinceglb.filekit.createDirectories
-import io.github.vinceglb.filekit.delete
-import io.github.vinceglb.filekit.exists
-import io.github.vinceglb.filekit.parent
-import io.github.vinceglb.filekit.write
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
@@ -21,7 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-/** The bytes of one file; [FileKitPhotoFile] in the app, in memory in tests. */
+/** The bytes of one file: a file on the phone ([profilePhotoFile]), in memory in tests. */
 interface PhotoFile {
     val path: String
 
@@ -32,33 +23,19 @@ interface PhotoFile {
     suspend fun delete()
 }
 
-class FileKitPhotoFile(override val path: String) : PhotoFile {
-    private val file = PlatformFile(path)
+/** Where the profile photo is kept on this platform. The web keeps none: the photo is per device and is not in the
+ *  backup, so a browser has nowhere to keep it beyond the tab. */
+expect fun profilePhotoFile(path: String): PhotoFile
 
-    override fun exists(): Boolean = file.exists()
-
-    override suspend fun write(bytes: ByteArray) {
-        file.parent()?.createDirectories()
-        file.write(bytes)
-    }
-
-    override suspend fun delete() {
-        file.delete(mustExist = false)
-    }
-}
+/** [image] as a JPEG of at most [maxSide] px a side. */
+expect suspend fun shrinkProfileImage(image: ByteArray, maxSide: Int, quality: Int): ByteArray
 
 /** [ProfilePhotoRepository] in one JPEG file. Images are shrunk to [MAX_SIDE] px before they are stored. */
 class ProfilePhotoStore(
     private val file: PhotoFile,
     private val httpClient: HttpClient,
     private val shrink: suspend (ByteArray) -> ByteArray = { image ->
-        FileKit.compressImage(
-            image,
-            ImageFormat.JPEG,
-            quality = JPEG_QUALITY,
-            maxWidth = MAX_SIDE,
-            maxHeight = MAX_SIDE,
-        )
+        shrinkProfileImage(image, maxSide = MAX_SIDE, quality = JPEG_QUALITY)
     },
 ) : ProfilePhotoRepository {
     private val mutex = Mutex()

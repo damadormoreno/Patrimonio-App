@@ -1,7 +1,6 @@
 package com.denebapps.patrimonio.data.datastore
 
 import androidx.datastore.preferences.core.MutablePreferences
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -11,7 +10,6 @@ import com.denebapps.patrimonio.domain.repository.PreferencesRepository
 import com.denebapps.patrimonio.domain.repository.ThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import okio.Path.Companion.toPath
 
 private val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
 private val FIRST_NAME_KEY = stringPreferencesKey("first_name")
@@ -25,9 +23,7 @@ private val CARTERA_FILTER_TYPES_KEY = stringSetPreferencesKey("cartera_filter_t
 private val DEFAULT_THEME_MODE = ThemeMode.SYSTEM
 
 class PreferencesRepositoryImpl(filePath: String) : PreferencesRepository {
-    private val dataStore = PreferenceDataStoreFactory.createWithPath(
-        produceFile = { filePath.toPath() },
-    )
+    private val dataStore = preferencesDataStore(filePath)
 
     override fun observeThemeMode(): Flow<ThemeMode> = dataStore.data.map { prefs ->
         prefs[THEME_MODE_KEY]?.let { raw -> runCatching { ThemeMode.valueOf(raw) }.getOrNull() }
