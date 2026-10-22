@@ -11,8 +11,9 @@ kotlinxDatetime = "0.6.2"
 room = "3.0.3"
 ksp = "2.3.7"
 sqliteBundled = "2.7.1"
+kotlinxBrowser = "0.5.0"
 datastore = "1.2.1"
-koin = "4.0.0"
+koin = "4.1.1"
 ktor = "3.0.3"
 kotlinxSerialization = "1.7.3"
 kotlinxCoroutines = "1.9.0"
@@ -44,6 +45,8 @@ room-compiler = { module = "androidx.room3:room3-compiler", version.ref = "room"
 room-testing = { module = "androidx.room3:room3-testing", version.ref = "room" }
 sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqliteBundled" }
 sqlite-framework = { module = "androidx.sqlite:sqlite-framework", version.ref = "sqliteBundled" }
+sqlite-web = { module = "androidx.sqlite:sqlite-web", version.ref = "sqliteBundled" }
+kotlinx-browser = { module = "org.jetbrains.kotlinx:kotlinx-browser", version.ref = "kotlinxBrowser" }
 datastore-preferences-core = { module = "androidx.datastore:datastore-preferences-core", version.ref = "datastore" }
 koin-core = { module = "io.insert-koin:koin-core", version.ref = "koin" }
 koin-android = { module = "io.insert-koin:koin-android", version.ref = "koin" }
@@ -57,6 +60,7 @@ filekit-dialogs-compose = { module = "io.github.vinceglb:filekit-dialogs-compose
 ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
 ktor-client-android = { module = "io.ktor:ktor-client-android", version.ref = "ktor" }
 ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "ktor" }
+ktor-client-js = { module = "io.ktor:ktor-client-js", version.ref = "ktor" }
 ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 cryptography-core = { module = "dev.whyoleg.cryptography:cryptography-core", version.ref = "cryptography" }
 cryptography-provider-optimal = { module = "dev.whyoleg.cryptography:cryptography-provider-optimal", version.ref = "cryptography" }

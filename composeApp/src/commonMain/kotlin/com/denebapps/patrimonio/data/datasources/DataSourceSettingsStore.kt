@@ -1,10 +1,10 @@
 package com.denebapps.patrimonio.data.datasources
 
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.denebapps.patrimonio.data.datastore.preferencesDataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -14,7 +14,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
-import okio.Path.Companion.toPath
 
 /**
  * What the user chose about optional market-data sources. [apiKey] is the user's own EODHD key (`null` when none):
@@ -101,11 +100,7 @@ private fun encodeSymbolCache(cache: Map<String, CachedSymbol>): String =
  * DataStore's own scope (the default is the library's); a test cancels its own to open the same file again.
  */
 class DataStoreDataSourceSettingsStore(filePath: String, scope: CoroutineScope? = null) : DataSourceSettingsStore {
-    private val dataStore = if (scope == null) {
-        PreferenceDataStoreFactory.createWithPath(produceFile = { filePath.toPath() })
-    } else {
-        PreferenceDataStoreFactory.createWithPath(scope = scope, produceFile = { filePath.toPath() })
-    }
+    private val dataStore = preferencesDataStore(filePath, scope)
 
     override fun observe(): Flow<DataSourceSettings> = dataStore.data.map { prefs ->
         DataSourceSettings(

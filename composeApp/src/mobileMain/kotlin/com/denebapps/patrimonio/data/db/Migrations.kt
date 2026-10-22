@@ -1,8 +1,16 @@
 package com.denebapps.patrimonio.data.db
 
+import androidx.room3.RoomDatabase
 import androidx.room3.migration.Migration
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.execSQL
+
+/** Single place to register production migrations, applied identically on Android and iOS. The web database is
+ *  created at the current version and never migrates. 1 -> 2 and 2 -> 3 are `AutoMigration`s declared on
+ *  [AppDatabase], which Room applies by itself; hand-written ones go here (see `AppDatabaseMigrationTest`). They use
+ *  the blocking SQLite statement API, which the web driver does not have, hence mobile only. */
+fun RoomDatabase.Builder<AppDatabase>.configureAppDatabase(): RoomDatabase.Builder<AppDatabase> =
+    addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_6_7, MIGRATION_10_11, MIGRATION_15_16)
 
 /**
  * 3 -> 4: savings goal ids go from an autoincrement INTEGER to a UUID string, so goals created on

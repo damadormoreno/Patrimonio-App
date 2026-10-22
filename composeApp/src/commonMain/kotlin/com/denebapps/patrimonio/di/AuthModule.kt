@@ -16,8 +16,8 @@ import com.denebapps.patrimonio.data.datastore.PROFILE_PHOTO_FILE_NAME
 import com.denebapps.patrimonio.data.datastore.dataStoreFilePath
 import com.denebapps.patrimonio.data.db.RoomLocalDataChanges
 import com.denebapps.patrimonio.data.platform.PlatformContext
-import com.denebapps.patrimonio.data.profile.FileKitPhotoFile
 import com.denebapps.patrimonio.data.profile.ProfilePhotoStore
+import com.denebapps.patrimonio.data.profile.profilePhotoFile
 import com.denebapps.patrimonio.domain.repository.AuthRepository
 import com.denebapps.patrimonio.domain.repository.CloudBackup
 import com.denebapps.patrimonio.domain.repository.ProfilePhotoRepository
@@ -44,6 +44,6 @@ val authModule = module {
         )
     }
     single<ProfilePhotoRepository> {
-        ProfilePhotoStore(FileKitPhotoFile(dataStoreFilePath(get<PlatformContext>(), PROFILE_PHOTO_FILE_NAME)), get())
+        ProfilePhotoStore(profilePhotoFile(dataStoreFilePath(get<PlatformContext>(), PROFILE_PHOTO_FILE_NAME)), get())
     }
 }

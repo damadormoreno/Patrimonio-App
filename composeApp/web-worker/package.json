@@ -1,0 +1,11 @@
+{
+  "name": "patrimonio-sqlite-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SQLite WASM web worker for Room on the web",
+  "license": "Apache-2.0",
+  "main": "worker.js",
+  "dependencies": {
+    "@sqlite.org/sqlite-wasm": "3.53.4-build2"
+  }
+}

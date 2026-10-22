@@ -11,10 +11,11 @@ import com.denebapps.patrimonio.data.platform.AppLogger
 import com.denebapps.patrimonio.domain.repository.ProfilePhotoRepository
 import com.denebapps.patrimonio.ui.components.Avatar
 import com.denebapps.patrimonio.ui.icons.AppIcons
-import io.github.vinceglb.filekit.PlatformFile
-import io.github.vinceglb.filekit.dialogs.compose.util.toImageBitmap
 import kotlinx.coroutines.CancellationException
 import org.koin.compose.koinInject
+
+/** The stored profile photo at [path]; null where photos are not kept (the web). */
+expect suspend fun readProfilePhoto(path: String): ImageBitmap?
 
 /** The profile [Avatar]: the photo when there is one, else [initials], else the user icon. */
 @Composable
@@ -28,7 +29,7 @@ fun ProfileAvatar(
     val bitmap by produceState<ImageBitmap?>(null, photo) {
         value = photo?.let { current ->
             try {
-                PlatformFile(current.path).toImageBitmap()
+                readProfilePhoto(current.path)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

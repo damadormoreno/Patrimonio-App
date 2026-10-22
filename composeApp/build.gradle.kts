@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -30,6 +31,28 @@ kotlin {
         }
     }
 
+    // The web app: the same UI and data layer in the browser, with Room on SQLite WASM through a web worker.
+    @OptIn(ExperimentalWasmDsl::class)
+    wasmJs {
+        outputModuleName.set("patrimonio")
+        browser {
+            commonWebpackConfig { outputFileName = "patrimonio.js" }
+        }
+        binaries.executable()
+    }
+
+    // mobileMain: Android and iOS, for what the browser does not have (the bundled SQLite driver, the
+    // migrations of databases created by earlier app versions, files on disk).
+    @OptIn(ExperimentalKotlinGradlePluginApi::class)
+    applyDefaultHierarchyTemplate {
+        common {
+            group("mobile") {
+                withAndroidTarget()
+                withIos()
+            }
+        }
+    }
+
     sourceSets {
         commonMain.dependencies {
             implementation(compose.runtime)
@@ -39,7 +62,6 @@ kotlin {
             implementation(compose.components.resources)
             implementation(libs.kotlinx.datetime)
             implementation(libs.room.runtime)
-            implementation(libs.sqlite.bundled)
             implementation(libs.datastore.preferences.core)
             implementation(libs.koin.core)
             implementation(libs.kotlinx.coroutines.core)
@@ -57,6 +79,18 @@ kotlin {
             implementation(libs.cryptography.provider.optimal)
             implementation(libs.filekit.core)
             implementation(libs.filekit.dialogs.compose)
+        }
+        getByName("mobileMain").dependencies {
+            implementation(libs.sqlite.bundled)
+        }
+        wasmJsMain.dependencies {
+            implementation(libs.ktor.client.js)
+            implementation(libs.sqlite.web)
+            implementation(libs.kotlinx.browser)
+            // Relative to the generated package (build/wasm/packages/patrimonio) so the lock file has no machine path.
+            implementation(npm("patrimonio-sqlite-worker", "file:../../../../composeApp/web-worker"))
+            // Also here because npm links the local worker package without installing its dependencies.
+            implementation(npm("@sqlite.org/sqlite-wasm", "3.53.4-build2"))
         }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
@@ -108,6 +142,7 @@ dependencies {
     add("kspAndroid", libs.room.compiler)
     add("kspIosArm64", libs.room.compiler)
     add("kspIosSimulatorArm64", libs.room.compiler)
+    add("kspWasmJs", libs.room.compiler)
 }
 
 room3 {

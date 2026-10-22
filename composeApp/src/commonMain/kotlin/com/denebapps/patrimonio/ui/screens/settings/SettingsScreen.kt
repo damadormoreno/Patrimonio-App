@@ -50,9 +50,7 @@ import com.denebapps.patrimonio.ui.screens.perfil.ProfileAvatar
 import com.denebapps.patrimonio.ui.theme.LocalAppColors
 import com.denebapps.patrimonio.ui.theme.LocalAppShapes
 import io.github.vinceglb.filekit.dialogs.compose.rememberFilePickerLauncher
-import io.github.vinceglb.filekit.dialogs.compose.rememberFileSaverLauncher
 import io.github.vinceglb.filekit.readString
-import io.github.vinceglb.filekit.writeString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -70,13 +68,10 @@ fun SettingsScreen(
     val backupStatus by backupViewModel.status.collectAsState()
     val accountState by accountViewModel.state.collectAsState()
 
-    // FileKit hands back a platform file handle (SAF Uri / NSURL); the ViewModel only ever sees
-    // the read/write lambdas. A null result means the user cancelled the dialog.
-    val exportLauncher = rememberFileSaverLauncher { file ->
-        file?.let { destination -> backupViewModel.onExportDestinationChosen { json -> destination.writeString(json) } }
-    }
-    // No extension filter: some Android document providers report .json as octet-stream and
-    // would grey the file out. The content is validated on import anyway.
+    val export = rememberBackupExport(backupViewModel)
+    // FileKit hands back a platform file handle; the ViewModel only ever sees the read lambda. A null result
+    // means the user cancelled the dialog. No extension filter: some Android document providers report .json
+    // as octet-stream and would grey the file out. The content is validated on import anyway.
     val importLauncher = rememberFilePickerLauncher { file ->
         file?.let { source -> backupViewModel.onImportFileChosen { source.readString() } }
     }
@@ -90,7 +85,7 @@ fun SettingsScreen(
         onOpenAccount = onOpenAccount,
         onOpenAbout = onOpenAbout,
         onThemeModeSelect = viewModel::onThemeModeSelect,
-        onExport = { exportLauncher.launch(suggestedName = backupViewModel.suggestedFileName(), extension = "json") },
+        onExport = export,
         onConfirmImport = { importLauncher.launch() },
         onBackupResultConsumed = backupViewModel::onResultConsumed,
         onConfirmDeleteAll = viewModel::onConfirmDeleteAll,
