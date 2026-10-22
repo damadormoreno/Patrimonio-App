@@ -9,11 +9,14 @@ import kotlinx.coroutines.flow.first
 import okio.Path.Companion.toPath
 
 /**
- * The last copy this device uploaded: to which account, with which [revision] and when. While the cloud copy
- * still has that revision nobody else has changed it, so this device can keep uploading without asking.
+ * The last copy this device uploaded or restored: to which account, with which [revision] and when. While the cloud
+ * copy still has that revision nobody else has changed it, so this device can keep uploading without asking.
+ * [fingerprint] is that copy's [BackupCrypto.fingerprint] of [userDataOf]: while this device's data still has it,
+ * nothing was edited here since, so a newer cloud copy can replace it without asking. Null in links saved before it
+ * existed.
  * Signing out clears it: the data may change while signed out, so signing in again always asks first.
  */
-data class CloudLink(val uid: String, val revision: String, val savedAtEpochMs: Long)
+data class CloudLink(val uid: String, val revision: String, val savedAtEpochMs: Long, val fingerprint: String? = null)
 
 /**
  * What this device keeps about the cloud copy: the [CloudLink] and the account's unwrapped data key, so the
@@ -35,6 +38,7 @@ interface CloudLinkStore {
 private val UID_KEY = stringPreferencesKey("uid")
 private val REVISION_KEY = stringPreferencesKey("revision")
 private val SAVED_AT_KEY = longPreferencesKey("saved_at_epoch_ms")
+private val FINGERPRINT_KEY = stringPreferencesKey("fingerprint")
 private val KEY_UID_KEY = stringPreferencesKey("key_uid")
 private val KEY_SECRET_KEY = stringPreferencesKey("key_secret")
 private val KEY_ID_KEY = stringPreferencesKey("key_id")
@@ -55,6 +59,7 @@ class DataStoreCloudLinkStore(filePath: String) : CloudLinkStore {
             uid = prefs[UID_KEY] ?: return null,
             revision = prefs[REVISION_KEY] ?: return null,
             savedAtEpochMs = prefs[SAVED_AT_KEY] ?: return null,
+            fingerprint = prefs[FINGERPRINT_KEY],
         )
     }
 
@@ -63,6 +68,7 @@ class DataStoreCloudLinkStore(filePath: String) : CloudLinkStore {
             prefs[UID_KEY] = link.uid
             prefs[REVISION_KEY] = link.revision
             prefs[SAVED_AT_KEY] = link.savedAtEpochMs
+            if (link.fingerprint != null) prefs[FINGERPRINT_KEY] = link.fingerprint else prefs.remove(FINGERPRINT_KEY)
         }
     }
 

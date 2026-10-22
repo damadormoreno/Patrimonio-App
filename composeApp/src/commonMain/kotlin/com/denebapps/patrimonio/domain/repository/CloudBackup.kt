@@ -45,8 +45,9 @@ sealed interface CloudBackupState {
 /**
  * Automatic backup of the whole data set (the backup JSON) to the signed-in account, encrypted with a key only
  * the user's passphrase opens. One copy per account: each upload replaces the previous one. Before the first
- * upload of a session, and before every upload, the cloud copy is checked: if another device changed it, the
- * user decides which data wins.
+ * upload of a session, and before every upload, the cloud copy is checked: if another device changed it, its copy
+ * replaces the data on this device when nothing changed here since the last sync; otherwise the user decides which
+ * data wins.
  */
 interface CloudBackup {
     val state: StateFlow<CloudBackupState>
@@ -64,6 +65,10 @@ interface CloudBackup {
 
     /** In [CloudBackupState.Active]: uploads now instead of waiting for the next change. */
     fun backUpNow()
+
+    /** In [CloudBackupState.Active]: looks for a copy saved by another device, which is restored without asking
+     *  when nothing changed on this one since it last synced. For the app coming back to the foreground. */
+    fun checkForUpdates()
 
     /** In [CloudBackupState.NeedsPassphrase]: creates the passphrase, or opens the cloud copy with it. */
     fun submitPassphrase(passphrase: String)

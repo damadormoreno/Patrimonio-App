@@ -34,6 +34,10 @@ class FakeCloudBackup(private val auth: AuthRepository = FakeAuthRepository()) :
         calls += "backUpNow"
     }
 
+    override fun checkForUpdates() {
+        calls += "checkForUpdates"
+    }
+
     override fun submitPassphrase(passphrase: String) {
         calls += "submitPassphrase:$passphrase"
     }
